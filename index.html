@@ -1,0 +1,3960 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#F0F1F4" id="theme-color-meta">
+<title>Suivi financier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#F0F1F4;
+  --card:#FFFFFF;
+  --card-alt:#F6F7F9;
+  --primary:#1259D6;
+  --primary-soft:#E7EFFE;
+  --primary-tap:#0D46AD;
+  --text:#181A1E;
+  --text-sub:#6B707A;
+  --text-faint:#9AA0AC;
+  --divider:#E7E9ED;
+  --income:#1A9E63;
+  --income-soft:#E6F6EE;
+  --expense:#E4402E;
+  --expense-soft:#FCEBE9;
+  --transfer:#8A5CF6;
+  --transfer-soft:#F1EBFF;
+  --radius-xl:30px;
+  --radius-lg:24px;
+  --radius-md:18px;
+  --radius-sm:12px;
+  --shadow-1: 0 1px 3px rgba(20,20,30,.06), 0 6px 18px rgba(20,20,30,.05);
+  --shadow-2: 0 8px 30px rgba(20,20,30,.14);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="dark"]{
+  --bg:#0E0F12;
+  --card:#1A1B1F;
+  --card-alt:#212226;
+  --primary:#4C8DFF;
+  --primary-soft:#132A4E;
+  --primary-tap:#6BA1FF;
+  --text:#F1F2F4;
+  --text-sub:#9BA0AC;
+  --text-faint:#6E727C;
+  --divider:#2A2C31;
+  --income:#3FCE8E;
+  --income-soft:#123324;
+  --expense:#FF6B5E;
+  --expense-soft:#3A1917;
+  --transfer:#B49BFF;
+  --transfer-soft:#251C40;
+  --shadow-1: 0 1px 3px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
+  --shadow-2: 0 8px 30px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Roboto",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  overscroll-behavior-y:none;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;}
+input,select{font-family:inherit;}
+::-webkit-scrollbar{width:0;height:0;}
+
+.app{max-width:560px;margin:0 auto;min-height:100%;position:relative;padding-bottom:calc(150px + var(--safe-bottom));}
+
+/* ---------- Top bar ---------- */
+.topbar{padding:22px 20px 10px;}
+.topbar-row{display:flex;align-items:center;justify-content:space-between;}
+.app-title{font-size:30px;font-weight:900;letter-spacing:-.5px;margin:0;}
+.topbar-actions{display:flex;gap:8px;}
+.icon-btn{
+  width:42px;height:42px;border-radius:50%;border:none;background:var(--card);
+  display:flex;align-items:center;justify-content:center;color:var(--text);
+  box-shadow:var(--shadow-1); cursor:pointer;
+}
+.icon-btn:active{background:var(--card-alt);}
+.icon-btn svg{width:20px;height:20px;}
+.balance-hero{margin-top:18px;}
+.balance-hero .label{font-size:14px;color:var(--text-sub);font-weight:500;}
+.balance-hero .amount{font-size:40px;font-weight:900;letter-spacing:-1px;margin-top:2px;}
+.balance-hero .sub{display:flex;gap:16px;margin-top:10px;}
+.balance-hero .sub .chip{font-size:13px;font-weight:700;padding:6px 12px;border-radius:100px;}
+.chip-in{background:var(--income-soft);color:var(--income);}
+.chip-out{background:var(--expense-soft);color:var(--expense);}
+
+/* ---------- Sections / Cards ---------- */
+.section{padding:6px 20px 0;}
+.section-title{font-size:13px;font-weight:700;color:var(--text-sub);text-transform:uppercase;letter-spacing:.5px;margin:22px 4px 10px;}
+.card{background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:16px;}
+.card + .card{margin-top:10px;}
+.rowline{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;}
+.rowline + .rowline{border-top:1px solid var(--divider);}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:60px 30px;color:var(--text-sub);}
+.empty-state svg{width:60px;height:60px;color:var(--text-faint);margin-bottom:14px;}
+.empty-state h3{margin:0 0 6px;color:var(--text);font-size:19px;}
+.empty-state p{margin:0 0 20px;font-size:14px;line-height:1.5;}
+.btn{
+  border:none;border-radius:100px;padding:13px 22px;font-weight:700;font-size:14.5px;
+  cursor:pointer; display:inline-flex;align-items:center;gap:8px;
+}
+.btn-primary{background:var(--primary);color:#fff;}
+.btn-primary:active{background:var(--primary-tap);}
+.btn-ghost{background:var(--card-alt);color:var(--text);}
+.btn-ghost:active{background:var(--divider);}
+.btn-sm{padding:9px 16px;font-size:13px;}
+.btn-block{width:100%;justify-content:center;}
+
+/* ---------- Tabs content views ---------- */
+.view{display:none;}
+.view.active{display:block;}
+
+/* ---------- Bottom floating search/filter bar ---------- */
+.float-bar-wrap{
+  position:fixed;left:0;right:0;bottom:calc(72px + var(--safe-bottom));
+  display:none;justify-content:center;pointer-events:none;z-index:40;
+  padding:0 16px;
+}
+.float-bar{
+  pointer-events:auto;
+  width:100%;max-width:528px;
+  background:var(--card);
+  border-radius:100px;
+  box-shadow:var(--shadow-2);
+  display:flex;align-items:center;gap:6px;
+  padding:6px 6px 6px 18px;
+}
+.float-bar input{
+  flex:1;border:none;outline:none;background:transparent;color:var(--text);
+  font-size:15px;padding:10px 0;
+}
+.float-bar input::placeholder{color:var(--text-faint);}
+.float-bar .fbtn{
+  width:42px;height:42px;flex:0 0 auto;border-radius:50%;border:none;
+  background:var(--card-alt);display:flex;align-items:center;justify-content:center;
+  color:var(--text);position:relative;cursor:pointer;
+}
+.float-bar .fbtn.active-filter{background:var(--primary);color:#fff;}
+.float-bar .fbtn svg{width:19px;height:19px;}
+.filter-badge{
+  position:absolute;top:-2px;right:-2px;background:var(--expense);color:#fff;
+  font-size:10px;font-weight:800;border-radius:50%;min-width:16px;height:16px;
+  display:flex;align-items:center;justify-content:center;padding:0 3px;
+}
+
+/* ---------- Bottom nav ---------- */
+.bottomnav{
+  position:fixed;left:0;right:0;bottom:0;
+  background:var(--card);
+  border-top:1px solid var(--divider);
+  padding:8px 6px calc(8px + var(--safe-bottom));
+  display:flex;justify-content:space-around;
+  z-index:39;
+  max-width:560px;margin:0 auto;
+}
+.navbtn{
+  border:none;background:transparent;display:flex;flex-direction:column;align-items:center;
+  gap:3px;color:var(--text-faint);font-size:10.5px;font-weight:700;padding:6px 8px;border-radius:14px;
+  cursor:pointer;flex:1;
+}
+.navbtn svg{width:22px;height:22px;}
+.navbtn.active{color:var(--primary);}
+
+/* ---------- Modal / bottom sheet ---------- */
+.overlay{
+  position:fixed;inset:0;background:rgba(10,12,20,.45);z-index:60;
+  display:none;align-items:flex-end;justify-content:center;
+}
+.overlay.open{display:flex;}
+.overlay.overlay-large{align-items:stretch;}
+.sheet{
+  width:100%;max-width:560px;background:var(--bg);
+  border-radius:26px 26px 0 0;
+  max-height:94vh;max-height:94dvh;display:flex;flex-direction:column;
+  animation:slideup .22s ease-out;
+}
+.sheet-large{max-height:100vh;height:100vh;max-height:100dvh;height:100dvh;border-radius:0;}
+@keyframes slideup{from{transform:translateY(30px);opacity:.4;}to{transform:translateY(0);opacity:1;}}
+.sheet-handle{width:38px;height:5px;background:var(--divider);border-radius:10px;margin:12px auto 4px;}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:6px 20px 12px;}
+.sheet-head h2{font-size:19px;margin:0;font-weight:800;}
+.sheet-body{overflow-y:auto;padding:0 20px 20px;flex:1 1 auto;min-height:0;}
+.sheet-foot{padding:14px 20px calc(16px + var(--safe-bottom));border-top:1px solid var(--divider);display:flex;gap:10px;background:var(--bg);}
+.sheet-foot .btn{flex:1;}
+
+.modal-center-wrap{align-items:center;}
+.modal-center{
+  width:92%;max-width:420px;background:var(--card);border-radius:var(--radius-lg);
+  padding:22px;animation:popin .18s ease-out;
+}
+@keyframes popin{from{transform:scale(.92);opacity:0;}to{transform:scale(1);opacity:1;}}
+
+/* ---------- Filter sheet content ---------- */
+.filter-group{margin-bottom:22px;}
+.filter-group h4{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sub);margin:0 0 10px;font-weight:700;}
+.chiprow{display:flex;flex-wrap:wrap;gap:8px;}
+.chip-opt{
+  border:1.5px solid var(--divider);background:var(--card);color:var(--text);
+  border-radius:100px;padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:6px;
+}
+.chip-opt.selected{background:var(--primary);border-color:var(--primary);color:#fff;}
+
+.chips-bar{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px 10px;}
+.chip-active{
+  display:flex;align-items:center;gap:7px;background:var(--primary-soft);color:var(--primary);
+  border-radius:100px;padding:6px 6px 6px 13px;font-size:12.5px;font-weight:700;max-width:100%;
+}
+.chip-active span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
+.chip-active .chip-x{
+  border:none;background:rgba(18,89,214,.14);color:inherit;width:19px;height:19px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:0 0 auto;
+}
+[data-theme="dark"] .chip-active .chip-x{background:rgba(76,141,255,.22);}
+.chip-active .chip-x svg{width:10px;height:10px;stroke-width:3;}
+.chip-clearall{border:none;background:transparent;color:var(--text-sub);font-size:12.5px;font-weight:700;text-decoration:underline;cursor:pointer;padding:6px 4px;}
+.search-mini{
+  width:100%;border:1.5px solid var(--divider);background:var(--card);border-radius:14px;
+  padding:10px 14px;font-size:14px;color:var(--text);outline:none;margin-bottom:10px;
+}
+.check-list{max-height:46vh;overflow-y:auto;border:1px solid var(--divider);border-radius:14px;background:var(--card);}
+.check-item{display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:14px;border-bottom:1px solid var(--divider);cursor:pointer;}
+.check-item:last-child{border-bottom:none;}
+.check-item .cbox{width:19px;height:19px;border-radius:6px;border:2px solid var(--text-faint);flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
+.check-item.selected .cbox{background:var(--primary);border-color:var(--primary);}
+.check-item.selected .cbox svg{width:12px;height:12px;color:#fff;}
+.check-item .lbl{flex:1;}
+.check-item .cnt{color:var(--text-faint);font-size:12px;}
+.groupe-section{border-bottom:1px solid var(--divider);}
+.groupe-section:last-child{border-bottom:none;}
+.groupe-section-head{border-bottom:none;background:var(--card-alt);}
+.groupe-section-children{padding-left:18px;background:var(--card);}
+.groupe-section-children .check-item{border-bottom:1px solid var(--divider);}
+.groupe-section-children .check-item:last-child{border-bottom:none;}
+.daterange{display:flex;gap:10px;}
+.daterange input{flex:1;border:1.5px solid var(--divider);border-radius:14px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);}
+.seg{display:flex;background:var(--card-alt);border-radius:100px;padding:4px;}
+.seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:100px;font-size:13px;font-weight:700;color:var(--text-sub);cursor:pointer;}
+.seg button.active{background:var(--primary);color:#fff;}
+
+/* ---------- Transactions list ---------- */
+.txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:18px 4px 8px;text-transform:capitalize;}
+.txn-item{
+  display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);
+  border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
+}
+.txn-item + .txn-item{margin-top:8px;}
+.txn-ico{
+  width:40px;height:40px;border-radius:50%;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;
+}
+.txn-ico.inc{background:var(--income-soft);color:var(--income);}
+.txn-ico.exp{background:var(--expense-soft);color:var(--expense);}
+.txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
+.txn-mid{flex:1;min-width:0;}
+.txn-title{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-sub{font-size:12px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.txn-amt{font-size:14.5px;font-weight:800;flex:0 0 auto;text-align:right;}
+.txn-amt.inc{color:var(--income);}
+.txn-amt.exp{color:var(--expense);}
+.txn-amt.trf{color:var(--transfer);}
+
+.loadmore-wrap{display:flex;justify-content:center;margin-top:16px;}
+
+/* ---------- Breakdown / evolution lists ---------- */
+.bd-row{display:flex;align-items:center;gap:12px;padding:11px 4px;}
+.bd-row + .bd-row{border-top:1px solid var(--divider);}
+.bd-dot{width:11px;height:11px;border-radius:4px;flex:0 0 auto;}
+.bd-name{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bd-bar-wrap{position:relative;height:6px;background:var(--card-alt);border-radius:6px;margin-top:6px;overflow:hidden;}
+.bd-bar{position:absolute;left:0;top:0;bottom:0;border-radius:6px;}
+.bd-val{font-size:13.5px;font-weight:800;flex:0 0 auto;min-width:76px;text-align:right;}
+.bd-item{padding:6px 4px;}
+.bd-item + .bd-item{border-top:1px solid var(--divider);}
+
+.dimtabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;}
+.dimtabs button{
+  white-space:nowrap;border:none;background:var(--card-alt);color:var(--text-sub);
+  font-weight:700;font-size:13px;padding:9px 16px;border-radius:100px;cursor:pointer;flex:0 0 auto;
+}
+.dimtabs button.active{background:var(--primary);color:#fff;}
+
+details.card summary{list-style:none;}
+details.card summary::-webkit-details-marker{display:none;}
+details.card summary::after{content:"";width:9px;height:9px;border-right:2px solid var(--text-faint);border-bottom:2px solid var(--text-faint);transform:rotate(-45deg);transition:transform .15s;flex:0 0 auto;margin-left:4px;}
+details.card[open] summary::after{transform:rotate(45deg);}
+
+.chart-wrap{position:relative;height:230px;margin-top:6px;}
+.chart-wrap.tall{height:260px;}
+
+/* ---------- Account cards ---------- */
+.acc-card{background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:16px;display:flex;align-items:center;gap:14px;cursor:pointer;}
+.acc-card + .acc-card{margin-top:10px;}
+.acc-ico{width:44px;height:44px;border-radius:16px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:0 0 auto;}
+.acc-mid{flex:1;min-width:0;}
+.acc-name{font-weight:700;font-size:14.5px;}
+.acc-flows{font-size:11.5px;color:var(--text-sub);margin-top:2px;}
+.acc-bal{font-weight:800;font-size:16px;text-align:right;flex:0 0 auto;}
+
+/* ---------- Import ---------- */
+.dropzone{
+  border:2px dashed var(--divider);border-radius:var(--radius-lg);padding:30px 16px;text-align:center;
+  cursor:pointer;background:var(--card-alt);
+}
+.dropzone svg{width:34px;height:34px;color:var(--text-faint);margin-bottom:8px;}
+.dropzone p{margin:4px 0 0;font-size:13.5px;color:var(--text-sub);}
+.dropzone .fname{font-weight:700;color:var(--text);margin-top:8px;font-size:14px;word-break:break-all;}
+.radio-opt{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:16px;border:1.5px solid var(--divider);cursor:pointer;}
+.radio-opt + .radio-opt{margin-top:10px;}
+.radio-opt.selected{border-color:var(--primary);background:var(--primary-soft);}
+.radio-opt .rc{width:20px;height:20px;border-radius:50%;border:2px solid var(--text-faint);flex:0 0 auto;margin-top:1px;display:flex;align-items:center;justify-content:center;}
+.radio-opt.selected .rc{border-color:var(--primary);}
+.radio-opt.selected .rc::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--primary);}
+.radio-opt .rt{font-weight:700;font-size:14.5px;}
+.radio-opt .rd{font-size:12.5px;color:var(--text-sub);margin-top:2px;}
+.import-summary{background:var(--card-alt);border-radius:16px;padding:14px;font-size:13.5px;margin-top:14px;line-height:1.6;}
+.import-summary b{color:var(--text);}
+
+.toast{
+  position:fixed;left:50%;bottom:calc(160px + var(--safe-bottom));transform:translateX(-50%);
+  background:var(--text);color:var(--bg);padding:12px 20px;border-radius:100px;font-size:13.5px;font-weight:600;
+  z-index:80;box-shadow:var(--shadow-2);opacity:0;pointer-events:none;transition:opacity .25s, bottom .25s;
+  max-width:86%;text-align:center;
+}
+.toast.toast-long{border-radius:20px;text-align:left;line-height:1.5;}
+.toast.show{opacity:1;bottom:calc(180px + var(--safe-bottom));}
+
+.field-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px;}
+.detail-row{display:flex;justify-content:space-between;padding:10px 2px;font-size:14px;}
+.detail-row span:first-child{color:var(--text-sub);}
+.detail-row span:last-child{font-weight:700;}
+
+@media (max-width:360px){
+  .app-title{font-size:26px;}
+  .balance-hero .amount{font-size:33px;}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+/* ============================================================
+   SUIVI FINANCIER — logique application
+   ============================================================ */
+(function(){
+"use strict";
+
+/* ---------------- Icons (inline SVG, feather-style) ---------------- */
+const ICONS = {
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>',
+  list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
+  trend:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
+  pie:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+  filter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>',
+  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  arrowLeft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>',
+  more:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+  budget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+};
+
+/* ---------------- Utils ---------------- */
+function normalize(s){
+  return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+}
+function escHtml(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtMoney(n){
+  if(n==null || isNaN(n)) n=0;
+  const sign = n<0 ? "-" : "";
+  const abs = Math.abs(n);
+  return sign + abs.toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}) + " €";
+}
+function fmtMoneySigned(n){
+  return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR') + " €";
+}
+const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const MONTHS_FR_SHORT = ["jan.","fév.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+function pad2(n){return String(n).padStart(2,"0");}
+function toISO(d){return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());}
+function fmtDateLong(d){return DAYS_FR[d.getDay()]+" "+d.getDate()+" "+MONTHS_FR[d.getMonth()]+" "+d.getFullYear();}
+function fmtDateShort(d){return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+d.getFullYear();}
+function fmtMonthYear(y,m){return MONTHS_FR[m]+" "+y;}
+function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms);};}
+function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
+
+/* ---------------- Date parsing ---------------- */
+function parseDateValue(val){
+  if(val==null || val==="") return null;
+  if(val instanceof Date && !isNaN(val)) return new Date(val.getFullYear(),val.getMonth(),val.getDate());
+  if(typeof val === "number"){
+    // Excel serial date
+    const epoch = new Date(Date.UTC(1899,11,30));
+    const d = new Date(epoch.getTime() + val*86400000);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  const s = String(val).trim();
+  let m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  if(m){
+    const day=parseInt(m[1],10), month=parseInt(m[2],10), year=parseInt(m[3],10);
+    if(month>=1&&month<=12&&day>=1&&day<=31) return new Date(year,month-1,day);
+  }
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m) return new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10));
+  const fallback = new Date(s);
+  if(!isNaN(fallback)) return new Date(fallback.getFullYear(),fallback.getMonth(),fallback.getDate());
+  return null;
+}
+
+/* remarque -> transformed date info */
+function computeTransform(remarque){
+  const r = String(remarque||"").trim();
+  let m = r.match(/(\d{2})-(\d{2})$/);
+  if(m){
+    const mm = parseInt(m[2],10);
+    if(mm>=1 && mm<=12){
+      const yy = parseInt(m[1],10);
+      const year = 2000+yy;
+      return {mode:"month", year, month: mm-1};
+    }
+  }
+  m = r.match(/(?:^|[^0-9])(\d{4})$/);
+  if(m){
+    const year = parseInt(m[1],10);
+    if(year>=1990 && year<=2100){
+      return {mode:"yearsplit", year};
+    }
+  }
+  return {mode:"same"};
+}
+
+/* ---------------- Type normalization ---------------- */
+function normType(t){
+  const n = normalize(t);
+  if(n.startsWith("inc") || n==="revenu") return "Income";
+  if(n.startsWith("exp") || n==="depense") return "Expense";
+  if(n.startsWith("trans") || n==="virement") return "Transfer";
+  return t;
+}
+
+/* Strips a trailing parenthetical period marker from a "Groupe" value,
+   e.g. "Cliff Haven (23-01-08)" -> "Cliff Haven", "France (22-07)" -> "France".
+   Values without a trailing parenthetical are returned unchanged. */
+function baseGroupe(str){
+  const s = String(str||"").trim();
+  const m = s.match(/^(.*?)\s*\([^)]*\)\s*$/);
+  return m ? m[1].trim() : s;
+}
+
+window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
+  fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+
+const LS_SETTINGS = "sf_settings_v1";
+const LS_KEY_LEGACY = "sf_transactions_v1"; // ancien emplacement (localStorage), migré automatiquement
+
+/* Traduit une erreur de stockage (IndexedDB ou localStorage) en message compréhensible */
+function describeStorageError(e, byteLen){
+  const name = e && e.name ? e.name : "";
+  const sizeMb = byteLen ? (byteLen/1048576).toFixed(1)+" Mo" : "";
+  if(name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED"){
+    return "Espace de stockage insuffisant sur cet appareil pour enregistrer vos données"+(sizeMb?` (~${sizeMb})`:"")+". Libérez de l'espace (autres apps, navigation privée…) ou exportez régulièrement une sauvegarde.";
+  }
+  if(name === "InvalidStateError"){
+    return "Le stockage local a été fermé ou est inaccessible (onglet en arrière-plan, navigation privée). Rouvrez la page et réessayez.";
+  }
+  if(name === "VersionError"){
+    return "Conflit de version de la base de données locale (probablement un autre onglet de l'application ouvert). Fermez les autres onglets et réessayez.";
+  }
+  if(!window.indexedDB){
+    return "IndexedDB n'est pas disponible sur ce navigateur (mode privé strict ou navigateur ancien).";
+  }
+  return "Erreur de stockage" + (name?` (${name})`:"") + (e && e.message ? " : "+e.message : "") + ".";
+}
+
+/* ---------------- IndexedDB (grande capacité de stockage) ---------------- */
+const IDB_NAME = "sf_finance_db";
+const IDB_STORE = "kv";
+let _idbPromise = null;
+function idbOpen(){
+  if(_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve,reject)=>{
+    if(!window.indexedDB){ reject(new Error("IndexedDB indisponible")); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+  return _idbPromise;
+}
+function idbGet(key){
+  return idbOpen().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(IDB_STORE,"readonly");
+    const r = tx.objectStore(IDB_STORE).get(key);
+    r.onsuccess = ()=>resolve(r.result);
+    r.onerror = ()=>reject(r.error);
+  }));
+}
+function idbSet(key,val){
+  return idbOpen().then(db=>new Promise((resolve,reject)=>{
+    let tx;
+    try{
+      tx = db.transaction(IDB_STORE,"readwrite");
+    }catch(e){ reject(e); return; }
+    tx.onabort = ()=>reject(tx.error || new Error("Transaction IndexedDB annulée"));
+    tx.onerror = ()=>reject(tx.error || new Error("Erreur de transaction IndexedDB"));
+    let r;
+    try{
+      r = tx.objectStore(IDB_STORE).put(val,key);
+    }catch(e){ reject(e); return; }
+    r.onsuccess = ()=>resolve(true);
+    r.onerror = ()=>{ reject(r.error); };
+  }));
+}
+function idbDelete(key){
+  return idbOpen().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(IDB_STORE,"readwrite");
+    const r = tx.objectStore(IDB_STORE).delete(key);
+    r.onsuccess = ()=>resolve(true);
+    r.onerror = ()=>reject(r.error);
+  }));
+}
+
+/* ---------------- Store ---------------- */
+const Store = {
+  transactions: [], // array of txn objects
+  settings: {theme:"auto", dateBasis:"indiquee", groupAliasRules:[], accountTypes:{}, personAliasRules:[],
+    groupKind:{}, groupVoyageMonth:{},
+    budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
+      amortCategories:[], amortPeriodMonths:null, adjustments:[]}},
+  storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
+
+  /* Charge les données au démarrage. Doit être attendu (await) avant d'afficher l'appli. */
+  async load(){
+    try{
+      const raw = await idbGet("transactions");
+      if(raw){
+        this.transactions = JSON.parse(raw).map(t=>({...t, date:new Date(t.date)}));
+      } else {
+        // Migration depuis l'ancienne version (localStorage) si elle existe
+        const legacy = localStorage.getItem(LS_KEY_LEGACY);
+        if(legacy){
+          this.transactions = JSON.parse(legacy).map(t=>({...t, date:new Date(t.date)}));
+          await idbSet("transactions", legacy);
+          localStorage.removeItem(LS_KEY_LEGACY);
+        }
+      }
+    }catch(e){
+      console.warn("IndexedDB indisponible, repli sur localStorage", e);
+      this.storageMode = "localstorage";
+      try{
+        const raw = localStorage.getItem(LS_KEY_LEGACY);
+        if(raw) this.transactions = JSON.parse(raw).map(t=>({...t, date:new Date(t.date)}));
+      }catch(e2){ this.transactions=[]; }
+    }
+    try{
+      const rawS = localStorage.getItem(LS_SETTINGS);
+      if(rawS) this.settings = Object.assign(this.settings, JSON.parse(rawS));
+    }catch(e){}
+    this.normalizeSettings();
+    // Backfill groupeBase for records saved by an older version of the app
+    this.transactions.forEach(t=>{
+      if(t.groupeBase==null) t.groupeBase = t.groupe ? U.baseGroupe(t.groupe) : "";
+    });
+  },
+
+  /* Sauvegarde asynchrone. Retourne une Promise<boolean>. Peut être appelée sans await
+     pour une UI réactive ; utiliser .then(ok=>...) pour confirmer le résultat.
+     En cas d'échec, Store.lastSaveError contient un message explicite (à afficher à l'utilisateur). */
+  lastSaveError: null,
+  saveTransactions(){
+    this.lastSaveError = null;
+    const arr = this.transactions.map(t=>({...t, date:t.date.toISOString()}));
+    let json;
+    try{
+      json = JSON.stringify(arr);
+    }catch(e){
+      this.lastSaveError = "Impossible de préparer les données (" + (e && e.message ? e.message : e) + ")";
+      return Promise.resolve(false);
+    }
+    if(this.storageMode === "localstorage"){
+      try{ localStorage.setItem(LS_KEY_LEGACY, json); return Promise.resolve(true); }
+      catch(e){
+        this.lastSaveError = describeStorageError(e, json.length);
+        console.warn("Erreur de sauvegarde", e);
+        return Promise.resolve(false);
+      }
+    }
+    return idbSet("transactions", json).then(()=>true).catch(e=>{
+      console.warn("Erreur de sauvegarde IndexedDB", e);
+      this.lastSaveError = describeStorageError(e, json.length);
+      // Repli d'urgence : si les données restent raisonnablement petites, on tente localStorage
+      // pour ne pas perdre l'import en cours, même si IndexedDB est en défaut sur cet appareil.
+      if(json.length < 4*1024*1024){
+        try{
+          localStorage.setItem(LS_KEY_LEGACY, json);
+          this.storageMode = "localstorage";
+          this.lastSaveError += " — repli automatique sur le stockage navigateur réussi, vos données sont bien enregistrées.";
+          return true;
+        }catch(e2){
+          this.lastSaveError += " Le repli de secours (stockage navigateur) a également échoué : " + (e2 && e2.message ? e2.message : e2) + ".";
+        }
+      }
+      return false;
+    });
+  },
+  lastSettingsSaveError: null,
+  saveSettings(){
+    this.lastSettingsSaveError = null;
+    try{
+      localStorage.setItem(LS_SETTINGS, JSON.stringify(this.settings));
+      return true;
+    }catch(e){
+      console.warn("Erreur de sauvegarde des paramètres/filtres", e);
+      this.lastSettingsSaveError = describeStorageError(e);
+      return false;
+    }
+  },
+  /* Comble les champs manquants (settings anciens/partiels) pour éviter les erreurs sur les nouvelles fonctionnalités */
+  normalizeSettings(){
+    const s = this.settings;
+    if(!s.groupKind) s.groupKind = {};
+    if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
+    if(!s.budget) s.budget = {};
+    const b = s.budget;
+    if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
+    if(b.mode!=="amorti" && b.mode!=="brut") b.mode = "amorti";
+    if(b.startMonth===undefined) b.startMonth = null;
+    if(b.mainGroup===undefined) b.mainGroup = null;
+    if(!Array.isArray(b.extraGroups)) b.extraGroups = [];
+    if(!Array.isArray(b.amortCategories)) b.amortCategories = [];
+    if(b.amortPeriodMonths===undefined) b.amortPeriodMonths = null;
+    if(!Array.isArray(b.adjustments)) b.adjustments = [];
+  },
+  clearAll(){
+    this.transactions=[];
+    if(this.storageMode === "localstorage"){
+      try{ localStorage.removeItem(LS_KEY_LEGACY); }catch(e){}
+      return Promise.resolve(true);
+    }
+    return idbDelete("transactions").catch(e=>{ console.warn(e); return false; });
+  },
+  /* Estimation de l'espace de stockage utilisé/disponible (si le navigateur le permet) */
+  async estimateUsage(){
+    if(navigator.storage && navigator.storage.estimate){
+      try{ return await navigator.storage.estimate(); }catch(e){ return null; }
+    }
+    return null;
+  }
+};
+window.__SF_STORE = Store;
+
+/* ---------------- Header mapping ---------------- */
+const HEADER_MAP = {
+  "date":"date",
+  "montant":"montant",
+  "type":"type",
+  "categorie":"categorie",
+  "categorie de depense":"categorie",
+  "categorie de la depense":"categorie",
+  "personne":"personne",
+  "compte":"compte",
+  "compte cible":"compteCible",
+  "comptecible":"compteCible",
+  "groupe":"groupe",
+  "remarque":"remarque",
+};
+
+function buildTxnId(t){
+  return [t.dateISO,t.montant,t.type,t.categorie||"",t.personne||"",t.compte||"",t.compteCible||"",t.groupe||"",t.remarque||""].join("|");
+}
+
+/* Turn a raw row object (header->value) into a transaction, or null if invalid */
+function rowToTxn(row){
+  const mapped = {};
+  Object.keys(row).forEach(k=>{
+    const norm = U.normalize(k);
+    const field = HEADER_MAP[norm];
+    if(field) mapped[field] = row[k];
+  });
+  if(mapped.date==null || mapped.montant==null) return null;
+  const date = U.parseDateValue(mapped.date);
+  if(!date) return null;
+  let montant = mapped.montant;
+  if(typeof montant === "string") montant = parseFloat(montant.replace(/\s/g,"").replace(",","."));
+  montant = Number(montant);
+  if(isNaN(montant)) return null;
+  const type = U.normType(mapped.type);
+  const remarque = mapped.remarque==null ? "" : String(mapped.remarque).trim();
+  const transform = U.computeTransform(remarque);
+
+  const groupe = mapped.groupe==null? "" : String(mapped.groupe).trim();
+  const t = {
+    date, dateISO: U.toISO(date),
+    montant, type,
+    categorie: mapped.categorie==null? "" : String(mapped.categorie).trim(),
+    personne: mapped.personne==null? "" : String(mapped.personne).trim(),
+    compte: mapped.compte==null? "" : String(mapped.compte).trim(),
+    compteCible: mapped.compteCible==null? "" : String(mapped.compteCible).trim(),
+    groupe,
+    groupeBase: groupe ? U.baseGroupe(groupe) : "",
+    remarque,
+    transform,
+  };
+  t.id = buildTxnId(t);
+  return t;
+}
+
+/* Parse a File (xlsx/xls/csv) -> Promise<transactions[]> */
+/* Locate the sheet holding transaction rows (has Date + Montant headers), ignoring a "Paramètres" sheet */
+function findDataSheetName(wb){
+  for(const name of wb.SheetNames){
+    if(U.normalize(name)==="parametres") continue;
+    const sheet = wb.Sheets[name];
+    if(!sheet || !sheet['!ref']) continue;
+    const headerRow = XLSX.utils.sheet_to_json(sheet, {header:1, defval:null})[0];
+    if(headerRow){
+      const normHeaders = headerRow.map(h=>U.normalize(h));
+      if(normHeaders.includes("date") && normHeaders.includes("montant")) return name;
+    }
+  }
+  return wb.SheetNames.find(n=>U.normalize(n)!=="parametres") || wb.SheetNames[0];
+}
+
+/* Parses an optional "Paramètres" sheet: group-alias rules (Groupe / Groupe de groupe / Date début / Date fin)
+   and account types (Compte / Type de compte). Returns null if the sheet isn't found. */
+function parseParametresSheet(wb){
+  const sheetName = wb.SheetNames.find(n=>U.normalize(n)==="parametres");
+  const groupRules = [];
+  const personRules = [];
+  const accountTypes = {};
+  const groupKind = {};
+  const groupVoyageMonth = {};
+  if(sheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const groupe = norm["groupe"];
+      const superGroupe = norm["groupe de groupe"];
+      const compte = norm["compte"];
+      const typeCompte = norm["type de compte"];
+      const personne = norm["personne"];
+      const superPersonne = norm["groupe de personnes"];
+      const kGroupe = norm["groupe (type budget)"];
+      const kType = norm["type budget (quotidien/voyage)"];
+      const kMonth = norm["mois voyage (aaaa-mm)"];
+      if(groupe && superGroupe){
+        const df = U.parseDateValue(norm["date debut"]);
+        const dt = U.parseDateValue(norm["date fin"]);
+        groupRules.push({
+          groupe: String(groupe).trim(),
+          superGroupe: String(superGroupe).trim(),
+          dateFrom: df ? U.toISO(df) : null,
+          dateTo: dt ? U.toISO(dt) : null
+        });
+      }
+      if(personne && superPersonne){
+        personRules.push({
+          personne: String(personne).trim(),
+          superPersonne: String(superPersonne).trim()
+        });
+      }
+      if(compte && typeCompte){
+        accountTypes[String(compte).trim()] = String(typeCompte).trim();
+      }
+      if(kGroupe && kType){
+        const base = String(kGroupe).trim();
+        groupKind[base] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
+        if(kMonth) groupVoyageMonth[base] = String(kMonth).trim();
+      }
+    });
+  }
+  const budgetSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget");
+  const budgetAdjustments = [];
+  if(budgetSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[budgetSheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const month = norm["mois"], groupe = norm["groupe"], montant = norm["montant"];
+      if(month && groupe && montant!=null){
+        budgetAdjustments.push({
+          month: String(month).trim(), groupe: String(groupe).trim(),
+          categorie: norm["categorie"]?String(norm["categorie"]).trim():"",
+          montant: Number(String(montant).replace(",",".")) || 0,
+          remarque: norm["remarque"]?String(norm["remarque"]).trim():""
+        });
+      }
+    });
+  }
+  if(!sheetName && !budgetSheetName) return null;
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, budgetAdjustments};
+}
+
+function parseFile(file){
+  return new Promise((resolve,reject)=>{
+    const name = file.name.toLowerCase();
+    const isCsv = name.endsWith(".csv");
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error("Lecture du fichier impossible"));
+    reader.onload = (e)=>{
+      try{
+        let wb;
+        if(isCsv){
+          wb = XLSX.read(e.target.result, {type:"binary", cellDates:true, raw:false});
+        } else {
+          const data = new Uint8Array(e.target.result);
+          wb = XLSX.read(data, {type:"array", cellDates:true, raw:false});
+        }
+        const sheetName = findDataSheetName(wb);
+        const sheet = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+        const txns = [];
+        let skipped = 0;
+        rows.forEach(r=>{
+          const t = rowToTxn(r);
+          if(t) txns.push(t); else skipped++;
+        });
+        const params = isCsv ? null : parseParametresSheet(wb);
+        resolve({txns, skipped, total: rows.length, params});
+      }catch(err){ reject(err); }
+    };
+    if(isCsv) reader.readAsBinaryString(file);
+    else reader.readAsArrayBuffer(file);
+  });
+}
+
+/* Merge new txns into store (in-memory only — caller must call Store.saveTransactions() to persist).
+   mode: "replace" | "merge". Returns stats. */
+function importTxns(newTxns, mode){
+  if(mode === "replace"){
+    Store.transactions = newTxns.slice();
+    Store.transactions.sort((a,b)=>a.date-b.date);
+    return {added:newTxns.length, skippedDup:0, mode};
+  }
+  const existingIds = new Set(Store.transactions.map(t=>t.id));
+  let added=0, dup=0;
+  newTxns.forEach(t=>{
+    if(existingIds.has(t.id)){ dup++; return; }
+    existingIds.add(t.id);
+    Store.transactions.push(t);
+    added++;
+  });
+  Store.transactions.sort((a,b)=>a.date-b.date);
+  return {added, skippedDup:dup, mode};
+}
+
+/* Generate randomized demo dataset for quick testing */
+function generateDemoData(n){
+  n = n||250;
+  const comptes = ["Compte courant","Livret A","Compte joint","Espèces"];
+  const groupes = ["Vie quotidienne","Voyage Italie (24-05)","Voyage Portugal (23-08)","Lyon (24-01_06)"];
+  const cats = ["Restauration","Courses","Transport","Loisir-Sport","Logement","Salaire","Cadeau reçu","Santé-Hygiène","Voyage","Bar-café"];
+  const persons = ["Supermarché","Ami","Famille","Employeur","Boulangerie","SNCF"];
+  const remarquesSuffix = ["","","", " 24-05"," 23-08","2023"];
+  const out=[];
+  let d = new Date(2023,0,1);
+  for(let i=0;i<n;i++){
+    d = new Date(d.getTime() + Math.random()*3*86400000);
+    if(d> new Date()) d = new Date();
+    const roll = Math.random();
+    let type, montant, categorie="", personne="", compte, compteCible="";
+    compte = comptes[Math.floor(Math.random()*comptes.length)];
+    if(roll<0.08){
+      type="Transfer"; montant = Math.round(Math.random()*500+10);
+      do{ compteCible = comptes[Math.floor(Math.random()*comptes.length)]; }while(compteCible===compte);
+    } else if(roll<0.2){
+      type="Income"; montant = Math.round(Math.random()*1500+50);
+      categorie = Math.random()<0.6?"Salaire":"Cadeau reçu";
+      personne = persons[Math.floor(Math.random()*persons.length)];
+    } else {
+      type="Expense"; montant = -Math.round(Math.random()*180+3);
+      categorie = cats[Math.floor(Math.random()*cats.length)];
+      personne = persons[Math.floor(Math.random()*persons.length)];
+    }
+    const suffix = remarquesSuffix[Math.floor(Math.random()*remarquesSuffix.length)];
+    const remarque = (type==="Transfer"? "Virement "+compte+" vers "+compteCible : categorie+" "+personne).trim()+suffix;
+    const row = {
+      Date: U.pad2(d.getDate())+"."+U.pad2(d.getMonth()+1)+"."+d.getFullYear(),
+      Type: type, Montant: montant, "Catégorie": categorie, Personne: personne,
+      Compte: compte, "Compte cible": compteCible, Groupe: groupes[Math.floor(Math.random()*groupes.length)],
+      Remarque: remarque
+    };
+    const t = rowToTxn(row);
+    if(t) out.push(t);
+  }
+  out.sort((a,b)=>a.date-b.date);
+  return out;
+}
+
+window.__SF_DATA = {parseFile, importTxns, generateDemoData, rowToTxn, buildTxnId};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+
+/* ---------------- Filters state ---------------- */
+const Filters = {
+  search:"",
+  dateFrom:null, dateTo:null,
+  types: new Set(),       // empty = all
+  categories: new Set(),
+  personnes: new Set(),
+  comptes: new Set(),
+  groupes: new Set(),
+
+  reset(){
+    this.search=""; this.dateFrom=null; this.dateTo=null;
+    this.types.clear(); this.categories.clear(); this.personnes.clear();
+    this.comptes.clear(); this.groupes.clear();
+  },
+  /* Sauvegarde les filtres actuels pour qu'ils soient retrouvés à la prochaine ouverture de l'application. */
+  persist(){
+    Store.settings.filters = {
+      search: this.search,
+      dateFrom: this.dateFrom ? U.toISO(this.dateFrom) : null,
+      dateTo: this.dateTo ? U.toISO(this.dateTo) : null,
+      types: Array.from(this.types),
+      categories: Array.from(this.categories),
+      personnes: Array.from(this.personnes),
+      comptes: Array.from(this.comptes),
+      groupes: Array.from(this.groupes),
+    };
+    const ok = Store.saveSettings();
+    if(!ok && window.__SF_APP && window.__SF_APP.showToast){
+      window.__SF_APP.showToast("Les filtres n'ont pas pu être mémorisés : " + (Store.lastSettingsSaveError||"raison inconnue"));
+    }
+    return ok;
+  },
+  /* Recharge les filtres sauvegardés au démarrage de l'application. */
+  restore(){
+    const saved = Store.settings.filters;
+    if(!saved) return;
+    this.search = saved.search || "";
+    this.dateFrom = saved.dateFrom ? new Date(saved.dateFrom+"T00:00:00") : null;
+    this.dateTo = saved.dateTo ? new Date(saved.dateTo+"T23:59:59") : null;
+    this.types = new Set(saved.types||[]);
+    this.categories = new Set(saved.categories||[]);
+    this.personnes = new Set(saved.personnes||[]);
+    this.comptes = new Set(saved.comptes||[]);
+    this.groupes = new Set(saved.groupes||[]);
+  },
+  activeCount(){
+    let c=0;
+    if(this.dateFrom||this.dateTo) c++;
+    if(this.types.size) c++;
+    if(this.categories.size) c++;
+    if(this.personnes.size) c++;
+    if(this.comptes.size) c++;
+    if(this.groupes.size) c++;
+    return c;
+  },
+  matches(t){
+    if(this.dateFrom && t.date < this.dateFrom) return false;
+    if(this.dateTo && t.date > this.dateTo) return false;
+    if(this.types.size && !this.types.has(t.type)) return false;
+    if(this.categories.size && !this.categories.has(t.categorie)) return false;
+    if(this.personnes.size){
+      const pDisplay = getPersonneDisplay(t);
+      if(!this.personnes.has(pDisplay) && !this.personnes.has(t.personne)) return false;
+    }
+    if(this.groupes.size){
+      const gDisplay = getGroupeDisplay(t);
+      const gBase = t.groupeBase || U.baseGroupe(t.groupe);
+      if(!this.groupes.has(gDisplay) && !this.groupes.has(gBase) && !this.groupes.has(t.groupe)) return false;
+    }
+    if(this.comptes.size){
+      const inCompte = this.comptes.has(t.compte) || (t.compteCible && this.comptes.has(t.compteCible));
+      if(!inCompte) return false;
+    }
+    if(this.search){
+      const s = U.normalize(this.search);
+      const hay = U.normalize([t.remarque,t.personne,t.categorie,t.groupe,t.compte,t.compteCible].join(" "));
+      if(!hay.includes(s)) return false;
+    }
+    return true;
+  }
+};
+window.__SF_FILTERS = Filters;
+
+/* ---------------- Groupe merging (rules: groupe -> groupe de groupe, with optional date range) ---------------- */
+function findGroupAliasRule(base, date){
+  const rules = Store.settings.groupAliasRules || [];
+  let best = null;
+  for(const r of rules){
+    if(r.groupe !== base) continue;
+    if(r.dateFrom && date < new Date(r.dateFrom)) continue;
+    if(r.dateTo && date > new Date(r.dateTo+"T23:59:59")) continue;
+    if(!best || ((r.dateFrom||r.dateTo) && !(best.dateFrom||best.dateTo))) best = r;
+  }
+  return best;
+}
+function getGroupeDisplay(t){
+  if(!t.groupe) return "(Non renseigné)";
+  const base = t.groupeBase || U.baseGroupe(t.groupe);
+  const rule = findGroupAliasRule(base, t.date);
+  return rule ? rule.superGroupe : base;
+}
+/* Effective super-groupe for a base name shown in management UI (ignoring date, first rule found) */
+function getSuperGroupeForBase(base){
+  const rules = Store.settings.groupAliasRules || [];
+  const found = rules.filter(r=>r.groupe===base);
+  return found;
+}
+function distinctValuesGroupeDisplay(transactions){
+  const map = new Map();
+  transactions.forEach(t=>{
+    if(!t.groupe) return;
+    const v = getGroupeDisplay(t);
+    map.set(v, (map.get(v)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).map(([value,count])=>({value,count}));
+}
+function distinctBaseGroupes(transactions){
+  const map = new Map(); // base -> count
+  transactions.forEach(t=>{
+    if(!t.groupe) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    map.set(base, (map.get(base)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=> a[0].localeCompare(b[0],'fr')).map(([base,count])=>({base,count}));
+}
+/* Nested structure for the filter checklist: sections keyed by super-groupe name (only bases with a rule),
+   plus a flat list of unassigned base names. */
+function groupeHierarchy(transactions){
+  const bases = distinctBaseGroupes(transactions); // [{base,count}]
+  const sections = new Map(); // superGroupe -> [{base,count}]
+  const flat = [];
+  bases.forEach(({base,count})=>{
+    const rules = getSuperGroupeForBase(base);
+    if(rules.length){
+      // list under every distinct super-groupe it can resolve to
+      const supers = Array.from(new Set(rules.map(r=>r.superGroupe)));
+      supers.forEach(sup=>{
+        if(!sections.has(sup)) sections.set(sup, []);
+        sections.get(sup).push({base, count});
+      });
+    } else {
+      flat.push({base, count});
+    }
+  });
+  return {sections, flat};
+}
+/* Variante utilisée par le filtre "Groupe" : conserve le libellé complet de chaque groupe
+   (avec l'indication de date entre parenthèses, ex. "Cliff Haven (23-01-08)") plutôt que de
+   fusionner toutes les dates d'un même lieu sous un seul nom de base. Le classement dans les
+   groupes de groupe (sections) reste basé sur le nom de base, comme pour groupeHierarchy(). */
+function distinctFullGroupes(transactions){
+  const map = new Map(); // libellé complet -> count
+  transactions.forEach(t=>{
+    if(!t.groupe) return;
+    map.set(t.groupe, (map.get(t.groupe)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=> a[0].localeCompare(b[0],'fr')).map(([full,count])=>({full,count}));
+}
+function groupeHierarchyFull(transactions){
+  const fulls = distinctFullGroupes(transactions); // [{full,count}]
+  const sections = new Map(); // superGroupe -> [{base:full, count}]
+  const flat = [];
+  fulls.forEach(({full,count})=>{
+    const base = U.baseGroupe(full);
+    const rules = getSuperGroupeForBase(base);
+    if(rules.length){
+      const supers = Array.from(new Set(rules.map(r=>r.superGroupe)));
+      supers.forEach(sup=>{
+        if(!sections.has(sup)) sections.set(sup, []);
+        sections.get(sup).push({base:full, count});
+      });
+    } else {
+      flat.push({base:full, count});
+    }
+  });
+  return {sections, flat};
+}
+
+/* ---------------- Account type (Courant / Épargne) — set manually by the user in Paramètres ---------------- */
+function getAccountTypeDisplay(compteName){
+  if(!compteName) return "(Non renseigné)";
+  const overrides = Store.settings.accountTypes || {};
+  return overrides[compteName] || "Courant";
+}
+
+/* ---------------- Type de groupe (Vie quotidienne / Voyage) — set manually, utilisé par l'onglet Budget ---------------- */
+function getGroupKind(base){
+  const map = Store.settings.groupKind || {};
+  return map[base] === "voyage" ? "voyage" : "quotidien";
+}
+function getGroupVoyageMonth(base){
+  const map = Store.settings.groupVoyageMonth || {};
+  return map[base] || null;
+}
+
+/* ---------------- Personne merging (rules: personne -> groupe de personnes ; pas de dates) ---------------- */
+function findPersonAliasRule(base){
+  const rules = Store.settings.personAliasRules || [];
+  return rules.find(r=>r.personne===base) || null;
+}
+function getPersonneDisplay(t){
+  if(!t.personne) return "(Non renseigné)";
+  const rule = findPersonAliasRule(t.personne);
+  return rule ? rule.superPersonne : t.personne;
+}
+function getSuperPersonneForBase(base){
+  const rules = Store.settings.personAliasRules || [];
+  return rules.filter(r=>r.personne===base);
+}
+function distinctValuesPersonneDisplay(transactions){
+  const map = new Map();
+  transactions.forEach(t=>{
+    if(!t.personne) return;
+    const v = getPersonneDisplay(t);
+    map.set(v, (map.get(v)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).map(([value,count])=>({value,count}));
+}
+function distinctBasePersonnes(transactions){
+  const map = new Map();
+  transactions.forEach(t=>{
+    if(!t.personne) return;
+    map.set(t.personne, (map.get(t.personne)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=> a[0].localeCompare(b[0],'fr')).map(([base,count])=>({base,count}));
+}
+function personneHierarchy(transactions){
+  const bases = distinctBasePersonnes(transactions);
+  const sections = new Map();
+  const flat = [];
+  bases.forEach(({base,count})=>{
+    const rules = getSuperPersonneForBase(base);
+    if(rules.length){
+      const supers = Array.from(new Set(rules.map(r=>r.superPersonne)));
+      supers.forEach(sup=>{
+        if(!sections.has(sup)) sections.set(sup, []);
+        sections.get(sup).push({base, count});
+      });
+    } else {
+      flat.push({base, count});
+    }
+  });
+  return {sections, flat};
+}
+
+/* ---------------- Catégorie classification (Income / Expense) + alphabetical sort ---------------- */
+function classifyCategoryTypes(transactions){
+  const stats = new Map();
+  transactions.forEach(t=>{
+    if(t.type==="Transfer" || !t.categorie) return;
+    if(!stats.has(t.categorie)) stats.set(t.categorie, {inc:0, exp:0});
+    const o = stats.get(t.categorie);
+    if(t.type==="Income") o.inc++; else if(t.type==="Expense") o.exp++;
+  });
+  const map = new Map();
+  stats.forEach((o,cat)=> map.set(cat, o.inc>=o.exp ? "Income" : "Expense"));
+  return map;
+}
+/* Distinct catégorie list ordered: Income (A→Z), then Expense (A→Z) */
+function distinctValuesCategorieSorted(transactions){
+  const items = distinctValues(transactions, "categorie");
+  const typeMap = classifyCategoryTypes(transactions);
+  const withType = items.map(it=>({...it, kind: typeMap.get(it.value)||"Expense"}));
+  withType.sort((a,b)=>{
+    if(a.kind!==b.kind) return a.kind==="Income" ? -1 : 1;
+    return a.value.localeCompare(b.value, 'fr');
+  });
+  return withType;
+}
+/* Display value used when grouping/breaking down by a dimension (collapses groupe/compte/personne) */
+function dimDisplayValue(t, dim){
+  if(dim==="groupe") return getGroupeDisplay(t);
+  if(dim==="compte") return getAccountTypeDisplay(t.compte);
+  if(dim==="personne") return getPersonneDisplay(t);
+  return t[dim] || "(Non renseigné)";
+}
+
+const TYPE_LABELS_FR = {Income:"Revenus", Expense:"Dépenses", Transfer:"Transferts"};
+
+function getActiveChips(){
+  const chips = [];
+  if(Filters.dateFrom) chips.push({kind:"dateFrom", label:"Depuis "+U.fmtDateShort(Filters.dateFrom)});
+  if(Filters.dateTo) chips.push({kind:"dateTo", label:"Jusqu'à "+U.fmtDateShort(Filters.dateTo)});
+  Filters.types.forEach(v=>chips.push({kind:"types", value:v, label:TYPE_LABELS_FR[v]||v}));
+  Filters.comptes.forEach(v=>chips.push({kind:"comptes", value:v, label:v}));
+  Filters.groupes.forEach(v=>chips.push({kind:"groupes", value:v, label:v}));
+  Filters.categories.forEach(v=>chips.push({kind:"categories", value:v, label:v}));
+  Filters.personnes.forEach(v=>chips.push({kind:"personnes", value:v, label:v}));
+  if(Filters.search) chips.push({kind:"search", label:'"'+Filters.search+'"'});
+  return chips;
+}
+function removeChip(chip){
+  if(chip.kind==="dateFrom") Filters.dateFrom=null;
+  else if(chip.kind==="dateTo") Filters.dateTo=null;
+  else if(chip.kind==="search") Filters.search="";
+  else Filters[chip.kind].delete(chip.value);
+  Filters.persist();
+}
+/* Renders the removable active-filter chip row into containerId. Calls onchange() after any removal. */
+function renderChipsBar(containerId, onchange){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const chips = getActiveChips();
+  if(chips.length===0){ container.innerHTML=""; container.style.display="none"; return; }
+  container.style.display="flex";
+  container.innerHTML = chips.map((c,i)=>`
+    <div class="chip-active" data-i="${i}">
+      <span>${U.escHtml(c.label)}</span>
+      <button class="chip-x" data-i="${i}" aria-label="Retirer">${U.ICONS.close}</button>
+    </div>
+  `).join("") + (chips.length>1 ? `<button class="chip-clearall" id="${containerId}-clearall">Tout effacer</button>` : "");
+  container.querySelectorAll(".chip-x").forEach(btn=>{
+    btn.onclick = ()=>{
+      removeChip(chips[parseInt(btn.dataset.i,10)]);
+      const si = document.getElementById("search-input");
+      if(si) si.value = Filters.search;
+      onchange && onchange();
+    };
+  });
+  const clearBtn = document.getElementById(containerId+"-clearall");
+  if(clearBtn) clearBtn.onclick = ()=>{
+    Filters.reset();
+    Filters.persist();
+    const si = document.getElementById("search-input");
+    if(si) si.value = "";
+    onchange && onchange();
+  };
+}
+Filters.renderChipsBar = renderChipsBar;
+
+function applyFilters(transactions){
+  return transactions.filter(t=>Filters.matches(t));
+}
+
+/* ---------------- Distinct values (for filter chip lists) ---------------- */
+function distinctValues(transactions, field){
+  const map = new Map();
+  transactions.forEach(t=>{
+    const v = t[field];
+    if(v==null || v==="") return;
+    map.set(v, (map.get(v)||0)+1);
+  });
+  return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).map(([value,count])=>({value,count}));
+}
+
+/* ---------------- Account balances (always all-time, unfiltered by design) ---------------- */
+function computeAccountBalances(transactions){
+  const balances = new Map(); // compte -> {balance, income, expense, transferIn, transferOut}
+  function ensure(name){
+    if(!balances.has(name)) balances.set(name,{name,balance:0,income:0,expense:0,transferIn:0,transferOut:0,count:0});
+    return balances.get(name);
+  }
+  transactions.forEach(t=>{
+    if(!t.compte) return;
+    const a = ensure(t.compte);
+    a.count++;
+    if(t.type==="Income"){ a.balance += t.montant; a.income += t.montant; }
+    else if(t.type==="Expense"){ a.balance += t.montant; a.expense += t.montant; }
+    else if(t.type==="Transfer"){
+      a.balance -= t.montant; a.transferOut += t.montant;
+      if(t.compteCible){
+        const b = ensure(t.compteCible);
+        b.balance += t.montant; b.transferIn += t.montant;
+      }
+    }
+  });
+  return Array.from(balances.values()).sort((a,b)=>b.balance-a.balance);
+}
+
+/* ---------------- Totals (income/expense/net) for a filtered set ---------------- */
+function computeTotals(transactions){
+  let income=0, expense=0;
+  transactions.forEach(t=>{
+    if(t.type==="Income") income += t.montant;
+    else if(t.type==="Expense") expense += t.montant;
+  });
+  return {income, expense, net: income+expense};
+}
+
+/* ---------------- Breakdown by dimension (Groupe/Catégorie/Personne/Compte), for filtered set ---------------- */
+function computeBreakdown(transactions, dim, opts){
+  opts = opts||{};
+  const onlyExpense = opts.onlyExpense;
+  const map = new Map();
+  transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(onlyExpense && t.type!=="Expense") return;
+    const key = dimDisplayValue(t, dim);
+    if(!map.has(key)) map.set(key,{key, income:0, expense:0, net:0, count:0});
+    const o = map.get(key);
+    if(t.type==="Income") o.income += t.montant;
+    else if(t.type==="Expense") o.expense += t.montant;
+    o.net += t.montant;
+    o.count++;
+  });
+  return Array.from(map.values());
+}
+
+/* ---------------- Time-bucketed series, respecting date basis ---------------- */
+/* granularity: "year" | "month". dateBasis: "indiquee" | "transformee" */
+function iterateBuckets(t, granularity, dateBasis, cb){
+  // cb(bucketKey, year, month, weight, montant) — weight lets year-split divide amounts
+  if(dateBasis==="transformee"){
+    const tr = t.transform;
+    if(tr.mode==="month"){
+      const key = granularity==="year" ? String(tr.year) : tr.year+"-"+U.pad2(tr.month+1);
+      cb(key, tr.year, tr.month, 1, t.montant);
+      return;
+    }
+    if(tr.mode==="yearsplit"){
+      if(granularity==="year"){
+        cb(String(tr.year), tr.year, 0, 1, t.montant);
+      } else {
+        for(let m=0;m<12;m++){
+          cb(tr.year+"-"+U.pad2(m+1), tr.year, m, 1/12, t.montant/12);
+        }
+      }
+      return;
+    }
+  }
+  const y = t.date.getFullYear(), m = t.date.getMonth();
+  const key = granularity==="year" ? String(y) : y+"-"+U.pad2(m+1);
+  cb(key, y, m, 1, t.montant);
+}
+
+function computeTimeSeries(transactions, granularity, dateBasis, dimension){
+  // returns {buckets:[{key,year,month,label,income,expense,net, byDim:Map}], dimTotals:Map(dimValue->total)}
+  const buckets = new Map();
+  const dimTotals = new Map();
+  function ensureBucket(key,year,month){
+    if(!buckets.has(key)){
+      const label = granularity==="year" ? String(year) : U.MONTHS_FR_SHORT[month]+" "+String(year).slice(2);
+      buckets.set(key,{key,year,month,label,income:0,expense:0,net:0,byDim:new Map()});
+    }
+    return buckets.get(key);
+  }
+  transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    iterateBuckets(t, granularity, dateBasis, (key,year,month,weight,amount)=>{
+      const b = ensureBucket(key,year,month);
+      if(t.type==="Income") b.income += amount; else b.expense += amount;
+      b.net += amount;
+      if(dimension){
+        const dv = dimDisplayValue(t, dimension);
+        b.byDim.set(dv, (b.byDim.get(dv)||0) + amount);
+        dimTotals.set(dv, (dimTotals.get(dv)||0) + Math.abs(amount));
+      }
+    });
+  });
+  const arr = Array.from(buckets.values()).sort((a,b)=> a.key<b.key?-1:1);
+  return {buckets:arr, dimTotals};
+}
+
+window.__SF_AGG = {applyFilters, distinctValues, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
+  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
+  getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
+  getAccountTypeDisplay, getGroupKind, getGroupVoyageMonth,
+  classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const F = window.__SF_FILTERS;
+const AGG = window.__SF_AGG;
+const DATA = window.__SF_DATA;
+const ICONS = U.ICONS;
+
+let currentTab = "dashboard";
+let txnLimit = 60;
+let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | categorie | compte | personne
+let txnGroupsShown = 20; // for dimension-based grouping (limits number of group headers shown)
+let txnPerGroupShown = {}; // groupKey -> number of items shown within that group
+let evoState = {granularity:"month", dateBasis:"indiquee", dimension:"none"};
+let bdState = {dimension:"groupe", kind:"expense"};
+let chartInstances = {};
+let pendingImport = null; // {txns, skipped, total, fileName, isJson}
+let detailTxnId = null;
+
+const DIM_FIELD = {groupe:"groupe", categorie:"categorie", personne:"personne", compte:"compte"};
+const DIM_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
+const GROUPBY_LABEL = {day:"Jour", month_indiquee:"Mois (date indiquée)", month_transformee:"Mois (date transformée)",
+  groupe:"Groupe", categorie:"Catégorie", compte:"Compte", personne:"Personne"};
+const PALETTE = ["#1259D6","#1A9E63","#E4402E","#8A5CF6","#E8A93B","#26A6C9","#D6478B","#6E7A8A","#5FBF7A","#B4772B","#3C6E71","#9B4DCA"];
+
+function resetTxnPagination(){ txnLimit = 60; txnGroupsShown = 20; txnPerGroupShown = {}; }
+
+function showToast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  el.classList.toggle("toast-long", msg.length>60);
+  clearTimeout(showToast._t);
+  const dur = Math.min(9000, Math.max(2600, msg.length*70));
+  showToast._t = setTimeout(()=>el.classList.remove("show"), dur);
+}
+
+/* ================= SHELL ================= */
+function buildShell(){
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="topbar-row">
+        <h1 class="app-title">Suivi financier</h1>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="btn-theme" title="Thème">${ICONS.moon}</button>
+          <button class="icon-btn" id="btn-menu" title="Menu">${ICONS.settings}</button>
+        </div>
+      </div>
+      <div class="balance-hero" id="hero"></div>
+    </div>
+
+    <div class="view active" id="view-dashboard"></div>
+    <div class="view" id="view-transactions"></div>
+    <div class="view" id="view-budget"></div>
+    <div class="view" id="view-evolution"></div>
+    <div class="view" id="view-breakdown"></div>
+    <div class="view" id="view-accounts"></div>
+
+    <div class="float-bar-wrap" id="floatbar-wrap">
+      <div class="float-bar">
+        <input type="text" id="search-input" placeholder="Rechercher une dépense, un lieu…">
+        <button class="fbtn" id="btn-filter">${ICONS.filter}<span class="filter-badge" id="filter-badge" style="display:none"></span></button>
+      </div>
+    </div>
+
+    <div class="bottomnav">
+      <button class="navbtn active" data-tab="dashboard">${ICONS.home}<span>Accueil</span></button>
+      <button class="navbtn" data-tab="transactions">${ICONS.list}<span>Transactions</span></button>
+      <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
+      <button class="navbtn" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
+      <button class="navbtn" id="btn-more" data-tab="more">${ICONS.more}<span>Plus</span></button>
+    </div>
+
+    <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
+    <div class="overlay" id="overlay-import"><div class="sheet" id="sheet-import"></div></div>
+    <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
+    <div class="overlay" id="overlay-more"><div class="sheet" id="sheet-more"></div></div>
+    <div class="overlay modal-center-wrap" id="overlay-detail"><div class="modal-center" id="modal-detail"></div></div>
+    <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
+    <div class="overlay overlay-large" id="overlay-groupmgr"><div class="sheet sheet-large" id="sheet-groupmgr"></div></div>
+    <div class="overlay overlay-large" id="overlay-personmgr"><div class="sheet sheet-large" id="sheet-personmgr"></div></div>
+    <div class="overlay overlay-large" id="overlay-accttype"><div class="sheet sheet-large" id="sheet-accttype"></div></div>
+    <div class="overlay overlay-large" id="overlay-budgetset"><div class="sheet sheet-large" id="sheet-budgetset"></div></div>
+  `;
+
+  document.getElementById("btn-theme").onclick = cycleTheme;
+  document.getElementById("btn-menu").onclick = ()=>window.__SF_MENU.open();
+  document.getElementById("btn-filter").onclick = ()=>window.__SF_FILTERSHEET.openFilterSheet();
+  document.getElementById("search-input").oninput = U.debounce((e)=>{
+    F.search = e.target.value;
+    F.persist();
+    resetTxnPagination();
+    refreshCurrentTab();
+  }, 180);
+
+  document.querySelectorAll(".navbtn").forEach(btn=>{
+    btn.onclick = ()=> btn.dataset.tab==="more" ? openMoreSheet() : switchTab(btn.dataset.tab);
+  });
+
+  document.getElementById("overlay-filter").onclick = (e)=>{ if(e.target.id==="overlay-filter") closeOverlay("overlay-filter"); };
+  document.getElementById("overlay-import").onclick = (e)=>{ if(e.target.id==="overlay-import") closeOverlay("overlay-import"); };
+  document.getElementById("overlay-menu").onclick = (e)=>{ if(e.target.id==="overlay-menu") closeOverlay("overlay-menu"); };
+  document.getElementById("overlay-more").onclick = (e)=>{ if(e.target.id==="overlay-more") closeOverlay("overlay-more"); };
+  document.getElementById("overlay-detail").onclick = (e)=>{ if(e.target.id==="overlay-detail") closeOverlay("overlay-detail"); };
+  document.getElementById("overlay-confirm").onclick = (e)=>{ if(e.target.id==="overlay-confirm") closeOverlay("overlay-confirm"); };
+  document.getElementById("overlay-groupmgr").onclick = (e)=>{ if(e.target.id==="overlay-groupmgr") closeOverlay("overlay-groupmgr"); };
+  document.getElementById("overlay-personmgr").onclick = (e)=>{ if(e.target.id==="overlay-personmgr") closeOverlay("overlay-personmgr"); };
+  document.getElementById("overlay-accttype").onclick = (e)=>{ if(e.target.id==="overlay-accttype") closeOverlay("overlay-accttype"); };
+  document.getElementById("overlay-budgetset").onclick = (e)=>{ if(e.target.id==="overlay-budgetset") closeOverlay("overlay-budgetset"); };
+
+  applyThemeToDom();
+}
+
+/* ================= "PLUS" — onglets secondaires (Évolution / Répartition) ================= */
+function openMoreSheet(){
+  const sheet = document.getElementById("sheet-more");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Plus d'onglets</h2><button class="icon-btn" id="more-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+        Ces onglets sont en pause (bugs en cours de correction) mais restent accessibles ici.
+      </div>
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="more-evolution" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.trend} Évolution</span>
+        </div>
+        <div class="rowline" id="more-breakdown" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.pie} Répartition</span>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("more-close").onclick = ()=>closeOverlay("overlay-more");
+  document.getElementById("more-evolution").onclick = ()=>{ closeOverlay("overlay-more"); switchTab("evolution"); };
+  document.getElementById("more-breakdown").onclick = ()=>{ closeOverlay("overlay-more"); switchTab("breakdown"); };
+  openOverlay("overlay-more");
+}
+
+function closeOverlay(id){ document.getElementById(id).classList.remove("open"); }
+function openOverlay(id){ document.getElementById(id).classList.add("open"); }
+
+function cycleTheme(){
+  const order = ["auto","light","dark"];
+  let i = order.indexOf(Store.settings.theme);
+  Store.settings.theme = order[(i+1)%order.length];
+  Store.saveSettings();
+  applyThemeToDom();
+  showToast("Thème : " + ({auto:"Automatique",light:"Clair",dark:"Sombre"}[Store.settings.theme]));
+}
+function applyThemeToDom(){
+  const t = Store.settings.theme;
+  if(t==="auto"){
+    document.documentElement.removeAttribute("data-theme");
+    const mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+    if(mq && mq.matches) document.documentElement.setAttribute("data-theme","dark");
+  } else {
+    document.documentElement.setAttribute("data-theme", t);
+  }
+  updateThemeColorMeta();
+}
+/* Garde la couleur de la barre d'état Android/du navigateur synchronisée avec le thème réellement affiché
+   (clair ou sombre), plutôt que la couleur par défaut du navigateur. */
+function updateThemeColorMeta(){
+  const meta = document.getElementById("theme-color-meta");
+  if(!meta) return;
+  const isDark = document.documentElement.getAttribute("data-theme")==="dark";
+  meta.setAttribute("content", isDark ? "#0E0F12" : "#F0F1F4");
+}
+
+function switchTab(tab){
+  currentTab = tab;
+  resetTxnPagination();
+  const moreTabs = (tab==="evolution"||tab==="breakdown");
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab || (moreTabs && b.dataset.tab==="more")));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-"+tab).classList.add("active");
+  const showFloat = (tab==="transactions"||tab==="evolution"||tab==="breakdown");
+  document.getElementById("floatbar-wrap").style.display = showFloat ? "flex" : "none";
+  refreshCurrentTab();
+}
+
+function refreshCurrentTab(){
+  renderHero();
+  updateFilterBadge();
+  const V = window.__SF_VIEWS;
+  if(!V) return;
+  if(currentTab==="dashboard") V.renderDashboard();
+  else if(currentTab==="transactions") V.renderTransactions();
+  else if(currentTab==="budget") V.renderBudget && V.renderBudget();
+  else if(currentTab==="evolution") V.renderEvolution();
+  else if(currentTab==="breakdown") V.renderBreakdown();
+  else if(currentTab==="accounts") V.renderAccounts();
+}
+
+function updateFilterBadge(){
+  const n = F.activeCount();
+  const badge = document.getElementById("filter-badge");
+  const btn = document.getElementById("btn-filter");
+  const searchInput = document.getElementById("search-input");
+  if(searchInput.value !== F.search) searchInput.value = F.search;
+  if(n>0){ badge.style.display="flex"; badge.textContent=n; btn.classList.add("active-filter"); }
+  else { badge.style.display="none"; btn.classList.remove("active-filter"); }
+}
+
+/* ================= HERO ================= */
+function renderHero(){
+  const hero = document.getElementById("hero");
+  if(Store.transactions.length===0){ hero.innerHTML=""; return; }
+  const balances = AGG.computeAccountBalances(Store.transactions);
+  const total = balances.reduce((s,a)=>s+a.balance,0);
+  const now = new Date();
+  const monthTxns = Store.transactions.filter(t=>t.date.getFullYear()===now.getFullYear() && t.date.getMonth()===now.getMonth());
+  const totals = AGG.computeTotals(monthTxns);
+  hero.innerHTML = `
+    <div class="label">Solde total</div>
+    <div class="amount">${U.fmtMoney(total)}</div>
+    <div class="sub">
+      <span class="chip chip-in">↑ ${U.fmtMoney(totals.income)} ce mois</span>
+      <span class="chip chip-out">↓ ${U.fmtMoney(Math.abs(totals.expense))} ce mois</span>
+    </div>
+  `;
+}
+
+window.__SF_APP = {
+  buildShell, closeOverlay, openOverlay, switchTab, refreshCurrentTab, showToast, resetTxnPagination, updateThemeColorMeta,
+  state:{get currentTab(){return currentTab;}, get evoState(){return evoState;}, get bdState(){return bdState;},
+         get txnLimit(){return txnLimit;}, set txnLimit(v){txnLimit=v;},
+         get txnGroupBy(){return txnGroupBy;}, set txnGroupBy(v){txnGroupBy=v;},
+         get txnGroupsShown(){return txnGroupsShown;}, set txnGroupsShown(v){txnGroupsShown=v;},
+         get txnPerGroupShown(){return txnPerGroupShown;},
+         get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;}},
+  DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE, chartInstances,
+  pendingImportRef:{get(){return pendingImport;}, set(v){pendingImport=v;}}
+};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const F = window.__SF_FILTERS;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+function emptyStateHtml(opts){
+  return `<div class="empty-state">
+    ${ICONS.inbox}
+    <h3>${opts.title}</h3>
+    <p>${opts.text}</p>
+    ${opts.showImport!==false ? `<button class="btn btn-primary" id="empty-import-btn">${ICONS.upload}Importer des données</button>` : ""}
+    ${opts.showDemo ? `<button class="btn btn-ghost" id="empty-demo-btn" style="margin-top:10px;">Charger des données d'exemple</button>` : ""}
+  </div>`;
+}
+function wireEmptyState(container){
+  const b1 = container.querySelector("#empty-import-btn");
+  if(b1) b1.onclick = ()=>window.__SF_IMPORT.open();
+  const b2 = container.querySelector("#empty-demo-btn");
+  if(b2) b2.onclick = ()=>{
+    const demo = window.__SF_DATA.generateDemoData(260);
+    const stats = window.__SF_DATA.importTxns(demo, "replace");
+    APP.refreshCurrentTab();
+    window.__SF_STORE.saveTransactions().then(ok=>{
+      APP.showToast(ok ? "Données d'exemple chargées ("+stats.added+" transactions)" : "Chargé, mais la sauvegarde a échoué");
+    });
+  };
+}
+
+/* txn icon letter + class */
+function txnIconInfo(t){
+  if(t.type==="Income") return {cls:"inc", letter:(t.categorie||"R")[0].toUpperCase()};
+  if(t.type==="Transfer") return {cls:"trf", letter:"⇄"};
+  return {cls:"exp", letter:(t.categorie||"D")[0].toUpperCase()};
+}
+function txnAmtClass(t){ return t.type==="Income"?"inc":(t.type==="Transfer"?"trf":"exp"); }
+function txnTitle(t){
+  if(t.remarque) return t.remarque;
+  if(t.type==="Transfer") return "Transfert "+t.compte+" → "+t.compteCible;
+  return t.categorie || (t.type==="Income"?"Revenu":"Dépense");
+}
+function txnSubtitle(t){
+  const parts=[];
+  if(t.type==="Transfer"){ parts.push(t.compte+" → "+t.compteCible); }
+  else { if(t.categorie) parts.push(t.categorie); if(t.personne) parts.push(t.personne); }
+  if(t.groupe) parts.push(t.groupe);
+  return parts.join(" · ");
+}
+
+/* ================= DASHBOARD ================= */
+function renderDashboard(){
+  const view = document.getElementById("view-dashboard");
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section">${emptyStateHtml({
+      title:"Aucune donnée pour l'instant",
+      text:"Importez votre fichier Excel ou CSV de suivi de dépenses pour commencer, ou testez l'application avec des données d'exemple.",
+      showDemo:true
+    })}</div>`;
+    wireEmptyState(view);
+    return;
+  }
+  const balances = AGG.computeAccountBalances(Store.transactions);
+  const recent = Store.transactions.slice().sort((a,b)=>b.date-a.date).slice(0,6);
+  const dateMin = Store.transactions.reduce((m,t)=>t.date<m?t.date:m, Store.transactions[0].date);
+  const dateMax = Store.transactions.reduce((m,t)=>t.date>m?t.date:m, Store.transactions[0].date);
+
+  view.innerHTML = `
+    <div class="section">
+      <div class="section-title">Comptes</div>
+      <div class="card" style="padding:6px 16px;">
+        ${balances.slice(0,4).map(a=>`
+          <div class="rowline">
+            <span style="font-weight:600;font-size:14px;">${U.escHtml(a.name)}</span>
+            <span style="font-weight:800;">${U.fmtMoney(a.balance)}</span>
+          </div>`).join("")}
+      </div>
+      ${balances.length>4 ? `<button class="btn btn-ghost btn-sm btn-block" id="dash-see-accounts" style="margin-top:10px;">Voir tous les comptes (${balances.length})</button>` : ""}
+    </div>
+
+    <div class="section">
+      <div class="section-title">Transactions récentes</div>
+      <div id="dash-recent"></div>
+      <button class="btn btn-ghost btn-sm btn-block" id="dash-see-all" style="margin-top:10px;">Voir toutes les transactions</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Aperçu des données</div>
+      <div class="card">
+        <div class="detail-row"><span>Transactions enregistrées</span><span>${Store.transactions.length.toLocaleString('fr-FR')}</span></div>
+        <div class="detail-row"><span>Période couverte</span><span>${U.fmtDateShort(dateMin)} – ${U.fmtDateShort(dateMax)}</span></div>
+        <div class="detail-row"><span>Nombre de comptes</span><span>${balances.length}</span></div>
+      </div>
+    </div>
+  `;
+  const recentWrap = document.getElementById("dash-recent");
+  recent.forEach(t=>recentWrap.appendChild(makeTxnItemEl(t)));
+  document.getElementById("dash-see-all").onclick = ()=>APP.switchTab("transactions");
+  const seeAcc = document.getElementById("dash-see-accounts");
+  if(seeAcc) seeAcc.onclick = ()=>APP.switchTab("accounts");
+}
+
+/* ================= TRANSACTIONS LIST ================= */
+function makeTxnItemEl(t){
+  const info = txnIconInfo(t);
+  const el = document.createElement("div");
+  el.className = "txn-item";
+  el.innerHTML = `
+    <div class="txn-ico ${info.cls}">${info.letter}</div>
+    <div class="txn-mid">
+      <div class="txn-title">${U.escHtml(txnTitle(t))}</div>
+      <div class="txn-sub">${U.escHtml(txnSubtitle(t))}</div>
+    </div>
+    <div class="txn-amt ${txnAmtClass(t)}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
+  `;
+  el.onclick = ()=> openTxnDetail(t.id);
+  return el;
+}
+
+function capitalize(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+/* Determine the group key/label/sort value for a transaction, given the active group-by mode */
+function getGroupInfo(t, groupBy){
+  if(groupBy==="day"){
+    return {key:t.dateISO, label:U.fmtDateLong(t.date), sortVal:t.date.getTime()};
+  }
+  if(groupBy==="month_indiquee"){
+    const y=t.date.getFullYear(), m=t.date.getMonth();
+    return {key:y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+  }
+  if(groupBy==="month_transformee"){
+    let y,m;
+    if(t.transform.mode==="month"){ y=t.transform.year; m=t.transform.month; }
+    else { y=t.date.getFullYear(); m=t.date.getMonth(); }
+    return {key:"t"+y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+  }
+  // dimension-based grouping: groupe / categorie / compte / personne
+  const v = AGG.dimDisplayValue(t, groupBy);
+  return {key:v, label:v};
+}
+const CHRONO_MODES = ["day","month_indiquee","month_transformee"];
+
+function renderTransactions(){
+  const view = document.getElementById("view-transactions");
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section" style="margin-top:10px;">${emptyStateHtml({
+      title:"Aucune transaction", text:"Importez vos données pour voir la liste de vos transactions ici.", showDemo:true
+    })}</div>`;
+    wireEmptyState(view);
+    return;
+  }
+  const filtered = AGG.applyFilters(Store.transactions);
+  const totals = AGG.computeTotals(filtered);
+  const groupBy = APP.state.txnGroupBy;
+  const isChrono = CHRONO_MODES.includes(groupBy);
+
+  let html = `<div class="section" style="padding-top:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px;">
+      <span style="font-size:13px;color:var(--text-sub);font-weight:600;">${filtered.length.toLocaleString('fr-FR')} transaction${filtered.length>1?"s":""}</span>
+      <span style="font-size:13px;font-weight:800;color:${totals.net>=0?'var(--income)':'var(--expense)'}">${U.fmtMoneySigned(totals.net)}</span>
+    </div>
+    <div class="chips-bar" id="txn-chips" style="display:none;"></div>
+    <div class="dimtabs" id="txn-groupby" style="margin-top:2px;">
+      ${Object.keys(APP.GROUPBY_LABEL).map(k=>`<button data-v="${k}" class="${groupBy===k?'active':''}">${APP.GROUPBY_LABEL[k]}</button>`).join("")}
+    </div>
+  </div>`;
+
+  if(filtered.length===0){
+    html += `<div class="section"><div class="empty-state">${ICONS.search}<h3>Aucun résultat</h3><p>Essayez d'ajuster vos filtres ou votre recherche.</p></div></div>`;
+    view.innerHTML = html;
+    F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
+    wireGroupByButtons();
+    return;
+  }
+
+  html += `<div class="section" id="txn-list-section"></div>
+  <div class="section loadmore-wrap" id="txn-loadmore-wrap"></div>`;
+  view.innerHTML = html;
+
+  F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
+  wireGroupByButtons();
+
+  const listSection = document.getElementById("txn-list-section");
+  const loadmoreWrap = document.getElementById("txn-loadmore-wrap");
+
+  if(isChrono){
+    renderChronoGroups(listSection, loadmoreWrap, filtered, groupBy);
+  } else {
+    renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy);
+  }
+}
+
+function wireGroupByButtons(){
+  document.querySelectorAll("#txn-groupby button").forEach(b=>{
+    b.onclick = ()=>{
+      APP.state.txnGroupBy = b.dataset.v;
+      APP.resetTxnPagination();
+      renderTransactions();
+    };
+  });
+}
+
+/* Chronological grouping: Jour / Mois (indiquée) / Mois (transformée) */
+function renderChronoGroups(listSection, loadmoreWrap, filtered, groupBy){
+  const enriched = filtered.map(t=>{
+    const g = getGroupInfo(t, groupBy);
+    return {t, key:g.key, label:g.label, sortVal:g.sortVal};
+  });
+  enriched.sort((a,b)=> (b.sortVal-a.sortVal) || (b.t.date-a.t.date));
+
+  const totalsByKey = new Map();
+  enriched.forEach(e=>{
+    if(!totalsByKey.has(e.key)) totalsByKey.set(e.key, {label:e.label, income:0, expense:0, count:0});
+    const o = totalsByKey.get(e.key);
+    if(e.t.type==="Income") o.income += e.t.montant;
+    else if(e.t.type==="Expense") o.expense += e.t.montant;
+    o.count++;
+  });
+
+  const limit = APP.state.txnLimit;
+  const shown = enriched.slice(0, limit);
+  const isDay = groupBy==="day";
+
+  let currentKey = null;
+  let groupWrap = null;
+  shown.forEach(e=>{
+    if(e.key !== currentKey){
+      currentKey = e.key;
+      const gt = totalsByKey.get(e.key);
+      const header = document.createElement("div");
+      if(isDay){
+        header.className = "txn-date-label";
+        header.textContent = e.label;
+      } else {
+        header.className = "txn-date-label";
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "baseline";
+        const net = gt.income + gt.expense;
+        header.innerHTML = `<span>${U.escHtml(e.label)}</span><span style="color:${net>=0?'var(--income)':'var(--expense)'};font-weight:800;">${U.fmtMoneySigned(net)}</span>`;
+      }
+      listSection.appendChild(header);
+      groupWrap = document.createElement("div");
+      groupWrap.className = "txn-daygroup-items";
+      listSection.appendChild(groupWrap);
+    }
+    groupWrap.appendChild(makeTxnItemEl(e.t));
+  });
+
+  if(enriched.length > limit){
+    const btn = document.createElement("button");
+    btn.className = "btn btn-ghost";
+    btn.textContent = "Charger plus ("+(enriched.length-limit)+" restantes)";
+    btn.onclick = ()=>{ APP.state.txnLimit += 60; renderTransactions(); };
+    loadmoreWrap.appendChild(btn);
+  }
+}
+
+/* Dimension-based grouping: Groupe / Catégorie / Compte / Personne */
+function renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy){
+  const groups = new Map(); // key -> {label, items:[], income, expense, count}
+  filtered.forEach(t=>{
+    const g = getGroupInfo(t, groupBy);
+    if(!groups.has(g.key)) groups.set(g.key, {label:g.label, items:[], income:0, expense:0, count:0});
+    const o = groups.get(g.key);
+    o.items.push(t);
+    if(t.type==="Income") o.income += t.montant;
+    else if(t.type==="Expense") o.expense += t.montant;
+    o.count++;
+  });
+  const arr = Array.from(groups.entries()).map(([key,o])=>({key, ...o}));
+  arr.forEach(g=> g.items.sort((a,b)=>b.date-a.date));
+  if(groupBy==="categorie"){
+    // Range catégorie par Income puis Expense, puis ordre alphabétique
+    const typeMap = AGG.classifyCategoryTypes(filtered);
+    arr.sort((a,b)=>{
+      const ka = typeMap.get(a.key) || "Expense", kb = typeMap.get(b.key) || "Expense";
+      if(ka!==kb) return ka==="Income" ? -1 : 1;
+      return a.key.localeCompare(b.key, 'fr');
+    });
+  } else {
+    arr.sort((a,b)=> (Math.abs(b.income)+Math.abs(b.expense)) - (Math.abs(a.income)+Math.abs(a.expense)));
+  }
+
+  const groupsShown = APP.state.txnGroupsShown;
+  const shownGroups = arr.slice(0, groupsShown);
+  const perGroupMap = APP.state.txnPerGroupShown;
+
+  shownGroups.forEach((g,idx)=>{
+    const net = g.income + g.expense;
+    const details = document.createElement("details");
+    details.className = "card";
+    details.style.padding = "0";
+    details.style.marginBottom = "10px";
+    if(idx===0) details.open = true;
+    const perShown = perGroupMap[g.key] || 10;
+    const itemsToShow = g.items.slice(0, perShown);
+
+    const summary = document.createElement("summary");
+    summary.style.cssText = "list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;";
+    summary.innerHTML = `
+      <span style="font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">${U.escHtml(g.label)}</span>
+      <span style="display:flex;align-items:center;gap:10px;flex:0 0 auto;">
+        <span style="font-size:12px;color:var(--text-sub);font-weight:600;">${g.count}</span>
+        <span style="font-weight:800;font-size:13.5px;color:${net>=0?'var(--income)':'var(--expense)'}">${U.fmtMoneySigned(net)}</span>
+      </span>
+    `;
+    details.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.style.cssText = "padding:0 12px 12px;";
+    itemsToShow.forEach(t=>{
+      const el = makeTxnItemEl(t);
+      el.style.marginTop = "8px";
+      body.appendChild(el);
+    });
+    if(g.items.length > perShown){
+      const more = document.createElement("button");
+      more.className = "btn btn-ghost btn-sm btn-block";
+      more.style.marginTop = "8px";
+      more.textContent = "Afficher plus ("+(g.items.length-perShown)+" restantes)";
+      more.onclick = (ev)=>{ ev.preventDefault(); perGroupMap[g.key] = perShown + 15; renderTransactions(); };
+      body.appendChild(more);
+    }
+    details.appendChild(body);
+    listSection.appendChild(details);
+  });
+
+  if(arr.length > groupsShown){
+    const btn = document.createElement("button");
+    btn.className = "btn btn-ghost";
+    btn.textContent = "Afficher plus de groupes ("+(arr.length-groupsShown)+" restants)";
+    btn.onclick = ()=>{ APP.state.txnGroupsShown += 20; renderTransactions(); };
+    loadmoreWrap.appendChild(btn);
+  }
+}
+
+
+
+/* ================= TRANSACTION DETAIL ================= */
+function openTxnDetail(id){
+  APP.state.detailTxnId = id;
+  const t = Store.transactions.find(x=>x.id===id);
+  if(!t) return;
+  const modal = document.getElementById("modal-detail");
+  const info = txnIconInfo(t);
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="txn-ico ${info.cls}" style="width:48px;height:48px;font-size:19px;">${info.letter}</div>
+      <button class="icon-btn" id="detail-close">${ICONS.close}</button>
+    </div>
+    <div style="font-size:22px;font-weight:900;">${t.type==="Transfer"?U.fmtMoney(t.montant):U.fmtMoneySigned(t.montant)}</div>
+    <div style="color:var(--text-sub);font-size:13.5px;margin-top:2px;">${U.fmtDateLong(t.date)}</div>
+    <div style="font-weight:700;font-size:16px;margin-top:14px;">${U.escHtml(t.remarque || "(Sans titre)")}</div>
+    <div class="field-label">Détails</div>
+    <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+      ${t.type==="Transfer" ? `
+        <div class="detail-row"><span>Compte source</span><span>${U.escHtml(t.compte)}</span></div>
+        <div class="detail-row"><span>Compte cible</span><span>${U.escHtml(t.compteCible)}</span></div>
+      ` : `
+        <div class="detail-row"><span>Compte</span><span>${U.escHtml(t.compte)}</span></div>
+        <div class="detail-row"><span>Catégorie</span><span>${U.escHtml(t.categorie||"—")}</span></div>
+        <div class="detail-row"><span>Personne</span><span>${U.escHtml(t.personne||"—")}</span></div>
+      `}
+      <div class="detail-row"><span>Groupe</span><span>${U.escHtml(t.groupe||"—")}</span></div>
+      <div class="detail-row"><span>Type</span><span>${t.type==="Income"?"Revenu":t.type==="Expense"?"Dépense":"Transfert"}</span></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="detail-delete" style="margin-top:16px;color:var(--expense);">${ICONS.trash}Supprimer cette transaction</button>
+  `;
+  document.getElementById("detail-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("detail-delete").onclick = ()=>{
+    Store.transactions = Store.transactions.filter(x=>x.id!==id);
+    APP.closeOverlay("overlay-detail");
+    APP.refreshCurrentTab();
+    Store.saveTransactions().then(ok=>{
+      APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+    });
+  };
+  APP.openOverlay("overlay-detail");
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderDashboard = renderDashboard;
+window.__SF_VIEWS.renderTransactions = renderTransactions;
+window.__SF_VIEWS.openTxnDetail = openTxnDetail;
+window.__SF_VIEWS.makeTxnItemEl = makeTxnItemEl;
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const F = window.__SF_FILTERS;
+const ICONS = U.ICONS;
+const PALETTE = APP.PALETTE;
+const DIM_LABEL = APP.DIM_LABEL;
+
+function destroyChart(key){
+  if(APP.chartInstances[key]){ APP.chartInstances[key].destroy(); delete APP.chartInstances[key]; }
+}
+
+function emptyBlock(){
+  return `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour visualiser leur évolution.</p><button class="btn btn-primary" id="empty-import-btn2">${ICONS.upload}Importer des données</button></div></div>`;
+}
+
+function renderEvolution(){
+  const view = document.getElementById("view-evolution");
+  if(Store.transactions.length===0){
+    view.innerHTML = emptyBlock();
+    const b = document.getElementById("empty-import-btn2");
+    if(b) b.onclick = ()=>window.__SF_IMPORT.open();
+    return;
+  }
+  const st = APP.state.evoState;
+  const filtered = AGG.applyFilters(Store.transactions);
+
+  view.innerHTML = `
+    <div class="section" style="padding-top:14px;">
+      <div class="chips-bar" id="evo-chips" style="display:none;"></div>
+      <div class="card">
+        <div class="seg" id="evo-gran">
+          <button data-v="month" class="${st.granularity==='month'?'active':''}">Par mois</button>
+          <button data-v="year" class="${st.granularity==='year'?'active':''}">Par année</button>
+        </div>
+        <div style="height:10px;"></div>
+        <div class="seg" id="evo-basis">
+          <button data-v="indiquee" class="${st.dateBasis==='indiquee'?'active':''}">Date indiquée</button>
+          <button data-v="transformee" class="${st.dateBasis==='transformee'?'active':''}">Date transformée</button>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Décomposer par</div>
+      <div class="dimtabs" id="evo-dim">
+        <button data-v="none" class="${st.dimension==='none'?'active':''}">Aucune</button>
+        <button data-v="groupe" class="${st.dimension==='groupe'?'active':''}">Groupe</button>
+        <button data-v="categorie" class="${st.dimension==='categorie'?'active':''}">Catégorie</button>
+        <button data-v="personne" class="${st.dimension==='personne'?'active':''}">Personne</button>
+        <button data-v="compte" class="${st.dimension==='compte'?'active':''}">Compte</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="card">
+        <div class="chart-wrap tall"><canvas id="evo-canvas"></canvas></div>
+      </div>
+    </div>
+    <div class="section" id="evo-breakdown-section"></div>
+    <div class="section">
+      <div class="section-title">Détail par période</div>
+      <div class="card" id="evo-table"></div>
+    </div>
+  `;
+
+  document.querySelectorAll("#evo-gran button").forEach(b=>b.onclick=()=>{ st.granularity=b.dataset.v; renderEvolution(); });
+  document.querySelectorAll("#evo-basis button").forEach(b=>b.onclick=()=>{ st.dateBasis=b.dataset.v; renderEvolution(); });
+  document.querySelectorAll("#evo-dim button").forEach(b=>b.onclick=()=>{ st.dimension=b.dataset.v; renderEvolution(); });
+  F.renderChipsBar("evo-chips", ()=>renderEvolution());
+
+  const dimension = st.dimension==="none" ? null : st.dimension;
+  const series = AGG.computeTimeSeries(filtered, st.granularity, st.dateBasis, dimension);
+  const buckets = series.buckets.slice(-24); // keep chart readable
+
+  destroyChart("evo");
+  const ctx = document.getElementById("evo-canvas").getContext("2d");
+  const isDark = document.documentElement.getAttribute("data-theme")==="dark";
+  const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.06)";
+  const fontColor = isDark ? "#9BA0AC" : "#6B707A";
+
+  let datasets;
+  if(!dimension){
+    datasets = [
+      {label:"Revenus", data:buckets.map(b=>b.income), backgroundColor:"#1A9E63"},
+      {label:"Dépenses", data:buckets.map(b=>b.expense), backgroundColor:"#E4402E"},
+    ];
+  } else {
+    const topDims = Array.from(series.dimTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,7).map(x=>x[0]);
+    datasets = topDims.map((dv,i)=>({
+      label: dv, backgroundColor: PALETTE[i%PALETTE.length],
+      data: buckets.map(b=>b.byDim.get(dv)||0), stack:"s1"
+    }));
+    const hasOthers = Array.from(series.dimTotals.keys()).length > topDims.length;
+    if(hasOthers){
+      datasets.push({label:"Autres", backgroundColor:"#B5BAC3", stack:"s1",
+        data: buckets.map(b=>{
+          let sum=0; b.byDim.forEach((v,k)=>{ if(!topDims.includes(k)) sum+=v; }); return sum;
+        })});
+    }
+  }
+
+  APP.chartInstances.evo = new Chart(ctx, {
+    type:"bar",
+    data:{ labels: buckets.map(b=>b.label), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{stacked:!!dimension, ticks:{color:fontColor}, grid:{display:false}},
+        y:{stacked:!!dimension, ticks:{color:fontColor}, grid:{color:gridColor}}
+      },
+      plugins:{ legend:{ position:"bottom", labels:{color:fontColor, boxWidth:11, font:{size:11}} } }
+    }
+  });
+
+  // Breakdown legend/table when dimension selected
+  const bdSection = document.getElementById("evo-breakdown-section");
+  if(dimension){
+    const rows = Array.from(series.dimTotals.entries()).sort((a,b)=>b[1]-a[1]);
+    const max = rows.length ? rows[0][1] : 1;
+    bdSection.innerHTML = `<div class="section-title">Total par ${DIM_LABEL[dimension].toLowerCase()}</div>
+      <div class="card">${rows.slice(0,15).map((r,i)=>`
+        <div class="bd-item">
+          <div class="bd-row">
+            <span class="bd-dot" style="background:${PALETTE[i%PALETTE.length]}"></span>
+            <span class="bd-name">${U.escHtml(r[0])}</span>
+            <span class="bd-val">${U.fmtMoney(r[1])}</span>
+          </div>
+          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${(r[1]/max*100).toFixed(1)}%;background:${PALETTE[i%PALETTE.length]}"></div></div>
+        </div>`).join("")}
+      </div>`;
+  } else {
+    bdSection.innerHTML = "";
+  }
+
+  // Period table
+  const table = document.getElementById("evo-table");
+  const rowsRev = buckets.slice().reverse();
+  table.innerHTML = rowsRev.map(b=>`
+    <div class="rowline">
+      <span style="font-weight:600;font-size:14px;">${b.label}</span>
+      <span style="font-size:13px;">
+        <span style="color:var(--income);font-weight:700;">${U.fmtMoney(b.income)}</span>
+        &nbsp;/&nbsp;
+        <span style="color:var(--expense);font-weight:700;">${U.fmtMoney(b.expense)}</span>
+      </span>
+    </div>
+  `).join("") || `<div style="padding:16px;color:var(--text-sub);font-size:13.5px;">Aucune donnée sur la période filtrée.</div>`;
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderEvolution = renderEvolution;
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const F = window.__SF_FILTERS;
+const ICONS = U.ICONS;
+const PALETTE = APP.PALETTE;
+const DIM_LABEL = APP.DIM_LABEL;
+
+function destroyChart(key){
+  if(APP.chartInstances[key]){ APP.chartInstances[key].destroy(); delete APP.chartInstances[key]; }
+}
+
+/* ================= BREAKDOWN (Répartition) ================= */
+function renderBreakdown(){
+  const view = document.getElementById("view-breakdown");
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir la répartition de vos dépenses.</p><button class="btn btn-primary" id="empty-import-btn3">${ICONS.upload}Importer des données</button></div></div>`;
+    const b = document.getElementById("empty-import-btn3");
+    if(b) b.onclick = ()=>window.__SF_IMPORT.open();
+    return;
+  }
+  const st = APP.state.bdState;
+  const filtered = AGG.applyFilters(Store.transactions);
+
+  view.innerHTML = `
+    <div class="section" style="padding-top:14px;">
+      <div class="chips-bar" id="bd-chips" style="display:none;"></div>
+      <div class="card">
+        <div class="seg" id="bd-kind">
+          <button data-v="expense" class="${st.kind==='expense'?'active':''}">Dépenses</button>
+          <button data-v="income" class="${st.kind==='income'?'active':''}">Revenus</button>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="dimtabs" id="bd-dim">
+        <button data-v="groupe" class="${st.dimension==='groupe'?'active':''}">Groupe</button>
+        <button data-v="categorie" class="${st.dimension==='categorie'?'active':''}">Catégorie</button>
+        <button data-v="personne" class="${st.dimension==='personne'?'active':''}">Personne</button>
+        <button data-v="compte" class="${st.dimension==='compte'?'active':''}">Compte</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="card">
+        <div class="chart-wrap"><canvas id="bd-canvas"></canvas></div>
+      </div>
+    </div>
+    <div class="section" id="bd-list-section"></div>
+  `;
+
+  document.querySelectorAll("#bd-kind button").forEach(b=>b.onclick=()=>{ st.kind=b.dataset.v; renderBreakdown(); });
+  document.querySelectorAll("#bd-dim button").forEach(b=>b.onclick=()=>{ st.dimension=b.dataset.v; renderBreakdown(); });
+  F.renderChipsBar("bd-chips", ()=>renderBreakdown());
+
+  const kindSet = filtered.filter(t=> st.kind==="expense" ? t.type==="Expense" : t.type==="Income");
+  const rows = AGG.computeBreakdown(kindSet, st.dimension).map(r=>({
+    key:r.key, amount: st.kind==="expense" ? Math.abs(r.expense) : r.income, count:r.count
+  })).filter(r=>r.amount>0).sort((a,b)=>b.amount-a.amount);
+
+  const total = rows.reduce((s,r)=>s+r.amount,0);
+  const top = rows.slice(0,8);
+  const othersSum = rows.slice(8).reduce((s,r)=>s+r.amount,0);
+  const chartRows = othersSum>0 ? top.concat([{key:"Autres", amount:othersSum}]) : top;
+
+  destroyChart("bd");
+  const ctx = document.getElementById("bd-canvas").getContext("2d");
+  const isDark = document.documentElement.getAttribute("data-theme")==="dark";
+  const fontColor = isDark ? "#9BA0AC" : "#6B707A";
+  APP.chartInstances.bd = new Chart(ctx, {
+    type:"doughnut",
+    data:{
+      labels: chartRows.map(r=>r.key),
+      datasets:[{ data: chartRows.map(r=>r.amount),
+        backgroundColor: chartRows.map((r,i)=> r.key==="Autres" ? "#B5BAC3" : PALETTE[i%PALETTE.length]),
+        borderWidth:0 }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:"62%",
+      plugins:{ legend:{position:"bottom", labels:{color:fontColor, boxWidth:11, font:{size:11}, padding:12}} }
+    }
+  });
+
+  const listSection = document.getElementById("bd-list-section");
+  listSection.innerHTML = `
+    <div class="section-title">Total : ${U.fmtMoney(total)} · ${rows.length} ${DIM_LABEL[st.dimension].toLowerCase()}${rows.length>1?"s":""}</div>
+    <div class="card">
+      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune donnée sur la période filtrée.</div>` :
+      rows.map((r,i)=>`
+        <div class="bd-item">
+          <div class="bd-row">
+            <span class="bd-dot" style="background:${i<8?PALETTE[i%PALETTE.length]:'#B5BAC3'}"></span>
+            <span class="bd-name">${U.escHtml(r.key)}</span>
+            <span class="bd-val">${U.fmtMoney(r.amount)}</span>
+          </div>
+          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${(r.amount/rows[0].amount*100).toFixed(1)}%;background:${i<8?PALETTE[i%PALETTE.length]:'#B5BAC3'}"></div></div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+/* ================= ACCOUNTS ================= */
+function renderAccounts(){
+  const view = document.getElementById("view-accounts");
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir vos comptes.</p><button class="btn btn-primary" id="empty-import-btn4">${ICONS.upload}Importer des données</button></div></div>`;
+    const b = document.getElementById("empty-import-btn4");
+    if(b) b.onclick = ()=>window.__SF_IMPORT.open();
+    return;
+  }
+  const balances = AGG.computeAccountBalances(Store.transactions);
+  const total = balances.reduce((s,a)=>s+a.balance,0);
+
+  const view_html = [`
+    <div class="section" style="padding-top:14px;">
+      <div class="card" style="text-align:center;padding:22px 16px;">
+        <div style="font-size:13px;color:var(--text-sub);font-weight:600;">Solde total (tous comptes)</div>
+        <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
+      </div>
+    </div>
+    <div class="section"><div class="section-title">Comptes (${balances.length})</div></div>
+  `];
+  view.innerHTML = view_html.join("");
+
+  const section = document.createElement("div");
+  section.className = "section";
+  balances.forEach(a=>{
+    const card = document.createElement("div");
+    card.className = "acc-card";
+    card.innerHTML = `
+      <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
+      <div class="acc-mid">
+        <div class="acc-name">${U.escHtml(a.name)}</div>
+        <div class="acc-flows">${a.count} mouvement${a.count>1?"s":""} · ↑${U.fmtMoney(a.income+a.transferIn)} ↓${U.fmtMoney(Math.abs(a.expense)+a.transferOut)}</div>
+      </div>
+      <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
+    `;
+    card.onclick = ()=>{
+      window.__SF_FILTERS.comptes = new Set([a.name]);
+      APP.switchTab("transactions");
+      APP.showToast("Filtré sur : "+a.name);
+    };
+    section.appendChild(card);
+  });
+  view.appendChild(section);
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderBreakdown = renderBreakdown;
+window.__SF_VIEWS.renderAccounts = renderAccounts;
+})();
+/* ================= ONGLET BUDGET ================= */
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+/* état local de la vue (période affichée) */
+let periodFrom = null, periodTo = null; // "YYYY-MM"
+function ensurePeriod(){
+  if(periodFrom && periodTo) return;
+  const saved = Store.settings.budget || {};
+  const now = new Date();
+  const ym = now.getFullYear()+"-"+U.pad2(now.getMonth()+1);
+  periodFrom = periodFrom || saved.periodFrom || ym;
+  periodTo = periodTo || saved.periodTo || ym;
+}
+function persistPeriod(){
+  Store.settings.budget = Store.settings.budget || {};
+  Store.settings.budget.periodFrom = periodFrom;
+  Store.settings.budget.periodTo = periodTo;
+  Store.saveSettings();
+}
+function monthsInRange(from, to){
+  const [fy,fm] = from.split("-").map(Number);
+  const [ty,tm] = to.split("-").map(Number);
+  const out = [];
+  let y=fy, m=fm;
+  let guard=0;
+  while((y<ty || (y===ty && m<=tm)) && guard<1200){
+    out.push(y+"-"+U.pad2(m));
+    m++; if(m>12){m=1;y++;}
+    guard++;
+  }
+  return out;
+}
+
+/* ---------------- Moteur de calcul du budget ---------------- */
+/* Calcule, pour un "groupe de groupe" donné (nom affiché résolu) et une période [from,to] (mois inclus),
+   les montants par catégorie (groupes "vie quotidienne") + par groupe voyage (groupes "voyage"),
+   en tenant compte : date corrigée, amortissement des catégories choisies, ajustements manuels, vue couple/perso. */
+function computeGroupBudget(superGroupeName, months, opts){
+  const cfg = Store.settings.budget;
+  const scopeMult = cfg.scope==="couple" ? 2 : 1;
+  const monthSet = new Set(months);
+  const amortSet = new Set(cfg.amortCategories||[]);
+  const isAmorti = cfg.mode==="amorti";
+
+  // catégorie -> {income, expense}
+  const catTotals = new Map();
+  // groupe voyage (base) -> {income, expense, label}
+  const voyTotals = new Map();
+  // catégorie amortie -> total brut sur TOUTE la période disponible (pas seulement les mois affichés)
+  const amortPoolAll = new Map();
+
+  function ensureCat(cat){
+    if(!catTotals.has(cat)) catTotals.set(cat, {key:cat, income:0, expense:0});
+    return catTotals.get(cat);
+  }
+  function ensureVoy(base){
+    if(!voyTotals.has(base)) voyTotals.set(base, {key:base, income:0, expense:0});
+    return voyTotals.get(base);
+  }
+
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(AGG.getGroupeDisplay(t) !== superGroupeName) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    const kind = AGG.getGroupKind(base);
+
+    if(kind==="voyage"){
+      // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
+      const forced = AGG.getGroupVoyageMonth(base);
+      let targetMonth = forced;
+      if(!targetMonth){
+        const tr = t.transform;
+        if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
+        else if(tr.mode==="yearsplit"){
+          // réparti sur l'année : on ajoute 1/12 à chaque mois de cette année qui est dans la période affichée
+          for(let m=1;m<=12;m++){
+            const key = tr.year+"-"+U.pad2(m);
+            if(monthSet.has(key)){
+              const o = ensureVoy(base);
+              const amt = t.montant/12*scopeMult;
+              if(t.type==="Income") o.income += amt; else o.expense += amt;
+            }
+          }
+          return;
+        } else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
+      }
+      if(monthSet.has(targetMonth)){
+        const o = ensureVoy(base);
+        const amt = t.montant*scopeMult;
+        if(t.type==="Income") o.income += amt; else o.expense += amt;
+      }
+      return;
+    }
+
+    // "quotidien" : par catégorie, date corrigée, avec gestion des catégories amorties
+    const cat = t.categorie || "(Non renseigné)";
+    const tr = t.transform;
+    // Une dépense antérieure au mois de début est elle aussi considérée comme amortie (peu importe sa catégorie)
+    const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+    const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
+    const amortized = isAmorti && (amortSet.has(cat) || beforeStart);
+    function addToMonth(key, weight){
+      if(!monthSet.has(key)) return;
+      const o = ensureCat(cat);
+      const amt = t.montant*weight*scopeMult;
+      if(t.type==="Income") o.income += amt; else o.expense += amt;
+    }
+    if(amortized){
+      // accumulation pour le pool d'amortissement (indépendant des mois affichés)
+      const prev = amortPoolAll.get(cat) || {income:0, expense:0};
+      const amt = t.montant*scopeMult;
+      if(t.type==="Income") prev.income += amt; else prev.expense += amt;
+      amortPoolAll.set(cat, prev);
+      return;
+    }
+    if(tr.mode==="month"){
+      addToMonth(tr.year+"-"+U.pad2(tr.month+1), 1);
+    } else if(tr.mode==="yearsplit"){
+      for(let m=1;m<=12;m++) addToMonth(tr.year+"-"+U.pad2(m), 1/12);
+    } else {
+      addToMonth(t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1), 1);
+    }
+  });
+
+  // Amortissement : total (sur tout l'historique, catégorie par catégorie) / nombre de mois de la période où on reste,
+  // réinjecté également sur chaque mois affiché. À défaut de période définie, on lisse sur la période affichée elle-même.
+  if(isAmorti){
+    const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+    amortPoolAll.forEach((tot, cat)=>{
+      const perMonth = {income: tot.income/periodMonths, expense: tot.expense/periodMonths};
+      const o = ensureCat(cat);
+      o.income += perMonth.income*months.length;
+      o.expense += perMonth.expense*months.length;
+    });
+  }
+
+  // Ajustements manuels (montant brut, non multiplié par la vue couple/perso)
+  if(isAmorti){
+    (cfg.adjustments||[]).forEach(adj=>{
+      if(adj.groupe !== superGroupeName) return;
+      if(!monthSet.has(adj.month)) return;
+      const amt = Number(adj.montant)||0;
+      if(adj.categorie){
+        const o = ensureCat(adj.categorie);
+        if(amt>=0) o.income += amt; else o.expense += amt;
+      } else {
+        const o = ensureVoy("__ajustement__");
+        o.label = "Ajustements";
+        if(amt>=0) o.income += amt; else o.expense += amt;
+      }
+    });
+  }
+
+  const categories = Array.from(catTotals.values());
+  const typeMap = new Map();
+  categories.forEach(c=>{ typeMap.set(c.key, c.income>=Math.abs(c.expense) ? "Income" : "Expense"); });
+  categories.sort((a,b)=>{
+    const ta = typeMap.get(a.key), tb = typeMap.get(b.key);
+    if(ta!==tb) return ta==="Income" ? -1 : 1;
+    return a.key.localeCompare(b.key,'fr');
+  });
+  const voyages = Array.from(voyTotals.values()).sort((a,b)=>(a.label||a.key).localeCompare(b.label||b.key,'fr'));
+
+  const income = categories.reduce((s,c)=>s+c.income,0) + voyages.reduce((s,c)=>s+c.income,0);
+  const expense = categories.reduce((s,c)=>s+c.expense,0) + voyages.reduce((s,c)=>s+c.expense,0);
+  return {categories, voyages, income, expense, net: income+expense};
+}
+
+/* ---------------- Rendu ---------------- */
+function candidateSuperGroupes(){
+  return AGG.distinctValuesGroupeDisplay(Store.transactions).map(v=>v.value).sort((a,b)=>a.localeCompare(b,'fr'));
+}
+
+function periodPickerHtml(){
+  return `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="field-label" style="margin-top:0;">Période affichée</div>
+      <div class="daterange">
+        <input type="month" id="bg-from" value="${periodFrom}">
+        <input type="month" id="bg-to" value="${periodTo}">
+      </div>
+    </div>
+  `;
+}
+
+function groupCardHtml(title, res, isMain){
+  const rowsHtml = (list, muted)=>list.map(c=>`
+    <div class="detail-row">
+      <span>${U.escHtml(c.label||c.key)}</span>
+      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
+    </div>
+  `).join("");
+  return `
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
+        <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(res.net)}</span>
+      </div>
+      <div class="detail-row"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(res.income)}</span></div>
+      <div class="detail-row"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(res.expense))}</span></div>
+      ${isMain ? `
+        ${res.categories.length ? `<div class="field-label">Catégories</div>${rowsHtml(res.categories)}` : ""}
+        ${res.voyages.length ? `<div class="field-label">Voyages / ajustements</div>${rowsHtml(res.voyages)}` : ""}
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderBudget(){
+  ensurePeriod();
+  const view = document.getElementById("view-budget");
+  const cfg = Store.settings.budget;
+  const months = monthsInRange(periodFrom, periodTo);
+
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section"><div class="empty-state">
+      ${ICONS.inbox}<h3>Pas encore de données</h3><p>Importez vos transactions pour utiliser l'onglet Budget.</p>
+    </div></div>`;
+    return;
+  }
+  if(!cfg.mainGroup){
+    view.innerHTML = `<div class="section">
+      <div class="empty-state">
+        ${ICONS.budget}<h3>Configurez votre budget</h3>
+        <p>Choisissez un groupe de groupe principal dans les paramètres de cet onglet pour commencer.</p>
+        <button class="btn btn-primary" id="bg-open-settings">${ICONS.settings} Paramètres du budget</button>
+      </div>
+    </div>`;
+    document.getElementById("bg-open-settings").onclick = ()=>openBudgetSettings();
+    return;
+  }
+
+  const mainRes = computeGroupBudget(cfg.mainGroup, months);
+  const extraResults = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup).map(g=>({name:g, res:computeGroupBudget(g, months)}));
+  const grandIncome = mainRes.income + extraResults.reduce((s,e)=>s+e.res.income,0);
+  const grandExpense = mainRes.expense + extraResults.reduce((s,e)=>s+e.res.expense,0);
+
+  view.innerHTML = `
+    <div class="section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:22px 4px 10px;">
+        <div class="seg" id="bg-mode-seg" style="max-width:260px;">
+          <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Avec amort. + ajouts</button>
+          <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
+        </div>
+        <button class="icon-btn" id="bg-settings-btn" title="Paramètres du budget">${ICONS.settings}</button>
+      </div>
+      ${periodPickerHtml()}
+      <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
+          <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(grandIncome+grandExpense)}</span>
+        </div>
+        <div class="detail-row"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(grandIncome)}</span></div>
+        <div class="detail-row"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(grandExpense))}</span></div>
+      </div>
+      ${groupCardHtml(cfg.mainGroup, mainRes, true)}
+      ${extraResults.map(e=>groupCardHtml(e.name, e.res, false)).join("")}
+      <div style="height:10px;"></div>
+    </div>
+  `;
+
+  document.querySelectorAll("#bg-mode-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.mode = b.dataset.m;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  document.getElementById("bg-settings-btn").onclick = ()=>openBudgetSettings();
+  document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
+  document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
+}
+
+/* ---------------- Paramètres de l'onglet Budget ---------------- */
+let adjRowSeq = 0;
+function adjustmentRowHtml(adj, groupOptions){
+  const id = "bgadj"+(adjRowSeq++);
+  return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px;margin-bottom:10px;" data-rowid="${id}">
+    <div class="daterange" style="margin-bottom:8px;">
+      <input type="month" data-field="month" value="${U.escHtml(adj.month||'')}">
+      <select data-field="groupe" class="search-mini" style="margin:0;">
+        <option value="">— Groupe —</option>
+        ${groupOptions.map(g=>`<option value="${U.escHtml(g)}" ${adj.groupe===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
+      </select>
+    </div>
+    <input type="text" class="search-mini" style="margin-bottom:8px;" placeholder="Catégorie (laisser vide pour un ajustement global au groupe)" data-field="categorie" value="${U.escHtml(adj.categorie||'')}">
+    <input type="number" step="0.01" class="search-mini" style="margin-bottom:8px;" placeholder="Montant (négatif = dépense)" data-field="montant" value="${adj.montant!=null?adj.montant:''}">
+    <input type="text" class="search-mini" placeholder="Remarque" data-field="remarque" value="${U.escHtml(adj.remarque||'')}">
+    <button class="btn btn-ghost btn-sm" data-del="${id}" style="margin-top:8px;color:var(--expense);">${ICONS.trash} Supprimer</button>
+  </div>`;
+}
+function wireAdjDeletes(){
+  document.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
+      if(card) card.remove();
+    };
+  });
+}
+
+function renderBudgetSettings(){
+  const sheet = document.getElementById("sheet-budgetset");
+  const cfg = Store.settings.budget;
+  const groups = candidateSuperGroupes();
+  const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
+  const selectedExtra = new Set(cfg.extraGroups||[]);
+  const selectedAmort = new Set(cfg.amortCategories||[]);
+
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Paramètres du budget</h2><button class="icon-btn" id="bgs-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+
+      <div class="field-label" style="margin-top:0;">Vue</div>
+      <div class="seg" id="bgs-scope-seg" style="margin-bottom:18px;">
+        <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso (x1)</button>
+        <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple (x2)</button>
+      </div>
+
+      <div class="field-label" style="margin-top:0;">Mois de début</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Les dépenses antérieures à ce mois sont considérées comme amorties plutôt qu'affichées telles quelles.</div>
+      <input type="month" class="search-mini" id="bgs-start" value="${U.escHtml(cfg.startMonth||'')}" style="margin-bottom:18px;">
+
+      <div class="field-label" style="margin-top:0;">Groupe de groupe principal</div>
+      <select class="search-mini" id="bgs-main" style="margin-bottom:18px;">
+        <option value="">— Choisir —</option>
+        ${groups.map(g=>`<option value="${U.escHtml(g)}" ${cfg.mainGroup===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
+      </select>
+
+      <div class="field-label" style="margin-top:0;">Groupes de groupe additionnels</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Affichés en dessous, avec seulement Revenus / Dépenses / Total.</div>
+      <div class="check-list" style="margin-bottom:18px;">
+        ${groups.map(g=>`
+          <div class="check-item bgs-extra-item ${selectedExtra.has(g)?'selected':''}" data-g="${U.escHtml(g)}">
+            <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(g)}</span>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="field-label" style="margin-top:0;">Catégories amorties</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Ces catégories sont retirées du calcul mensuel brut, puis lissées sur la période où on reste (ci-dessous) et réparties également sur chaque mois affiché.</div>
+      <div class="check-list" style="margin-bottom:12px;">
+        ${cats.map(c=>`
+          <div class="check-item bgs-amort-item ${selectedAmort.has(c)?'selected':''}" data-c="${U.escHtml(c)}">
+            <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(c)}</span>
+          </div>
+        `).join("")}
+      </div>
+      <div class="field-label" style="margin-top:0;">Période où on reste (en mois)</div>
+      <input type="number" min="1" class="search-mini" id="bgs-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin-bottom:22px;">
+
+      <div class="field-label" style="margin-top:0;">Ajustements mensuels</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Montant fixe ajouté pour un mois/groupe (et éventuellement une catégorie précise). Non affecté par la vue couple/perso. Actif uniquement en mode "Avec amortissement + ajouts".</div>
+      <div id="bgs-adj-rows">${(cfg.adjustments||[]).map(a=>adjustmentRowHtml(a, groups)).join("")}</div>
+      <button class="btn btn-ghost btn-block" id="bgs-adj-add">${ICONS.plus} Ajouter un ajustement</button>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-ghost" id="bgs-cancel">Annuler</button>
+      <button class="btn btn-primary" id="bgs-save">Enregistrer</button>
+    </div>
+  `;
+
+  document.getElementById("bgs-close").onclick = ()=>APP.closeOverlay("overlay-budgetset");
+  document.getElementById("bgs-cancel").onclick = ()=>APP.closeOverlay("overlay-budgetset");
+  document.querySelectorAll("#bgs-scope-seg button").forEach(b=>{
+    b.onclick = ()=>{ document.querySelectorAll("#bgs-scope-seg button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); };
+  });
+  document.querySelectorAll(".bgs-extra-item").forEach(el=>{
+    el.onclick = ()=> el.classList.toggle("selected");
+  });
+  document.querySelectorAll(".bgs-amort-item").forEach(el=>{
+    el.onclick = ()=> el.classList.toggle("selected");
+  });
+  wireAdjDeletes();
+  document.getElementById("bgs-adj-add").onclick = ()=>{
+    document.getElementById("bgs-adj-rows").insertAdjacentHTML("beforeend", adjustmentRowHtml({}, groups));
+    wireAdjDeletes();
+  };
+  document.getElementById("bgs-save").onclick = ()=>{
+    cfg.scope = document.querySelector("#bgs-scope-seg button.active").dataset.v;
+    cfg.startMonth = document.getElementById("bgs-start").value || null;
+    cfg.mainGroup = document.getElementById("bgs-main").value || null;
+    cfg.extraGroups = Array.from(document.querySelectorAll(".bgs-extra-item.selected")).map(el=>el.dataset.g);
+    cfg.amortCategories = Array.from(document.querySelectorAll(".bgs-amort-item.selected")).map(el=>el.dataset.c);
+    cfg.amortPeriodMonths = Number(document.getElementById("bgs-amortperiod").value) || null;
+    const rows = Array.from(document.querySelectorAll("#bgs-adj-rows > .card"));
+    cfg.adjustments = rows.map(row=>({
+      month: row.querySelector('[data-field="month"]').value || null,
+      groupe: row.querySelector('[data-field="groupe"]').value || "",
+      categorie: row.querySelector('[data-field="categorie"]').value.trim(),
+      montant: Number(row.querySelector('[data-field="montant"]').value) || 0,
+      remarque: row.querySelector('[data-field="remarque"]').value.trim(),
+    })).filter(a=>a.month && a.groupe && a.montant);
+    Store.saveSettings();
+    APP.closeOverlay("overlay-budgetset");
+    APP.showToast("Paramètres du budget enregistrés");
+    renderBudget();
+  };
+}
+function openBudgetSettings(){
+  renderBudgetSettings();
+  APP.openOverlay("overlay-budgetset");
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderBudget = renderBudget;
+window.__SF_BUDGET = {open: openBudgetSettings};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const F = window.__SF_FILTERS;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+const TYPE_LABELS = {Income:"Revenus", Expense:"Dépenses", Transfer:"Transferts"};
+const FILTER_TO_TXNFIELD = {comptes:"compte", groupes:"groupe", categories:"categorie", personnes:"personne"};
+
+const MENU_ITEMS = [
+  {key:"period", label:"Période"},
+  {key:"types", label:"Type"},
+  {key:"comptes", label:"Compte"},
+  {key:"groupes", label:"Groupe"},
+  {key:"categories", label:"Catégorie"},
+  {key:"personnes", label:"Personne"},
+];
+
+let sheetView = "menu"; // "menu" | one of MENU_ITEMS keys
+
+function summaryFor(key){
+  if(key==="period"){
+    if(F.dateFrom && F.dateTo) return U.fmtDateShort(F.dateFrom)+" – "+U.fmtDateShort(F.dateTo);
+    if(F.dateFrom) return "Depuis "+U.fmtDateShort(F.dateFrom);
+    if(F.dateTo) return "Jusqu'à "+U.fmtDateShort(F.dateTo);
+    return "Toutes les dates";
+  }
+  if(key==="types"){
+    return F.types.size ? F.types.size+" sélectionné"+(F.types.size>1?"s":"") : "Tous";
+  }
+  const set = F[key];
+  return set.size ? set.size+" sélectionné"+(set.size>1?"s":"") : "Tous";
+}
+
+function checklistHtml(listId, filterField, selectedSet){
+  let items;
+  if(filterField==="groupes") items = AGG.distinctValuesGroupeDisplay(Store.transactions);
+  else if(filterField==="categories") items = AGG.distinctValuesCategorieSorted(Store.transactions);
+  else items = AGG.distinctValues(Store.transactions, FILTER_TO_TXNFIELD[filterField]);
+  if(items.length===0) return `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucune valeur disponible</div>`;
+  return `<div class="check-list" id="${listId}">
+    ${items.map(it=>`
+      <div class="check-item ${selectedSet.has(it.value)?'selected':''}" data-val="${U.escHtml(it.value)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${U.escHtml(it.value)}</span>
+        <span class="cnt">${it.count}</span>
+      </div>
+    `).join("")}
+  </div>`;
+}
+
+function wireChecklist(listId, field, searchInputId){
+  const list = document.getElementById(listId);
+  if(!list) return;
+  list.querySelectorAll(".check-item").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      const set = F[field];
+      if(set.has(val)) set.delete(val); else set.add(val);
+      el.classList.toggle("selected");
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  const search = document.getElementById(searchInputId);
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      list.querySelectorAll(".check-item").forEach(el=>{
+        const match = U.normalize(el.dataset.val).includes(q);
+        el.style.display = match ? "flex" : "none";
+      });
+    };
+  }
+}
+
+function updateApplyButton(){
+  document.querySelectorAll(".filter-apply-btn").forEach(btn=>{
+    const n = AGG.applyFilters(Store.transactions).length;
+    btn.textContent = "Voir " + n.toLocaleString('fr-FR') + " résultat" + (n>1?"s":"");
+  });
+}
+
+function goToMenu(){ sheetView="menu"; renderFilterSheet(); }
+function applyAndClose(){
+  APP.closeOverlay("overlay-filter");
+  APP.resetTxnPagination();
+  APP.refreshCurrentTab();
+}
+
+/* ---- Step 1: category menu ---- */
+function renderMenuStep(){
+  const sheet = document.getElementById("sheet-filter");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Filtres</h2><button class="icon-btn" id="filter-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="card" style="padding:4px 6px;">
+        ${MENU_ITEMS.map(item=>`
+          <div class="rowline filter-menu-row" data-key="${item.key}" style="cursor:pointer;">
+            <span style="font-weight:600;font-size:14.5px;">${item.label}</span>
+            <span style="display:flex;align-items:center;gap:8px;color:var(--text-sub);font-size:13px;">
+              <span>${U.escHtml(summaryFor(item.key))}</span>
+              <span style="display:flex;transform:rotate(180deg);color:var(--text-faint);">${ICONS.arrowLeft}</span>
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-ghost" id="filter-reset">Réinitialiser tout</button>
+      <button class="btn btn-primary filter-apply-btn" id="filter-apply-btn">Voir les résultats</button>
+    </div>
+  `;
+  document.getElementById("filter-close").onclick = ()=>APP.closeOverlay("overlay-filter");
+  document.querySelectorAll(".filter-menu-row").forEach(row=>{
+    row.onclick = ()=>{ sheetView = row.dataset.key; renderFilterSheet(); };
+  });
+  document.getElementById("filter-reset").onclick = ()=>{ F.reset(); F.persist(); applyAndClose(); };
+  document.getElementById("filter-apply-btn").onclick = applyAndClose;
+  updateApplyButton();
+}
+
+/* ---- Step 2: single-category detail ---- */
+const NESTED_DIM_CONFIG = {
+  groupes: {listId:"f-list-groupe", searchId:"f-search-groupe", hierarchyFn:()=>AGG.groupeHierarchyFull(Store.transactions)},
+  personnes: {listId:"f-list-personne", searchId:"f-search-personne", hierarchyFn:()=>AGG.personneHierarchy(Store.transactions)},
+};
+
+function nestedFilterHtml(kind){
+  const cfg = NESTED_DIM_CONFIG[kind];
+  const filterSet = F[kind];
+  const {sections, flat} = cfg.hierarchyFn();
+  const sectionNames = Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  let html = `<div id="${cfg.listId}" class="check-list" style="max-height:none;">`;
+  sectionNames.forEach(sup=>{
+    const children = sections.get(sup);
+    const totalCount = children.reduce((s,c)=>s+c.count,0);
+    const selected = filterSet.has(sup);
+    html += `<div class="groupe-section" data-super="${U.escHtml(sup)}">
+      <div class="check-item groupe-section-head ${selected?'selected':''}" data-val="${U.escHtml(sup)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${filterSet.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(c.base)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  });
+  flat.sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+  flat.forEach(f=>{
+    const selected = filterSet.has(f.base);
+    html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
+      <span class="cbox">${ICONS.check}</span>
+      <span class="lbl">${U.escHtml(f.base)}</span>
+      <span class="cnt">${f.count}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function wireNestedFilter(kind){
+  const cfg = NESTED_DIM_CONFIG[kind];
+  const filterSet = F[kind];
+  const list = document.getElementById(cfg.listId);
+  if(!list) return;
+  list.querySelectorAll(".check-item").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      if(filterSet.has(val)) filterSet.delete(val); else filterSet.add(val);
+      el.classList.toggle("selected");
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  const search = document.getElementById(cfg.searchId);
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      list.querySelectorAll(".groupe-section").forEach(sec=>{
+        const supMatch = U.normalize(sec.dataset.super).includes(q);
+        let anyChildMatch = false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || U.normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match ? "flex" : "none";
+          if(match) anyChildMatch = true;
+        });
+        sec.style.display = (!q || supMatch || anyChildMatch) ? "" : "none";
+      });
+      list.querySelectorAll(".groupe-flat-item").forEach(el=>{
+        const match = !q || U.normalize(el.dataset.val).includes(q);
+        el.style.display = match ? "flex" : "none";
+      });
+    };
+  }
+}
+
+function categoryBodyHtml(key){
+  if(key==="period"){
+    return `<div class="daterange">
+      <input type="date" id="f-date-from" value="${F.dateFrom?U.toISO(F.dateFrom):''}">
+      <input type="date" id="f-date-to" value="${F.dateTo?U.toISO(F.dateTo):''}">
+    </div>
+    <div style="font-size:12px;color:var(--text-sub);margin-top:8px;">La période s'applique à la date indiquée des transactions.</div>`;
+  }
+  if(key==="types"){
+    return `<div class="chiprow" id="f-types">
+      ${["Income","Expense","Transfer"].map(t=>`<div class="chip-opt ${F.types.has(t)?'selected':''}" data-val="${t}">${TYPE_LABELS[t]}</div>`).join("")}
+    </div>`;
+  }
+  if(key==="groupes"){
+    return `<input type="text" class="search-mini" id="f-search-groupe" placeholder="Rechercher un groupe…">
+      ${nestedFilterHtml("groupes")}`;
+  }
+  if(key==="personnes"){
+    return `<input type="text" class="search-mini" id="f-search-personne" placeholder="Rechercher une personne…">
+      ${nestedFilterHtml("personnes")}`;
+  }
+  const searchIds = {comptes:["f-list-compte","f-search-compte","un compte"],
+    categories:["f-list-cat","f-search-cat","une catégorie"]};
+  const [listId, searchId, placeholderNoun] = searchIds[key];
+  return `<input type="text" class="search-mini" id="${searchId}" placeholder="Rechercher ${placeholderNoun}…">
+    ${checklistHtml(listId, key, F[key])}`;
+}
+
+function wireCategoryBody(key){
+  if(key==="period"){
+    document.getElementById("f-date-from").onchange = (e)=>{ F.dateFrom = e.target.value? new Date(e.target.value+"T00:00:00") : null; F.persist(); updateApplyButton(); refreshMenuSummaryIfNeeded(); };
+    document.getElementById("f-date-to").onchange = (e)=>{ F.dateTo = e.target.value? new Date(e.target.value+"T23:59:59") : null; F.persist(); updateApplyButton(); refreshMenuSummaryIfNeeded(); };
+    return;
+  }
+  if(key==="types"){
+    document.querySelectorAll("#f-types .chip-opt").forEach(el=>{
+      el.onclick = ()=>{
+        const val = el.dataset.val;
+        if(F.types.has(val)) F.types.delete(val); else F.types.add(val);
+        el.classList.toggle("selected");
+        F.persist();
+        updateApplyButton();
+      };
+    });
+    return;
+  }
+  if(key==="groupes"){ wireNestedFilter("groupes"); return; }
+  if(key==="personnes"){ wireNestedFilter("personnes"); return; }
+  const searchIds = {comptes:["f-list-compte","f-search-compte"],
+    categories:["f-list-cat","f-search-cat"]};
+  const [listId, searchId] = searchIds[key];
+  wireChecklist(listId, key, searchId);
+}
+function refreshMenuSummaryIfNeeded(){} // no-op placeholder (menu is rebuilt fresh when navigated back to)
+
+function renderCategoryStep(key){
+  const item = MENU_ITEMS.find(i=>i.key===key);
+  const sheet = document.getElementById("sheet-filter");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <button class="icon-btn" id="filter-back">${ICONS.arrowLeft}</button>
+      <h2 style="flex:1;text-align:center;">${item.label}</h2>
+      <button class="icon-btn" id="filter-close">${ICONS.close}</button>
+    </div>
+    <div class="sheet-body">
+      ${categoryBodyHtml(key)}
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-ghost" id="filter-clear-section">Réinitialiser</button>
+      <button class="btn btn-primary filter-apply-btn" id="filter-apply-btn">Voir les résultats</button>
+    </div>
+  `;
+  document.getElementById("filter-back").onclick = goToMenu;
+  document.getElementById("filter-close").onclick = ()=>APP.closeOverlay("overlay-filter");
+  document.getElementById("filter-clear-section").onclick = ()=>{
+    if(key==="period"){ F.dateFrom=null; F.dateTo=null; }
+    else if(key==="types"){ F.types.clear(); }
+    else { F[key].clear(); }
+    F.persist();
+    renderFilterSheet();
+  };
+  document.getElementById("filter-apply-btn").onclick = applyAndClose;
+  wireCategoryBody(key);
+  updateApplyButton();
+}
+
+function renderFilterSheet(){
+  if(sheetView==="menu") renderMenuStep();
+  else renderCategoryStep(sheetView);
+}
+
+function openFilterSheet(){
+  sheetView = "menu";
+  renderFilterSheet();
+  APP.openOverlay("overlay-filter");
+}
+
+window.__SF_FILTERSHEET = {openFilterSheet};
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const DATA = window.__SF_DATA;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+let parsedResult = null; // {txns, skipped, total, fileName, params}
+let chosenMode = "merge";
+let chosenParamsMode = "merge";
+
+function renderImportStep1(){
+  const sheet = document.getElementById("sheet-import");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Importer des données</h2><button class="icon-btn" id="import-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <label class="dropzone" id="import-dropzone">
+        ${ICONS.upload}
+        <p><b style="color:var(--text)">Choisir un fichier</b><br>Excel (.xlsx), CSV, ou sauvegarde (.json)</p>
+        <input type="file" id="import-file-input" accept=".xlsx,.xls,.csv,.json" style="display:none">
+      </label>
+      <div class="field-label">Colonnes attendues</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px 14px;font-size:12.5px;color:var(--text-sub);line-height:1.7;">
+        Date · Montant · Type (Income/Expense/Transfer) · Catégorie · Personne · Compte · Compte cible · Groupe · Remarque
+      </div>
+      <div id="import-status" style="margin-top:14px;"></div>
+    </div>
+  `;
+  document.getElementById("import-close").onclick = ()=>APP.closeOverlay("overlay-import");
+  const dz = document.getElementById("import-dropzone");
+  const input = document.getElementById("import-file-input");
+  dz.onclick = (e)=>{}; // label triggers input natively
+  input.onchange = (e)=>{
+    const file = e.target.files[0];
+    if(file) handleFile(file);
+  };
+}
+
+function handleFile(file){
+  const statusEl = document.getElementById("import-status");
+  statusEl.innerHTML = `<div style="text-align:center;color:var(--text-sub);font-size:13.5px;padding:14px;">Analyse du fichier…</div>`;
+  const name = file.name.toLowerCase();
+  if(name.endsWith(".json")){
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      try{
+        const obj = JSON.parse(e.target.result);
+        const rawArr = Array.isArray(obj) ? obj : (obj.transactions || []);
+        const txns = rawArr.map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
+        const params = (!Array.isArray(obj) && obj.params) ? obj.params : null;
+        parsedResult = {txns, skipped: rawArr.length-txns.length, total: rawArr.length, fileName: file.name, params};
+        renderImportSummary();
+      }catch(err){
+        statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Fichier JSON invalide : ${U.escHtml(err.message)}</div>`;
+      }
+    };
+    reader.readAsText(file);
+    return;
+  }
+  DATA.parseFile(file).then(res=>{
+    parsedResult = {...res, fileName: file.name};
+    renderImportSummary();
+  }).catch(err=>{
+    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Impossible de lire ce fichier : ${U.escHtml(err.message)}</div>`;
+  });
+}
+
+function mergeRuleList(existing, incoming, sigFn){
+  const existingSigs = new Set(existing.map(sigFn));
+  let added = 0;
+  incoming.forEach(r=>{
+    const s = sigFn(r);
+    if(!existingSigs.has(s)){ existing.push(r); existingSigs.add(s); added++; }
+  });
+  return added;
+}
+
+function applyParamsImport(params, mode){
+  if(!params) return {rulesAdded:0, personRulesAdded:0, acctAdded:0};
+  const groupRules = params.groupRules || [];
+  const personRules = params.personRules || [];
+  const accountTypes = params.accountTypes || {};
+  const groupKind = params.groupKind || {};
+  const groupVoyageMonth = params.groupVoyageMonth || {};
+  const budgetAdjustments = params.budgetAdjustments || [];
+  Store.settings.budget = Store.settings.budget || {};
+  if(mode==="replace"){
+    Store.settings.groupAliasRules = groupRules.slice();
+    Store.settings.personAliasRules = personRules.slice();
+    Store.settings.accountTypes = Object.assign({}, accountTypes);
+    Store.settings.groupKind = Object.assign({}, groupKind);
+    Store.settings.groupVoyageMonth = Object.assign({}, groupVoyageMonth);
+    Store.settings.budget.adjustments = budgetAdjustments.slice();
+    return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
+  }
+  const existingGroup = Store.settings.groupAliasRules || [];
+  const rulesAdded = mergeRuleList(existingGroup, groupRules, r=>[r.groupe,r.superGroupe,r.dateFrom||"",r.dateTo||""].join("|"));
+  Store.settings.groupAliasRules = existingGroup;
+
+  const existingPerson = Store.settings.personAliasRules || [];
+  const personRulesAdded = mergeRuleList(existingPerson, personRules, r=>[r.personne,r.superPersonne,r.dateFrom||"",r.dateTo||""].join("|"));
+  Store.settings.personAliasRules = existingPerson;
+
+  const acctBefore = Object.keys(Store.settings.accountTypes||{}).length;
+  Store.settings.accountTypes = Object.assign({}, Store.settings.accountTypes, accountTypes);
+  const acctAdded = Object.keys(Store.settings.accountTypes).length - acctBefore;
+
+  Store.settings.groupKind = Object.assign({}, Store.settings.groupKind, groupKind);
+  Store.settings.groupVoyageMonth = Object.assign({}, Store.settings.groupVoyageMonth, groupVoyageMonth);
+
+  const existingAdj = Store.settings.budget.adjustments || [];
+  mergeRuleList(existingAdj, budgetAdjustments, a=>[a.month,a.groupe,a.categorie||"",a.montant,a.remarque||""].join("|"));
+  Store.settings.budget.adjustments = existingAdj;
+
+  return {rulesAdded, personRulesAdded, acctAdded};
+}
+
+let chosenImportScope = "both"; // "both" | "transactions" | "params"
+
+function renderImportSummary(){
+  const statusEl = document.getElementById("import-status");
+  const r = parsedResult;
+  const hasExisting = Store.transactions.length>0;
+  const hasTxns = r.txns.length>0;
+  const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
+    Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length));
+  chosenMode = hasExisting ? "merge" : "replace";
+  chosenParamsMode = "merge";
+  chosenImportScope = "both";
+
+  if(!hasTxns && !hasParams){
+    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Aucune donnée exploitable trouvée dans ce fichier (ni transactions, ni paramètres). Vérifiez les noms de colonnes et le format des dates.</div>`;
+    return;
+  }
+
+  const dMin = hasTxns ? r.txns.reduce((m,t)=>t.date<m?t.date:m, r.txns[0].date) : null;
+  const dMax = hasTxns ? r.txns.reduce((m,t)=>t.date>m?t.date:m, r.txns[0].date) : null;
+  const showBoth = hasTxns && hasParams;
+
+  function scopeChoiceHtml(){
+    if(!showBoth) return "";
+    return `
+      <div class="field-label">Que voulez-vous importer ?</div>
+      <div class="radio-opt ${chosenImportScope==='both'?'selected':''}" data-iscope="both">
+        <span class="rc"></span>
+        <div><div class="rt">Transactions et Paramètres</div></div>
+      </div>
+      <div class="radio-opt ${chosenImportScope==='transactions'?'selected':''}" data-iscope="transactions">
+        <span class="rc"></span>
+        <div><div class="rt">Transactions seulement</div></div>
+      </div>
+      <div class="radio-opt ${chosenImportScope==='params'?'selected':''}" data-iscope="params">
+        <span class="rc"></span>
+        <div><div class="rt">Paramètres seulement</div></div>
+      </div>
+    `;
+  }
+
+  function txnSectionHtml(){
+    if(!hasTxns) return "";
+    return `
+      <div class="import-summary" style="margin-top:14px;">
+        ${r.txns.length.toLocaleString('fr-FR')} transaction(s) valide(s) sur ${r.total.toLocaleString('fr-FR')} ligne(s)${r.skipped?` · ${r.skipped} ignorée(s)`:""}<br>
+        Période : ${U.fmtDateShort(dMin)} – ${U.fmtDateShort(dMax)}
+      </div>
+      ${hasExisting ? `
+      <div class="field-label">Que faire de ces transactions ?</div>
+      <div class="radio-opt selected" data-mode="merge" id="mode-merge">
+        <span class="rc"></span>
+        <div><div class="rt">Ajouter aux données existantes</div><div class="rd">Les transactions déjà enregistrées (identiques) seront ignorées automatiquement.</div></div>
+      </div>
+      <div class="radio-opt" data-mode="replace" id="mode-replace">
+        <span class="rc"></span>
+        <div><div class="rt">Remplacer toutes les données</div><div class="rd">Vos ${Store.transactions.length.toLocaleString('fr-FR')} transactions actuelles seront supprimées et remplacées par ce fichier.</div></div>
+      </div>
+      ` : ""}
+    `;
+  }
+
+  function paramsSectionHtml(){
+    if(!hasParams) return hasTxns ? `<div class="import-summary" style="margin-top:14px;">Aucun onglet/données Paramètres détecté — vos règles de groupe et types de compte actuels resteront inchangés.</div>` : "";
+    return `
+      <div class="import-summary" style="margin-top:14px;">
+        <b>Paramètres détectés</b><br>
+        ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
+        ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget
+      </div>
+      <div class="field-label">Que faire de ces paramètres ?</div>
+      <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
+        <span class="rc"></span>
+        <div><div class="rt">Ajouter aux paramètres existants</div><div class="rd">Les règles déjà enregistrées sont conservées ; celles en commun avec un compte sont mises à jour.</div></div>
+      </div>
+      <div class="radio-opt" data-pmode="replace" id="pmode-replace">
+        <span class="rc"></span>
+        <div><div class="rt">Remplacer les paramètres</div><div class="rd">Toutes les règles de groupe et types de compte actuels seront remplacés par ceux de ce fichier.</div></div>
+      </div>
+    `;
+  }
+
+  function render(){
+    const showTxnSection = hasTxns && (chosenImportScope==="both" || chosenImportScope==="transactions");
+    const showParamsSection = hasParams && (chosenImportScope==="both" || chosenImportScope==="params");
+    statusEl.innerHTML = `
+      <div class="import-summary"><b>${U.escHtml(r.fileName)}</b></div>
+      ${scopeChoiceHtml()}
+      ${showTxnSection ? txnSectionHtml() : ""}
+      ${showParamsSection ? paramsSectionHtml() : ""}
+      <button class="btn btn-primary btn-block" id="import-confirm" style="margin-top:18px;">Importer</button>
+    `;
+    if(showBoth){
+      statusEl.querySelectorAll("[data-iscope]").forEach(el=>{
+        el.onclick = ()=>{ chosenImportScope = el.dataset.iscope; render(); };
+      });
+    }
+    if(showTxnSection && hasExisting){
+      document.getElementById("mode-merge").onclick = ()=>{ chosenMode="merge"; document.getElementById("mode-merge").classList.add("selected"); document.getElementById("mode-replace").classList.remove("selected"); };
+      document.getElementById("mode-replace").onclick = ()=>{ chosenMode="replace"; document.getElementById("mode-replace").classList.add("selected"); document.getElementById("mode-merge").classList.remove("selected"); };
+    }
+    if(showParamsSection){
+      document.getElementById("pmode-merge").onclick = ()=>{ chosenParamsMode="merge"; document.getElementById("pmode-merge").classList.add("selected"); document.getElementById("pmode-replace").classList.remove("selected"); };
+      document.getElementById("pmode-replace").onclick = ()=>{ chosenParamsMode="replace"; document.getElementById("pmode-replace").classList.add("selected"); document.getElementById("pmode-merge").classList.remove("selected"); };
+    }
+    document.getElementById("import-confirm").onclick = ()=>{
+      const doTxns = showTxnSection;
+      const doParams = showParamsSection;
+      const stats = doTxns ? DATA.importTxns(parsedResult.txns, chosenMode) : null;
+      const pstats = doParams ? applyParamsImport(parsedResult.params, chosenParamsMode) : null;
+      if(pstats) Store.saveSettings();
+      APP.closeOverlay("overlay-import");
+      APP.refreshCurrentTab();
+      APP.showToast("Enregistrement…");
+      const finish = (ok)=>{
+        if(!ok){
+          const reason = Store.lastSaveError ? Store.lastSaveError : "raison inconnue";
+          APP.showToast("Import réussi, mais l'enregistrement a échoué : " + reason + " Exportez une sauvegarde par sécurité.");
+          return;
+        }
+        let msg;
+        if(doTxns){
+          msg = stats.mode==="replace" ? `${stats.added.toLocaleString('fr-FR')} transactions importées` :
+            `${stats.added.toLocaleString('fr-FR')} ajoutée(s)` + (stats.skippedDup? `, ${stats.skippedDup} doublon(s) ignoré(s)`:"");
+          if(doParams) msg += ` · paramètres mis à jour`;
+        } else {
+          msg = "Paramètres mis à jour";
+        }
+        APP.showToast(msg);
+      };
+      if(doTxns) Store.saveTransactions().then(finish);
+      else finish(true);
+    };
+  }
+  render();
+}
+
+function openImportModal(){
+  parsedResult = null;
+  renderImportStep1();
+  APP.openOverlay("overlay-import");
+}
+
+window.__SF_IMPORT = {open: openImportModal};
+
+/* ================= MENU / SETTINGS SHEET ================= */
+function buildParamsPayload(){
+  return {
+    groupRules: (Store.settings.groupAliasRules || []).slice(),
+    personRules: (Store.settings.personAliasRules || []).slice(),
+    accountTypes: Object.assign({}, Store.settings.accountTypes || {}),
+    groupKind: Object.assign({}, Store.settings.groupKind || {}),
+    groupVoyageMonth: Object.assign({}, Store.settings.groupVoyageMonth || {}),
+    budgetAdjustments: ((Store.settings.budget||{}).adjustments || []).slice()
+  };
+}
+
+/* scope: "both" | "transactions" | "params" */
+function exportBackup(scope){
+  scope = scope || "both";
+  const payload = {version:2, exportedAt: new Date().toISOString()};
+  if(scope==="both" || scope==="transactions"){
+    payload.transactions = Store.transactions.map(t=>({...t, date:t.date.toISOString()}));
+  }
+  if(scope==="both" || scope==="params"){
+    payload.params = buildParamsPayload();
+  }
+  const blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = U.toISO(new Date());
+  const suffix = scope==="transactions" ? "_transactions" : scope==="params" ? "_parametres" : "";
+  a.href = url; a.download = "suivi_financier_sauvegarde"+suffix+"_"+stamp+".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  APP.showToast("Sauvegarde exportée");
+}
+
+/* scope: "both" | "transactions" | "params" */
+function exportExcel(scope){
+  scope = scope || "both";
+  const wb = XLSX.utils.book_new();
+
+  if(scope==="both" || scope==="transactions"){
+    const header = ["Date","Type","Montant","Catégorie","Personne","Compte","Compte cible","Groupe","Remarque"];
+    const data = [header];
+    Store.transactions.forEach(t=>{
+      data.push([
+        U.pad2(t.date.getDate())+"."+U.pad2(t.date.getMonth()+1)+"."+t.date.getFullYear(),
+        t.type, t.montant, t.categorie, t.personne, t.compte, t.compteCible, t.groupe, t.remarque
+      ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Transactions");
+  }
+
+  if(scope==="both" || scope==="params"){
+    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Personne","Groupe de personnes",
+      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)"];
+    const rules = Store.settings.groupAliasRules || [];
+    const acct = Object.entries(Store.settings.accountTypes || {});
+    const personRules = Store.settings.personAliasRules || [];
+    const kindEntries = Object.entries(Store.settings.groupKind || {});
+    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, 1);
+    const pData = [pHeader];
+    for(let i=0;i<n;i++){
+      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i];
+      pData.push([
+        r?r.groupe:"", r?r.superGroupe:"", r&&r.dateFrom?r.dateFrom:"", r&&r.dateTo?r.dateTo:"",
+        a?a[0]:"", a?a[1]:"",
+        p?p.personne:"", p?p.superPersonne:"",
+        k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):""
+      ]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "Paramètres");
+
+    const adj = (Store.settings.budget||{}).adjustments || [];
+    const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque"];
+    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||""]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
+  }
+
+  const stamp = U.toISO(new Date());
+  const suffix = scope==="transactions" ? "_transactions" : scope==="params" ? "_parametres" : "";
+  XLSX.writeFile(wb, "suivi_financier"+suffix+"_"+stamp+".xlsx");
+  APP.showToast("Export Excel généré");
+}
+
+/* Small modal letting the user pick what to export: Transactions / Paramètres / Both.
+   onConfirm(scope) is called once the user validates. */
+function openExportScopeChoice(title, onConfirm){
+  const modal = document.getElementById("modal-confirm");
+  let scope = "both";
+  function render(){
+    modal.innerHTML = `
+      <h3 style="margin:0 0 14px;font-size:18px;">${U.escHtml(title)}</h3>
+      <div class="radio-opt ${scope==='both'?'selected':''}" data-scope="both">
+        <span class="rc"></span>
+        <div><div class="rt">Transactions et Paramètres</div><div class="rd">Les deux à la fois.</div></div>
+      </div>
+      <div class="radio-opt ${scope==='transactions'?'selected':''}" data-scope="transactions">
+        <span class="rc"></span>
+        <div><div class="rt">Transactions seulement</div></div>
+      </div>
+      <div class="radio-opt ${scope==='params'?'selected':''}" data-scope="params">
+        <span class="rc"></span>
+        <div><div class="rt">Paramètres seulement</div><div class="rd">Groupes de groupes et types de compte.</div></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button class="btn btn-ghost" style="flex:1;" id="esc-cancel">Annuler</button>
+        <button class="btn btn-primary" style="flex:1;" id="esc-confirm">Exporter</button>
+      </div>
+    `;
+    modal.querySelectorAll("[data-scope]").forEach(el=>{
+      el.onclick = ()=>{ scope = el.dataset.scope; render(); };
+    });
+    document.getElementById("esc-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+    document.getElementById("esc-confirm").onclick = ()=>{
+      APP.closeOverlay("overlay-confirm");
+      onConfirm(scope);
+    };
+  }
+  render();
+  APP.openOverlay("overlay-confirm");
+}
+
+function confirmResetAll(){
+  const modal = document.getElementById("modal-confirm");
+  modal.innerHTML = `
+    <h3 style="margin:0 0 8px;font-size:18px;">Réinitialiser toutes les données ?</h3>
+    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Cette action supprimera définitivement les ${Store.transactions.length.toLocaleString('fr-FR')} transactions enregistrées sur cet appareil. Pensez à exporter une sauvegarde avant si besoin.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" style="flex:1;" id="reset-cancel">Annuler</button>
+      <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="reset-confirm">Supprimer</button>
+    </div>
+  `;
+  document.getElementById("reset-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("reset-confirm").onclick = ()=>{
+    Store.clearAll();
+    window.__SF_FILTERS.reset();
+    APP.closeOverlay("overlay-confirm");
+    APP.closeOverlay("overlay-menu");
+    APP.showToast("Données réinitialisées");
+    APP.switchTab("dashboard");
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
+function renderMenuSheet(){
+  const sheet = document.getElementById("sheet-menu");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Menu</h2><button class="icon-btn" id="menu-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="menu-import" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.upload} Importer des données</span>
+        </div>
+        <div class="rowline" id="menu-export-xlsx" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.download} Exporter en Excel (.xlsx)</span>
+        </div>
+        <div class="rowline" id="menu-export" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.download} Exporter une sauvegarde (.json)</span>
+        </div>
+      </div>
+      <div class="field-label" style="margin-top:18px;">Paramètres</div>
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="menu-groupmgr" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.pie} Gérer les groupes</span>
+        </div>
+        <div class="rowline" id="menu-personmgr" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.list} Gérer les personnes</span>
+        </div>
+        <div class="rowline" id="menu-accttype" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.wallet} Gérer les types de compte</span>
+        </div>
+        <div class="rowline" id="menu-budgetset" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.budget} Paramètres du budget</span>
+        </div>
+      </div>
+      <div class="field-label" style="margin-top:18px;">Données</div>
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="menu-reset" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;color:var(--expense);">${ICONS.trash} Réinitialiser les données</span>
+        </div>
+      </div>
+      <div class="import-summary" style="margin-top:16px;">
+        ${Store.transactions.length.toLocaleString('fr-FR')} transaction(s) enregistrée(s) localement sur cet appareil (${Store.storageMode==="localstorage"?"stockage navigateur":"base de données locale"}). Exportez une sauvegarde pour transférer vos données vers un autre appareil.
+      </div>
+      ${Store.lastSaveError ? `
+      <div class="import-summary" style="margin-top:10px;border:1.5px solid var(--expense);">
+        <b style="color:var(--expense);">Dernier enregistrement en échec</b><br>${U.escHtml(Store.lastSaveError)}
+        <div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="menu-retry-save">Réessayer l'enregistrement</button></div>
+      </div>` : ""}
+      ${Store.lastSettingsSaveError ? `
+      <div class="import-summary" style="margin-top:10px;border:1.5px solid var(--expense);">
+        <b style="color:var(--expense);">Paramètres/filtres non mémorisés</b><br>${U.escHtml(Store.lastSettingsSaveError)}
+        <div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="menu-retry-settings">Réessayer</button></div>
+      </div>` : ""}
+      <div class="import-summary" id="menu-storage-usage" style="margin-top:10px;">Calcul de l'espace de stockage utilisé…</div>
+    </div>
+  `;
+  document.getElementById("menu-close").onclick = ()=>APP.closeOverlay("overlay-menu");
+  if(Store.lastSettingsSaveError){
+    document.getElementById("menu-retry-settings").onclick = ()=>{
+      const ok = Store.saveSettings();
+      APP.showToast(ok ? "Paramètres enregistrés" : ("Échec : " + Store.lastSettingsSaveError));
+      renderMenuSheet();
+    };
+  }
+  if(Store.lastSaveError){
+    document.getElementById("menu-retry-save").onclick = ()=>{
+      APP.showToast("Nouvelle tentative d'enregistrement…");
+      Store.saveTransactions().then(ok=>{
+        APP.showToast(ok ? "Enregistrement réussi" : ("Échec : " + Store.lastSaveError));
+        renderMenuSheet();
+      });
+    };
+  }
+  document.getElementById("menu-import").onclick = ()=>{ APP.closeOverlay("overlay-menu"); openImportModal(); };
+  document.getElementById("menu-export-xlsx").onclick = ()=>{
+    if(Store.transactions.length===0 && Object.keys(Store.settings.accountTypes||{}).length===0 && (Store.settings.groupAliasRules||[]).length===0){
+      APP.showToast("Aucune donnée à exporter"); return;
+    }
+    APP.closeOverlay("overlay-menu");
+    openExportScopeChoice("Exporter en Excel", (scope)=>exportExcel(scope));
+  };
+  document.getElementById("menu-export").onclick = ()=>{
+    if(Store.transactions.length===0 && Object.keys(Store.settings.accountTypes||{}).length===0 && (Store.settings.groupAliasRules||[]).length===0){
+      APP.showToast("Aucune donnée à exporter"); return;
+    }
+    APP.closeOverlay("overlay-menu");
+    openExportScopeChoice("Exporter une sauvegarde", (scope)=>exportBackup(scope));
+  };
+  document.getElementById("menu-groupmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_GROUPMGR.open(); };
+  document.getElementById("menu-personmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_PERSONMGR.open(); };
+  document.getElementById("menu-accttype").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_ACCTTYPE.open(); };
+  document.getElementById("menu-budgetset").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_BUDGET.open(); };
+  document.getElementById("menu-reset").onclick = ()=>{
+    if(Store.transactions.length===0){ APP.showToast("Aucune donnée à supprimer"); return; }
+    confirmResetAll();
+  };
+  Store.estimateUsage().then(est=>{
+    const el = document.getElementById("menu-storage-usage");
+    if(!el) return;
+    if(!est || est.quota==null){ el.textContent = "Estimation de l'espace de stockage indisponible sur ce navigateur."; return; }
+    const usedMb = (est.usage/1048576).toFixed(1);
+    const quotaMb = (est.quota/1073741824).toFixed(1);
+    el.textContent = `Espace utilisé : ${usedMb} Mo sur ~${quotaMb} Go disponibles sur cet appareil.`;
+  });
+}
+function openMenuSheet(){
+  renderMenuSheet();
+  APP.openOverlay("overlay-menu");
+}
+
+window.__SF_MENU = {open: openMenuSheet};
+})();
+
+/* ================= Générateur générique : gestion des alias (groupes / personnes) ================= */
+function createAliasManager(cfg){
+  const U = window.__SF_UTILS;
+  const Store = window.__SF_STORE;
+  const AGG = window.__SF_AGG;
+  const APP = window.__SF_APP;
+  const ICONS = U.ICONS;
+
+  let view = "list"; // "list" | "edit" | "all"
+  let editingBase = null;
+  let searchTerm = "";
+  let rowSeq = 0;
+
+  function rules(){ return Store.settings[cfg.settingsKey] || []; }
+  function rulesForBase(base){ return rules().filter(r=>r[cfg.baseField]===base); }
+  function existingSuperNames(){
+    return Array.from(new Set(rules().map(r=>r[cfg.superField]))).sort((a,b)=>a.localeCompare(b,'fr'));
+  }
+  function existingBaseNames(){
+    return cfg.distinctBaseFn(Store.transactions).map(b=>b.base).sort((a,b)=>a.localeCompare(b,'fr'));
+  }
+
+  function viewToggleHtml(){
+    return `<div class="seg" id="am-viewtoggle" style="margin-bottom:12px;">
+      <button data-v="list" class="${view==='list'||view==='edit'?'active':''}">Par ${cfg.superLabel}</button>
+      <button data-v="all" class="${view==='all'?'active':''}">Toutes les règles</button>
+    </div>`;
+  }
+  function wireViewToggle(){
+    document.querySelectorAll("#am-viewtoggle button").forEach(b=>{
+      b.onclick = ()=>{ view = b.dataset.v==='all' ? 'all' : 'list'; render(); };
+    });
+  }
+
+  function childRowHtml(b){
+    return `<div class="check-item groupe-child-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
+      <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+      <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
+    </div>`;
+  }
+
+  function renderList(){
+    const sheet = document.getElementById(cfg.sheetId);
+    const {sections, flat} = cfg.hierarchyFn(Store.transactions);
+    const q = U.normalize(searchTerm);
+    const sectionNames = Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+
+    let sectionsHtml = sectionNames.map(sup=>{
+      const children = sections.get(sup).filter(b=> !q || U.normalize(b.base).includes(q) || U.normalize(sup).includes(q));
+      if(q && children.length===0) return "";
+      const totalCount = sections.get(sup).reduce((s,c)=>s+c.count,0);
+      return `<details class="card" style="padding:0;margin-bottom:10px;">
+        <summary style="list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:800;font-size:14.5px;flex:1;">${U.escHtml(sup)}</span>
+          <span style="color:var(--text-sub);font-size:12.5px;">${sections.get(sup).length} · ${totalCount}</span>
+        </summary>
+        <div style="padding:0 12px 12px;">${sections.get(sup).map(childRowHtml).join("")}</div>
+      </details>`;
+    }).join("");
+
+    const flatFiltered = flat.filter(b=> !q || U.normalize(b.base).includes(q)).sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+
+    sheet.innerHTML = `
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
+      <div class="sheet-body">
+        <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">${cfg.helpText}</div>
+        ${viewToggleHtml()}
+        <input type="text" class="search-mini" id="am-search" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
+        ${sectionsHtml ? `<div class="field-label" style="margin-top:4px;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}s</div>${sectionsHtml}` : ""}
+        <div class="field-label" style="margin-top:4px;">${sectionsHtml ? "Non classés" : "Tous les "+cfg.itemLabelPlural}</div>
+        <div class="check-list" style="max-height:none;">
+          ${flatFiltered.map(b=>`
+            <div class="check-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
+              <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+            </div>
+          `).join("") || `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucun élément non classé</div>`}
+        </div>
+      </div>
+    `;
+    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    wireViewToggle();
+    document.getElementById("am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
+    document.querySelectorAll("[data-base]").forEach(el=>{
+      el.onclick = ()=>{ editingBase = el.dataset.base; view="edit"; renderEdit(); };
+    });
+  }
+
+  function ruleRowHtml(rule, editableBase){
+    const id = "amrow"+(rowSeq++);
+    return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px;margin-bottom:10px;" data-rowid="${id}">
+      ${editableBase ? `<input type="text" class="search-mini" style="margin-bottom:8px;" placeholder="${cfg.itemLabel} (nom exact)" list="am-base-list" data-field="base" value="${U.escHtml(rule.base||'')}">` : ""}
+      <input type="text" class="search-mini" ${cfg.hasDates?'style="margin-bottom:8px;"':''} placeholder="Nom du ${cfg.superLabel}" list="am-super-list" data-field="super" value="${U.escHtml(rule.superName||'')}">
+      ${cfg.hasDates ? `<div class="daterange">
+        <input type="date" data-field="dateFrom" value="${rule.dateFrom||''}">
+        <input type="date" data-field="dateTo" value="${rule.dateTo||''}">
+      </div>` : ""}
+      <button class="btn btn-ghost btn-sm" data-del="${id}" style="margin-top:8px;color:var(--expense);">${ICONS.trash} Supprimer cette règle</button>
+    </div>`;
+  }
+  function wireRowDeletes(){
+    document.querySelectorAll("[data-del]").forEach(btn=>{
+      btn.onclick = ()=>{
+        const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
+        if(card) card.remove();
+      };
+    });
+  }
+  function datalistsHtml(){
+    return `<datalist id="am-super-list">${existingSuperNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>
+      <datalist id="am-base-list">${existingBaseNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>`;
+  }
+
+  function kindSectionHtml(){
+    if(!cfg.showKind) return "";
+    const kind = AGG.getGroupKind(editingBase);
+    const voyMonth = AGG.getGroupVoyageMonth(editingBase) || "";
+    return `
+      <div class="field-label" style="margin-top:0;">Type de groupe (utilisé par l'onglet Budget)</div>
+      <div class="seg" id="am-kind-seg" style="margin-bottom:${kind==='voyage'?'10px':'18px'};">
+        <button data-k="quotidien" class="${kind==='quotidien'?'active':''}">Vie quotidienne</button>
+        <button data-k="voyage" class="${kind==='voyage'?'active':''}">Voyage</button>
+      </div>
+      <div id="am-voymonth-wrap" style="display:${kind==='voyage'?'block':'none'};margin-bottom:18px;">
+        <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:6px;line-height:1.4;">Mois auquel affecter les dépenses de ce groupe dans le budget (sinon le mois réel de chaque dépense est utilisé).</div>
+        <input type="month" class="search-mini" id="am-voymonth-input" value="${U.escHtml(voyMonth)}">
+      </div>
+    `;
+  }
+  function wireKindSection(){
+    if(!cfg.showKind) return;
+    document.querySelectorAll("#am-kind-seg button").forEach(b=>{
+      b.onclick = ()=>{
+        document.querySelectorAll("#am-kind-seg button").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        document.getElementById("am-voymonth-wrap").style.display = b.dataset.k==="voyage" ? "block" : "none";
+      };
+    });
+  }
+  function saveKindSection(){
+    if(!cfg.showKind) return;
+    const active = document.querySelector("#am-kind-seg button.active");
+    const kind = active ? active.dataset.k : "quotidien";
+    Store.settings.groupKind = Store.settings.groupKind || {};
+    Store.settings.groupVoyageMonth = Store.settings.groupVoyageMonth || {};
+    if(kind==="voyage"){
+      Store.settings.groupKind[editingBase] = "voyage";
+      const m = document.getElementById("am-voymonth-input").value || null;
+      if(m) Store.settings.groupVoyageMonth[editingBase] = m; else delete Store.settings.groupVoyageMonth[editingBase];
+    } else {
+      delete Store.settings.groupKind[editingBase];
+      delete Store.settings.groupVoyageMonth[editingBase];
+    }
+  }
+
+  function renderEdit(){
+    const sheet = document.getElementById(cfg.sheetId);
+    const rls = rulesForBase(editingBase).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    sheet.innerHTML = `
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <button class="icon-btn" id="am-back">${ICONS.arrowLeft}</button>
+        <h2 style="flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(editingBase)}</h2>
+        <button class="icon-btn" id="am-close">${ICONS.close}</button>
+      </div>
+      <div class="sheet-body">
+        ${kindSectionHtml()}
+        <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}(s)</div>
+        ${datalistsHtml()}
+        <div id="am-rows">${rls.length ? rls.map(r=>ruleRowHtml(r,false)).join("") : ""}</div>
+        <button class="btn btn-ghost btn-block" id="am-add-row">+ Ajouter une période / un ${cfg.superLabel}</button>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" id="am-cancel">Annuler</button>
+        <button class="btn btn-primary" id="am-save">Enregistrer</button>
+      </div>
+    `;
+    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
+    document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
+    wireRowDeletes();
+    wireKindSection();
+    document.getElementById("am-add-row").onclick = ()=>{
+      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({superName:"",dateFrom:"",dateTo:""}, false));
+      wireRowDeletes();
+    };
+    document.getElementById("am-save").onclick = ()=>{
+      const rows = Array.from(document.querySelectorAll("#am-rows > .card"));
+      const newRules = [];
+      rows.forEach(row=>{
+        const sg = row.querySelector('[data-field="super"]').value.trim();
+        const dfEl = row.querySelector('[data-field="dateFrom"]');
+        const dtEl = row.querySelector('[data-field="dateTo"]');
+        const df = dfEl ? (dfEl.value || null) : null;
+        const dt = dtEl ? (dtEl.value || null) : null;
+        const entry = {[cfg.baseField]:editingBase, [cfg.superField]:sg};
+        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
+        if(sg) newRules.push(entry);
+      });
+      const others = rules().filter(r=>r[cfg.baseField]!==editingBase);
+      Store.settings[cfg.settingsKey] = others.concat(newRules);
+      saveKindSection();
+      Store.saveSettings();
+      APP.showToast("Mis à jour");
+      view="list"; renderList();
+    };
+  }
+
+  /* "Toutes les règles" : édition libre de toutes les règles à la fois (réorganisation manuelle complète) */
+  function renderAll(){
+    const sheet = document.getElementById(cfg.sheetId);
+    const rls = rules().map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    sheet.innerHTML = `
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
+      <div class="sheet-body">
+        <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+          Toutes les règles enregistrées. Modifiez ou supprimez librement, ou ajoutez-en de nouvelles, puis enregistrez.
+        </div>
+        ${viewToggleHtml()}
+        ${datalistsHtml()}
+        <div id="am-rows">${rls.length ? rls.map(r=>ruleRowHtml(r,true)).join("") : ""}</div>
+        <button class="btn btn-ghost btn-block" id="am-add-row">+ Ajouter une règle</button>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" id="am-cancel">Annuler</button>
+        <button class="btn btn-primary" id="am-save">Enregistrer tout</button>
+      </div>
+    `;
+    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    wireViewToggle();
+    wireRowDeletes();
+    document.getElementById("am-add-row").onclick = ()=>{
+      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({base:"",superName:"",dateFrom:"",dateTo:""}, true));
+      wireRowDeletes();
+    };
+    document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
+    document.getElementById("am-save").onclick = ()=>{
+      const rows = Array.from(document.querySelectorAll("#am-rows > .card"));
+      const newRules = [];
+      rows.forEach(row=>{
+        const baseInput = row.querySelector('[data-field="base"]');
+        const bs = baseInput ? baseInput.value.trim() : "";
+        const sg = row.querySelector('[data-field="super"]').value.trim();
+        const dfEl = row.querySelector('[data-field="dateFrom"]');
+        const dtEl = row.querySelector('[data-field="dateTo"]');
+        const df = dfEl ? (dfEl.value || null) : null;
+        const dt = dtEl ? (dtEl.value || null) : null;
+        const entry = {[cfg.baseField]:bs, [cfg.superField]:sg};
+        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
+        if(bs && sg) newRules.push(entry);
+      });
+      Store.settings[cfg.settingsKey] = newRules;
+      Store.saveSettings();
+      APP.showToast("Règles enregistrées ("+newRules.length+")");
+      renderAll();
+    };
+  }
+
+  function render(){
+    if(view==="all") renderAll();
+    else if(view==="edit") renderEdit();
+    else renderList();
+  }
+
+  function open(){
+    view="list"; searchTerm="";
+    renderList();
+    APP.openOverlay(cfg.overlayId);
+  }
+  return {open};
+}
+
+/* ================= GÉRER LES GROUPES (groupes de groupes) ================= */
+(function(){
+"use strict";
+const AGG = window.__SF_AGG;
+window.__SF_GROUPMGR = createAliasManager({
+  sheetId:"sheet-groupmgr", overlayId:"overlay-groupmgr", title:"Gérer les groupes",
+  itemLabel:"un groupe", itemLabelPlural:"groupes", superLabel:"groupe de groupe",
+  baseField:"groupe", superField:"superGroupe", settingsKey:"groupAliasRules", hasDates:true, showKind:true,
+  hierarchyFn:(txns)=>AGG.groupeHierarchy(txns), distinctBaseFn:(txns)=>AGG.distinctBaseGroupes(txns),
+  helpText:'Rangez chaque groupe dans un groupe de groupe (ex. plusieurs séjours "Cliff Haven" → "Ghana"). Vous pouvez limiter une règle à une période avec des dates. Indiquez aussi si ce groupe relève de la vie quotidienne ou d\'un voyage (utilisé par l\'onglet Budget).'
+});
+})();
+
+/* ================= GÉRER LES PERSONNES (groupes de personnes) ================= */
+(function(){
+"use strict";
+const AGG = window.__SF_AGG;
+window.__SF_PERSONMGR = createAliasManager({
+  sheetId:"sheet-personmgr", overlayId:"overlay-personmgr", title:"Gérer les personnes",
+  itemLabel:"une personne", itemLabelPlural:"personnes", superLabel:"groupe de personnes",
+  baseField:"personne", superField:"superPersonne", settingsKey:"personAliasRules", hasDates:false,
+  hierarchyFn:(txns)=>AGG.personneHierarchy(txns), distinctBaseFn:(txns)=>AGG.distinctBasePersonnes(txns),
+  helpText:'Rangez chaque personne dans un groupe de personnes (ex. plusieurs amis → "Amis").'
+});
+})();
+
+/* ================= GÉRER LES TYPES DE COMPTE ================= */
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+function distinctAccountTypeValues(){
+  const set = new Set(["Courant","Épargne"]);
+  Object.values(Store.settings.accountTypes||{}).forEach(v=>{ if(v) set.add(v); });
+  return Array.from(set);
+}
+
+function renderAcctType(){
+  const sheet = document.getElementById("sheet-accttype");
+  const comptes = AGG.distinctValues(Store.transactions, "compte");
+  const typeOptions = distinctAccountTypeValues();
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Types de compte</h2><button class="icon-btn" id="at-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+        Indiquez le type de chaque compte (Courant, Épargne, ou un autre type de votre choix). Utilisé pour regrouper vos comptes dans les listes.
+      </div>
+      <datalist id="at-type-list">${typeOptions.map(t=>`<option value="${U.escHtml(t)}">`).join("")}</datalist>
+      <div class="card" style="padding:4px 6px;">
+        ${comptes.map(c=>{
+          const current = AGG.getAccountTypeDisplay(c.value);
+          return `
+          <div class="rowline" data-compte="${U.escHtml(c.value)}" style="flex-direction:column;align-items:stretch;gap:8px;">
+            <span style="font-weight:600;font-size:14px;">${U.escHtml(c.value)}</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="chiprow" data-quickchips style="flex:0 0 auto;">
+                <div class="chip-opt ${current==='Courant'?'selected':''}" data-v="Courant">Courant</div>
+                <div class="chip-opt ${current==='Épargne'?'selected':''}" data-v="Épargne">Épargne</div>
+              </div>
+              <input type="text" class="search-mini" style="margin:0;flex:1;" list="at-type-list" data-type-input placeholder="Autre type…" value="${U.escHtml(current)}">
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+  document.getElementById("at-close").onclick = ()=>APP.closeOverlay("overlay-accttype");
+  function setType(row, value){
+    const compte = row.dataset.compte;
+    Store.settings.accountTypes = Store.settings.accountTypes || {};
+    Store.settings.accountTypes[compte] = value;
+    Store.saveSettings();
+    row.querySelector('[data-type-input]').value = value;
+    row.querySelectorAll('[data-quickchips] .chip-opt').forEach(chip=>{
+      chip.classList.toggle('selected', chip.dataset.v===value);
+    });
+  }
+  document.querySelectorAll("#sheet-accttype [data-compte]").forEach(row=>{
+    row.querySelectorAll('[data-quickchips] .chip-opt').forEach(chip=>{
+      chip.onclick = ()=> setType(row, chip.dataset.v);
+    });
+    const input = row.querySelector('[data-type-input]');
+    input.onchange = ()=>{
+      const v = input.value.trim();
+      if(v) setType(row, v);
+    };
+  });
+}
+function openAcctType(){
+  renderAcctType();
+  APP.openOverlay("overlay-accttype");
+}
+window.__SF_ACCTTYPE = {open: openAcctType};
+})();
+(function(){
+"use strict";
+const Store = window.__SF_STORE;
+const APP = window.__SF_APP;
+
+async function init(){
+  document.getElementById("app").innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:60vh;color:#9AA0AC;font-size:14px;">Chargement…</div>`;
+  await Store.load();
+  window.__SF_FILTERS.restore();
+  APP.buildShell();
+  APP.refreshCurrentTab();
+
+  const mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+  if(mq && mq.addEventListener){
+    mq.addEventListener("change", ()=>{
+      if(Store.settings.theme==="auto"){
+        document.documentElement.removeAttribute("data-theme");
+        if(mq.matches) document.documentElement.setAttribute("data-theme","dark");
+        APP.updateThemeColorMeta();
+        APP.refreshCurrentTab();
+      }
+    });
+  }
+}
+
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+})();
+
+</script>
+</body>
+</html>
