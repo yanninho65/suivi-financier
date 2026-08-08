@@ -570,7 +570,7 @@ function idbDelete(key){
 const Store = {
   transactions: [], // array of txn objects
   settings: {theme:"auto", dateBasis:"indiquee", groupAliasRules:[], accountTypes:{}, personAliasRules:[],
-    groupKind:{}, groupVoyageMonth:{},
+    groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
       amortCategories:[], amortPeriodMonths:null, adjustments:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
@@ -666,6 +666,7 @@ const Store = {
     const s = this.settings;
     if(!s.groupKind) s.groupKind = {};
     if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
+    if(!s.groupDateRange) s.groupDateRange = {};
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
@@ -776,6 +777,7 @@ function parseParametresSheet(wb){
   const accountTypes = {};
   const groupKind = {};
   const groupVoyageMonth = {};
+  const groupDateRange = {};
   const categoryTypeOverride = {};
   if(sheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false});
@@ -791,6 +793,9 @@ function parseParametresSheet(wb){
       const kGroupe = norm["groupe (type budget)"];
       const kType = norm["type budget (quotidien/voyage)"];
       const kMonth = norm["mois voyage (aaaa-mm)"];
+      const daysGroupe = norm["groupe (jours)"];
+      const daysFrom = norm["date debut (jours)"];
+      const daysTo = norm["date fin (jours)"];
       const catForced = norm["categorie (classement force)"];
       const catForcedType = norm["type force (revenus/depenses)"];
       if(groupe && superGroupe){
@@ -816,6 +821,11 @@ function parseParametresSheet(wb){
         const base = String(kGroupe).trim();
         groupKind[base] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
         if(kMonth) groupVoyageMonth[base] = String(kMonth).trim();
+      }
+      if(daysGroupe && daysFrom && daysTo){
+        const dFrom = U.parseDateValue(daysFrom);
+        const dTo = U.parseDateValue(daysTo);
+        if(dFrom && dTo) groupDateRange[String(daysGroupe).trim()] = {dateFrom: U.toISO(dFrom), dateTo: U.toISO(dTo)};
       }
       if(catForced && catForcedType){
         categoryTypeOverride[String(catForced).trim()] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
@@ -885,7 +895,7 @@ function parseParametresSheet(wb){
     };
   }
   if(!sheetName && !budgetSheetName && !bsSheetName && !filtresSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, categoryTypeOverride, budgetAdjustments, budgetSettings, filters};
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, filters};
 }
 
 function parseFile(file){
@@ -1188,6 +1198,28 @@ function getGroupVoyageMonth(base){
   const map = Store.settings.groupVoyageMonth || {};
   return map[base] || null;
 }
+/* Date de début/fin d'un groupe (clé = libellé littéral complet si disponible, sinon nom de base) —
+   utilisée pour calculer le nombre de jours et les moyennes par jour (coûts, revenus, total). */
+function getGroupDateRange(key){
+  const map = Store.settings.groupDateRange || {};
+  return map[key] || null;
+}
+function getGroupDayStats(key){
+  const range = getGroupDateRange(key);
+  if(!range || !range.dateFrom || !range.dateTo) return null;
+  const from = new Date(range.dateFrom+"T00:00:00");
+  const to = new Date(range.dateTo+"T00:00:00");
+  const days = Math.round((to-from)/86400000) + 1;
+  if(days<=0) return null;
+  let income=0, expense=0;
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(t.groupe !== key) return;
+    if(t.type==="Income") income += t.montant; else expense += t.montant;
+  });
+  return {days, income, expense, total: income+expense,
+    incomePerDay: income/days, expensePerDay: expense/days, totalPerDay: (income+expense)/days};
+}
 
 /* ---------------- Personne merging (rules: personne -> groupe de personnes ; pas de dates) ---------------- */
 function findPersonAliasRule(base){
@@ -1451,7 +1483,7 @@ function computeTimeSeries(transactions, granularity, dateBasis, dimension){
 window.__SF_AGG = {applyFilters, distinctValues, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getGroupKind, getGroupVoyageMonth,
+  getAccountTypeDisplay, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue};
 })();
 (function(){
@@ -3778,6 +3810,7 @@ function applyParamsImport(params, mode){
   const accountTypes = params.accountTypes || {};
   const groupKind = params.groupKind || {};
   const groupVoyageMonth = params.groupVoyageMonth || {};
+  const groupDateRange = params.groupDateRange || {};
   const categoryTypeOverride = params.categoryTypeOverride || {};
   const budgetAdjustments = params.budgetAdjustments || [];
   const budgetSettings = params.budgetSettings || null;
@@ -3789,6 +3822,7 @@ function applyParamsImport(params, mode){
     Store.settings.accountTypes = Object.assign({}, accountTypes);
     Store.settings.groupKind = Object.assign({}, groupKind);
     Store.settings.groupVoyageMonth = Object.assign({}, groupVoyageMonth);
+    Store.settings.groupDateRange = Object.assign({}, groupDateRange);
     Store.settings.categoryTypeOverride = Object.assign({}, categoryTypeOverride);
     Store.settings.budget.adjustments = budgetAdjustments.slice();
     if(budgetSettings){
@@ -3821,6 +3855,7 @@ function applyParamsImport(params, mode){
 
   Store.settings.groupKind = Object.assign({}, Store.settings.groupKind, groupKind);
   Store.settings.groupVoyageMonth = Object.assign({}, Store.settings.groupVoyageMonth, groupVoyageMonth);
+  Store.settings.groupDateRange = Object.assign({}, Store.settings.groupDateRange, groupDateRange);
   Store.settings.categoryTypeOverride = Object.assign({}, Store.settings.categoryTypeOverride, categoryTypeOverride);
 
   const existingAdj = Store.settings.budget.adjustments || [];
@@ -3999,6 +4034,7 @@ function buildParamsPayload(){
     accountTypes: Object.assign({}, Store.settings.accountTypes || {}),
     groupKind: Object.assign({}, Store.settings.groupKind || {}),
     groupVoyageMonth: Object.assign({}, Store.settings.groupVoyageMonth || {}),
+    groupDateRange: Object.assign({}, Store.settings.groupDateRange || {}),
     categoryTypeOverride: Object.assign({}, Store.settings.categoryTypeOverride || {}),
     budgetAdjustments: (budget.adjustments || []).slice(),
     budgetSettings: {
@@ -4056,22 +4092,25 @@ function exportExcel(scope){
 
   if(scope==="both" || scope==="params"){
     const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Personne","Groupe de personnes",
-      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
+      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)",
+      "Groupe (jours)","Date début (jours)","Date fin (jours)"];
     const rules = Store.settings.groupAliasRules || [];
     const acct = Object.entries(Store.settings.accountTypes || {});
     const personRules = Store.settings.personAliasRules || [];
     const kindEntries = Object.entries(Store.settings.groupKind || {});
     const catOverrideEntries = Object.entries(Store.settings.categoryTypeOverride || {});
-    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, catOverrideEntries.length, 1);
+    const dateRangeEntries = Object.entries(Store.settings.groupDateRange || {});
+    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, catOverrideEntries.length, dateRangeEntries.length, 1);
     const pData = [pHeader];
     for(let i=0;i<n;i++){
-      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i];
+      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i], d = dateRangeEntries[i];
       pData.push([
         r?r.groupe:"", r?r.superGroupe:"", r&&r.dateFrom?r.dateFrom:"", r&&r.dateTo?r.dateTo:"",
         a?a[0]:"", a?a[1]:"",
         p?p.personne:"", p?p.superPersonne:"",
         k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):"",
-        co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):""
+        co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):"",
+        d?d[0]:"", d&&d[1]?d[1].dateFrom||"":"", d&&d[1]?d[1].dateTo||"":""
       ]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "Paramètres");
@@ -4572,6 +4611,70 @@ function createAliasManager(cfg){
     }
   }
 
+  /* ---- Dates de début/fin d'un groupe (tous types confondus) : nombre de jours + moyennes/jour ---- */
+  function dayStatsPreview(key, dateFrom, dateTo){
+    if(!dateFrom || !dateTo) return null;
+    const from = new Date(dateFrom+"T00:00:00");
+    const to = new Date(dateTo+"T00:00:00");
+    const days = Math.round((to-from)/86400000) + 1;
+    if(days<=0) return null;
+    let income=0, expense=0;
+    Store.transactions.forEach(t=>{
+      if(t.type==="Transfer") return;
+      if(t.groupe !== key) return;
+      if(t.type==="Income") income += t.montant; else expense += t.montant;
+    });
+    return {days, income, expense, total: income+expense,
+      incomePerDay: income/days, expensePerDay: expense/days, totalPerDay: (income+expense)/days};
+  }
+  function dayStatsHtml(stats){
+    if(!stats) return `<div style="font-size:12px;color:var(--text-faint);">Renseignez les deux dates pour voir le nombre de jours et les moyennes.</div>`;
+    return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+      <div class="detail-row"><span>Nombre de jours</span><span>${stats.days}</span></div>
+      <div class="detail-row"><span>Revenus / jour</span><span style="color:var(--income);">${U.fmtMoney(stats.incomePerDay)}</span></div>
+      <div class="detail-row"><span>Dépenses / jour</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(stats.expensePerDay))}</span></div>
+      <div class="detail-row"><span>Total / jour</span><span style="color:${stats.totalPerDay<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(stats.totalPerDay)}</span></div>
+    </div>`;
+  }
+  function dateRangeSectionHtml(){
+    if(!cfg.showKind) return "";
+    const key = editingFull || editingBase;
+    const range = AGG.getGroupDateRange(key) || {};
+    const stats = dayStatsPreview(key, range.dateFrom||"", range.dateTo||"");
+    return `
+      <div class="field-label" style="margin-top:0;">Dates de début et de fin</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Disponibles pour tous les groupes. Utilisées pour calculer le nombre de jours et les moyennes par jour (dépenses, revenus, total).</div>
+      <div class="daterange" style="margin-bottom:10px;">
+        <input type="date" class="search-mini" id="am-daterange-from" value="${U.escHtml(range.dateFrom||'')}">
+        <input type="date" class="search-mini" id="am-daterange-to" value="${U.escHtml(range.dateTo||'')}">
+      </div>
+      <div id="am-daystats" style="margin-bottom:18px;">${dayStatsHtml(stats)}</div>
+    `;
+  }
+  function wireDateRangeSection(){
+    if(!cfg.showKind) return;
+    const key = editingFull || editingBase;
+    const update = ()=>{
+      const df = document.getElementById("am-daterange-from").value;
+      const dt = document.getElementById("am-daterange-to").value;
+      const stats = dayStatsPreview(key, df, dt);
+      document.getElementById("am-daystats").innerHTML = dayStatsHtml(stats);
+    };
+    const fromEl = document.getElementById("am-daterange-from");
+    const toEl = document.getElementById("am-daterange-to");
+    if(fromEl) fromEl.onchange = update;
+    if(toEl) toEl.onchange = update;
+  }
+  function saveDateRangeSection(){
+    if(!cfg.showKind) return;
+    const key = editingFull || editingBase;
+    const df = document.getElementById("am-daterange-from").value || null;
+    const dt = document.getElementById("am-daterange-to").value || null;
+    Store.settings.groupDateRange = Store.settings.groupDateRange || {};
+    if(df && dt) Store.settings.groupDateRange[key] = {dateFrom: df, dateTo: dt};
+    else delete Store.settings.groupDateRange[key];
+  }
+
   function renderEdit(){
     const sheet = document.getElementById(cfg.sheetId);
     const isDatedOccurrence = !!(cfg.hasDates && editingFull && editingFull !== editingBase);
@@ -4607,6 +4710,7 @@ function createAliasManager(cfg){
         <div class="check-item" id="am-allperiods-toggle" style="margin-bottom:16px;cursor:pointer;">
           <span class="cbox">${ICONS.check}</span><span class="lbl">Appliquer à toutes les périodes de « ${U.escHtml(editingBase)} », pas seulement celle-ci</span>
         </div>` : ""}
+        ${dateRangeSectionHtml()}
       </div>
       <div class="sheet-foot">
         <button class="btn btn-ghost" id="am-cancel">Annuler</button>
@@ -4617,6 +4721,7 @@ function createAliasManager(cfg){
     document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
     document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
     wireKindSection();
+    wireDateRangeSection();
     const allPeriodsToggle = document.getElementById("am-allperiods-toggle");
     if(allPeriodsToggle) allPeriodsToggle.onclick = ()=> allPeriodsToggle.classList.toggle("selected");
     document.getElementById("am-save").onclick = ()=>{
@@ -4639,6 +4744,7 @@ function createAliasManager(cfg){
       }
       Store.settings[cfg.settingsKey] = keepOthers;
       saveKindSection();
+      saveDateRangeSection();
       Store.saveSettings();
       APP.showToast("Mis à jour");
       view="list"; renderList();
