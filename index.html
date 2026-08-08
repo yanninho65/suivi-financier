@@ -263,9 +263,11 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 /* ---------- Transactions list ---------- */
 .txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:18px 4px 8px;text-transform:capitalize;}
 .txn-item{
-  display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);
+  display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--card);
   border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
 }
+.txn-item .txn-ico{margin-top:1px;}
+.txn-item .txn-amt{margin-top:1px;}
 .txn-item + .txn-item{margin-top:8px;}
 .txn-ico{
   width:40px;height:40px;border-radius:50%;flex:0 0 auto;
@@ -275,8 +277,10 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .txn-ico.exp{background:var(--expense-soft);color:var(--expense);}
 .txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
 .txn-mid{flex:1;min-width:0;}
-.txn-title{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-title{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .txn-sub{font-size:12px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.txn-line{font-size:11px;line-height:1.35;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.txn-line .txn-line-tag{opacity:.6;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;margin-right:4px;}
 .txn-amt{font-size:14.5px;font-weight:800;flex:0 0 auto;text-align:right;}
 .txn-amt.inc{color:var(--income);}
 .txn-amt.exp{color:var(--expense);}
@@ -1525,7 +1529,6 @@ function buildShell(){
     <div class="overlay overlay-large" id="overlay-personmgr"><div class="sheet sheet-large" id="sheet-personmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-accttype"><div class="sheet sheet-large" id="sheet-accttype"></div></div>
     <div class="overlay overlay-large" id="overlay-catmgr"><div class="sheet sheet-large" id="sheet-catmgr"></div></div>
-    <div class="overlay overlay-large" id="overlay-budgetset"><div class="sheet sheet-large" id="sheet-budgetset"></div></div>
     <div class="overlay overlay-large" id="overlay-picker"><div class="sheet sheet-large" id="sheet-picker"></div></div>
   `;
 
@@ -1552,7 +1555,6 @@ function buildShell(){
   document.getElementById("overlay-personmgr").onclick = (e)=>{ if(e.target.id==="overlay-personmgr") closeOverlay("overlay-personmgr"); };
   document.getElementById("overlay-accttype").onclick = (e)=>{ if(e.target.id==="overlay-accttype") closeOverlay("overlay-accttype"); };
   document.getElementById("overlay-catmgr").onclick = (e)=>{ if(e.target.id==="overlay-catmgr") closeOverlay("overlay-catmgr"); };
-  document.getElementById("overlay-budgetset").onclick = (e)=>{ if(e.target.id==="overlay-budgetset") closeOverlay("overlay-budgetset"); };
   document.getElementById("overlay-picker").onclick = (e)=>{ if(e.target.id==="overlay-picker") closeOverlay("overlay-picker"); };
 
   applyThemeToDom();
@@ -1763,11 +1765,16 @@ function makeTxnItemEl(t){
   const info = txnIconInfo(t);
   const el = document.createElement("div");
   el.className = "txn-item";
+  const catLine = t.type==="Transfer" ? (t.compte+" → "+t.compteCible) : (t.categorie || "—");
+  const groupeLine = t.groupe || "—";
+  const personneLine = t.personne ? AGG.getPersonneDisplay(t) : "—";
   el.innerHTML = `
     <div class="txn-ico ${info.cls}">${info.letter}</div>
     <div class="txn-mid">
       <div class="txn-title">${U.escHtml(txnTitle(t))}</div>
-      <div class="txn-sub">${U.escHtml(txnSubtitle(t))}</div>
+      <div class="txn-line">${U.escHtml(catLine)}</div>
+      <div class="txn-line">${U.escHtml(groupeLine)}</div>
+      <div class="txn-line">${U.escHtml(personneLine)}</div>
     </div>
     <div class="txn-amt ${txnAmtClass(t)}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
   `;
@@ -2448,6 +2455,7 @@ const PICKER = window.__SF_PICKER;
 
 /* état local de la vue (période affichée) */
 let periodFrom = null, periodTo = null; // "YYYY-MM"
+let amortCatsSectionOpen = false;
 function ensurePeriod(){
   if(periodFrom && periodTo) return;
   const saved = Store.settings.budget || {};
@@ -2585,8 +2593,42 @@ function computeGroupBudget(superGroupeName, months, opts){
     }
   });
 
-  // Amortissement : total (sur tout l'historique, catégorie par catégorie) / nombre de mois de la période où on reste,
-  // réinjecté également sur chaque mois affiché. À défaut de période définie, on lisse sur la période affichée elle-même.
+  // Ajustements manuels (montant brut, non multiplié par la vue couple/perso).
+  // Un ajustement "amorti" ajoute son montant tel quel sur son mois (pour, par ex., annuler une dépense
+  // ponctuelle) ET amortit son opposé sur l'ensemble de la période d'amortissement (même mécanisme que
+  // les catégories amorties ci-dessus).
+  const amortPoolVoyAll = {income:0, expense:0};
+  if(isAmorti){
+    (cfg.adjustments||[]).forEach(adj=>{
+      if(adj.groupe !== superGroupeName) return;
+      const amt = Number(adj.montant)||0;
+      if(!amt) return;
+      if(monthSet.has(adj.month)){
+        if(adj.categorie){
+          const o = ensureCat(adj.categorie);
+          if(amt>=0){ o.income += amt; o.adjIncome += amt; } else { o.expense += amt; o.adjExpense += amt; }
+        } else {
+          const o = ensureVoy("__ajustement__");
+          o.label = "Ajustements";
+          if(amt>=0) o.income += amt; else o.expense += amt;
+        }
+      }
+      if(adj.amorti){
+        const oppAmt = -amt;
+        if(adj.categorie){
+          const prev = amortPoolAll.get(adj.categorie) || {income:0, expense:0};
+          if(oppAmt>=0) prev.income += oppAmt; else prev.expense += oppAmt;
+          amortPoolAll.set(adj.categorie, prev);
+        } else {
+          if(oppAmt>=0) amortPoolVoyAll.income += oppAmt; else amortPoolVoyAll.expense += oppAmt;
+        }
+      }
+    });
+  }
+
+  // Amortissement : total (sur tout l'historique, catégorie par catégorie, + ajustements amortis) / nombre
+  // de mois de la période où on reste, réinjecté également sur chaque mois affiché. À défaut de période
+  // définie, on lisse sur la période affichée elle-même.
   if(isAmorti){
     const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
     amortPoolAll.forEach((tot, cat)=>{
@@ -2596,23 +2638,13 @@ function computeGroupBudget(superGroupeName, months, opts){
       o.income += addInc; o.expense += addExp;
       o.amortIncome += addInc; o.amortExpense += addExp;
     });
-  }
-
-  // Ajustements manuels (montant brut, non multiplié par la vue couple/perso)
-  if(isAmorti){
-    (cfg.adjustments||[]).forEach(adj=>{
-      if(adj.groupe !== superGroupeName) return;
-      if(!monthSet.has(adj.month)) return;
-      const amt = Number(adj.montant)||0;
-      if(adj.categorie){
-        const o = ensureCat(adj.categorie);
-        if(amt>=0){ o.income += amt; o.adjIncome += amt; } else { o.expense += amt; o.adjExpense += amt; }
-      } else {
-        const o = ensureVoy("__ajustement__");
-        o.label = "Ajustements";
-        if(amt>=0) o.income += amt; else o.expense += amt;
-      }
-    });
+    if(amortPoolVoyAll.income || amortPoolVoyAll.expense){
+      const perMonth = {income: amortPoolVoyAll.income/periodMonths, expense: amortPoolVoyAll.expense/periodMonths};
+      const o = ensureVoy("__ajustement__");
+      o.label = "Ajustements";
+      o.income += perMonth.income*months.length;
+      o.expense += perMonth.expense*months.length;
+    }
   }
 
   const categories = Array.from(catTotals.values());
@@ -2661,6 +2693,195 @@ function periodPickerHtml(){
   `;
 }
 
+/* ---------------- Réglages d'amortissement : mois de début, période, catégories amorties ---------------- */
+function amortSettingsHtml(){
+  const cfg = Store.settings.budget;
+  const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
+  const selectedAmort = new Set(cfg.amortCategories||[]);
+  return `
+    <div class="card" style="margin:0 4px 14px;padding:12px 14px;">
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Mois de début</div>
+          <input type="month" class="search-mini" id="bg-startmonth" value="${U.escHtml(cfg.startMonth||'')}" style="margin:0;">
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
+          <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;">
+        </div>
+      </div>
+      ${cats.length ? `
+      <details id="bg-amortcats-details" style="margin-top:10px;" ${amortCatsSectionOpen?'open':''}>
+        <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:13px;font-weight:700;">Catégories amorties</span>
+          <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
+            ${selectedAmort.size} sélectionnée${selectedAmort.size>1?"s":""}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </summary>
+        <div class="check-list" style="max-height:34vh;margin-top:8px;">
+          ${cats.map(c=>`
+            <div class="check-item bg-amort-item ${selectedAmort.has(c)?'selected':''}" data-c="${U.escHtml(c)}">
+              <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(c)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </details>` : ""}
+    </div>
+  `;
+}
+function wireAmortSettings(){
+  const details = document.getElementById("bg-amortcats-details");
+  if(details) details.addEventListener("toggle", function(){ amortCatsSectionOpen = this.open; });
+  const cfg = Store.settings.budget;
+  document.getElementById("bg-startmonth").onchange = (e)=>{ cfg.startMonth = e.target.value || null; Store.saveSettings(); renderBudget(); };
+  document.getElementById("bg-amortperiod").onchange = (e)=>{ cfg.amortPeriodMonths = Number(e.target.value) || null; Store.saveSettings(); renderBudget(); };
+  document.querySelectorAll(".bg-amort-item[data-c]").forEach(el=>{
+    el.onclick = ()=>{
+      amortCatsSectionOpen = true;
+      const c = el.dataset.c;
+      const set = new Set(cfg.amortCategories||[]);
+      if(set.has(c)) set.delete(c); else set.add(c);
+      cfg.amortCategories = Array.from(set);
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+}
+
+/* ---------------- Ajustements manuels : section sur la page principale du Budget ---------------- */
+function adjustmentsInPeriod(){
+  const cfg = Store.settings.budget;
+  const months = monthsInRange(periodFrom, periodTo);
+  const monthSet = new Set(months);
+  return (cfg.adjustments||[]).map((a,i)=>Object.assign({__idx:i}, a)).filter(a=>monthSet.has(a.month));
+}
+function adjustmentsSectionHtml(){
+  const inPeriod = adjustmentsInPeriod();
+  if(inPeriod.length){
+    return `
+      <button type="button" class="btn btn-ghost btn-block" id="bg-adj-btn" style="margin:0 4px 14px;display:flex;justify-content:center;align-items:center;gap:8px;">
+        <span>${inPeriod.length} ajustement${inPeriod.length>1?"s":""} sur la période</span>
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--primary-soft);color:var(--primary);font-weight:900;font-size:14px;">+</span>
+      </button>`;
+  }
+  return `
+    <button type="button" class="btn btn-ghost btn-block" id="bg-adj-btn" style="margin:0 4px 14px;">${ICONS.plus} Ajouter un ajustement</button>`;
+}
+function wireAdjustmentsSection(){
+  const btn = document.getElementById("bg-adj-btn");
+  if(!btn) return;
+  btn.onclick = ()=>{
+    const inPeriod = adjustmentsInPeriod();
+    if(inPeriod.length) openAdjustmentsListSheet();
+    else openAdjustmentForm(null);
+  };
+}
+
+/* Liste des ajustements de la période, au format transaction */
+function openAdjustmentsListSheet(){
+  const items = adjustmentsInPeriod().sort((a,b)=> (b.month||"").localeCompare(a.month||""));
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:800;font-size:17px;">Ajustements</span>
+      <button class="icon-btn" id="adjlist-close">${ICONS.close}</button>
+    </div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${items.length} élément${items.length>1?"s":""} sur la période</div>
+    <div style="max-height:56vh;overflow-y:auto;">
+      ${items.map(a=>`
+        <div class="detail-row bg-adjlist-row" data-idx="${a.__idx}" style="align-items:center;cursor:pointer;">
+          <span style="display:flex;flex-direction:column;min-width:0;">
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(a.remarque||"Ajustement")}</span>
+            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""}</span>
+          </span>
+          <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${a.montant<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(Number(a.montant)||0)}</span>
+        </div>
+      `).join("")}
+    </div>
+    <button class="btn btn-ghost btn-block" id="adjlist-add" style="margin-top:14px;">${ICONS.plus} Ajouter un ajustement</button>
+  `;
+  document.getElementById("adjlist-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("adjlist-add").onclick = ()=> openAdjustmentForm(null);
+  document.querySelectorAll(".bg-adjlist-row[data-idx]").forEach(el=>{
+    el.onclick = ()=>{
+      const idx = Number(el.dataset.idx);
+      const cfg = Store.settings.budget;
+      const adj = Object.assign({__idx:idx}, (cfg.adjustments||[])[idx]);
+      openAdjustmentForm(adj);
+    };
+  });
+  APP.openOverlay("overlay-detail");
+}
+
+/* Formulaire d'ajout / modification d'un ajustement (pop-up plein) */
+function openAdjustmentForm(adj, prefill){
+  const cfg = Store.settings.budget;
+  const groups = candidateSuperGroupes();
+  const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
+  const isEdit = !!(adj && adj.__idx!=null);
+  const data = adj || Object.assign({month: periodFrom||"", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false}, prefill||{});
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span style="font-weight:800;font-size:17px;">${isEdit?"Modifier l'ajustement":"Nouvel ajustement"}</span>
+      <button class="icon-btn" id="adjf-close">${ICONS.close}</button>
+    </div>
+    <div class="daterange" style="margin-bottom:10px;">
+      <input type="month" class="search-mini" id="adjf-month" value="${U.escHtml(data.month||'')}">
+      <select id="adjf-groupe" class="search-mini" style="margin:0;">
+        <option value="">— Groupe —</option>
+        ${groups.map(g=>`<option value="${U.escHtml(g)}" ${data.groupe===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
+      </select>
+    </div>
+    <select id="adjf-cat" class="search-mini" style="margin-bottom:10px;">
+      <option value="">— Catégorie (vide = ajustement global au groupe) —</option>
+      ${cats.map(c=>`<option value="${U.escHtml(c)}" ${data.categorie===c?'selected':''}>${U.escHtml(c)}</option>`).join("")}
+    </select>
+    <input type="number" step="0.01" class="search-mini" style="margin-bottom:10px;" placeholder="Montant (négatif = dépense)" id="adjf-montant" value="${data.montant!=null?data.montant:''}">
+    <input type="text" class="search-mini" style="margin-bottom:14px;" placeholder="Remarque" id="adjf-remarque" value="${U.escHtml(data.remarque||'')}">
+    <div class="check-item ${data.amorti?'selected':''}" id="adjf-amorti-toggle" style="margin-bottom:8px;cursor:pointer;">
+      <span class="cbox">${ICONS.check}</span><span class="lbl">Amortir ce montant sur toute la période</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-sub);margin-bottom:18px;line-height:1.4;">
+      Si activé : le montant saisi est ajouté tel quel sur le mois choisi (ex. +1000 € pour annuler une dépense ponctuelle de 1000 €), et son opposé (ex. -1000 €) est lissé sur chaque mois de la période d'amortissement définie dans les paramètres du budget.
+    </div>
+    <div style="display:flex;gap:10px;">
+      ${isEdit ? `<button class="btn btn-ghost" id="adjf-delete" style="color:var(--expense);">${ICONS.trash}</button>` : ""}
+      <button class="btn btn-primary" id="adjf-save" style="flex:1;">Enregistrer</button>
+    </div>
+  `;
+  document.getElementById("adjf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("adjf-amorti-toggle").onclick = (e)=> e.currentTarget.classList.toggle("selected");
+  if(isEdit){
+    document.getElementById("adjf-delete").onclick = ()=>{
+      cfg.adjustments.splice(adj.__idx,1);
+      Store.saveSettings();
+      APP.closeOverlay("overlay-detail");
+      APP.showToast("Ajustement supprimé");
+      renderBudget();
+    };
+  }
+  document.getElementById("adjf-save").onclick = ()=>{
+    const month = document.getElementById("adjf-month").value;
+    const groupe = document.getElementById("adjf-groupe").value;
+    const categorie = document.getElementById("adjf-cat").value.trim();
+    const montant = Number(document.getElementById("adjf-montant").value) || 0;
+    const remarque = document.getElementById("adjf-remarque").value.trim();
+    const amorti = document.getElementById("adjf-amorti-toggle").classList.contains("selected");
+    if(!month || !groupe || !montant){ APP.showToast("Mois, groupe et montant sont requis"); return; }
+    const entry = {month, groupe, categorie, montant, remarque, amorti};
+    cfg.adjustments = cfg.adjustments || [];
+    if(isEdit) cfg.adjustments[adj.__idx] = entry;
+    else cfg.adjustments.push(entry);
+    Store.saveSettings();
+    APP.closeOverlay("overlay-detail");
+    APP.showToast(isEdit ? "Ajustement mis à jour" : "Ajustement ajouté");
+    renderBudget();
+  };
+  APP.openOverlay("overlay-detail");
+}
+
 function groupCardHtml(title, res, isMain){
   const catRowsHtml = list=>list.map(c=>`
     <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
@@ -2669,7 +2890,7 @@ function groupCardHtml(title, res, isMain){
     </div>
   `).join("");
   const voyRowsHtml = list=>list.map(c=>`
-    <div class="detail-row">
+    <div class="detail-row budget-voy-row" data-voy="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
       <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
     </div>
@@ -2735,7 +2956,6 @@ function renderBudget(){
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
         <div style="flex:1;"></div>
-        <button class="icon-btn" id="bg-settings-btn" title="Paramètres du budget">${ICONS.settings}</button>
       </div>
 
       <div style="display:flex;gap:8px;margin:0 4px 10px;">
@@ -2761,6 +2981,8 @@ function renderBudget(){
       </div>` : ""}
 
       ${periodPickerHtml()}
+      ${amortSettingsHtml()}
+      ${adjustmentsSectionHtml()}
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
@@ -2820,16 +3042,22 @@ function renderBudget(){
       }
     });
   };
-  document.getElementById("bg-settings-btn").onclick = ()=>openBudgetSettings();
   document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
   document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
+  wireAmortSettings();
+  wireAdjustmentsSection();
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
     el.onclick = ()=> openCategoryTxnSheet(el.dataset.supergroupe, el.dataset.cat);
+  });
+  document.querySelectorAll(".budget-voy-row[data-voy]").forEach(el=>{
+    el.onclick = ()=> openVoyageTxnSheet(el.dataset.supergroupe, el.dataset.voy);
   });
 }
 
 /* ---------------- Détail des transactions d'une catégorie (Amorti / Réel) ---------------- */
-function openCategoryTxnSheet(superGroupeName, catKey){
+function openCategoryTxnSheet(superGroupeName, catKey, opts){
+  opts = opts || {};
+  let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout"
   const cfg = Store.settings.budget;
   const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
@@ -2854,18 +3082,23 @@ function openCategoryTxnSheet(superGroupeName, catKey){
     // Pour une dépense amortie, on affiche sa part mensuelle (montant / nombre de mois de la période
     // d'amortissement) plutôt que le montant total de la transaction d'origine.
     const displayAmount = amortized ? (t.montant / periodMonths) : t.montant;
-    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount});
+    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey});
   });
 
   // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée.
   if(isAmorti){
-    (cfg.adjustments||[]).forEach(adj=>{
+    (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
       if(adj.groupe !== superGroupeName) return;
       if((adj.categorie||"") !== catKey) return;
-      if(!monthSet.has(adj.month)) return;
       const amt = Number(adj.montant)||0;
-      const [ay,am] = adj.month.split("-").map(Number);
-      items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
+      if(monthSet.has(adj.month)){
+        const [ay,am] = adj.month.split("-").map(Number);
+        items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: adj.remarque||"Ajustement", displayAmount: amt});
+      }
+      if(adj.amorti && amt){
+        const [ay,am] = adj.month.split("-").map(Number);
+        items.push({kind:"amorti", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), displayAmount: -amt/periodMonths});
+      }
     });
   }
 
@@ -2884,17 +3117,137 @@ function openCategoryTxnSheet(superGroupeName, catKey){
     ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
   };
 
+  function renderModal(){
+    const shown = filterKind ? items.filter(x=>x.kind===filterKind) : items;
+    const modal = document.getElementById("modal-detail");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
+        <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
+      </div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <span class="cattxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&filterKind!=='reel'?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${U.fmtMoneySigned(realTotal)}</span>
+        ${amortTotal!==0 ? `<span class="cattxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&filterKind!=='amorti'?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${U.fmtMoneySigned(amortTotal)}</span>` : ""}
+        ${adjTotal!==0 ? `<span class="cattxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&filterKind!=='ajout'?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${U.fmtMoneySigned(adjTotal)}</span>` : ""}
+      </div>
+      <div style="max-height:56vh;overflow-y:auto;">
+        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
+        shown.map((x,i)=>`
+          <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
+            <span style="display:flex;flex-direction:column;min-width:0;">
+              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
+              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+              ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
+              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
+              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.displayAmount)}</span>
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    document.getElementById("cattxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    document.querySelectorAll(".cattxn-badge[data-kind]").forEach(el=>{
+      el.onclick = ()=>{
+        const k = el.dataset.kind;
+        filterKind = (filterKind===k) ? null : k;
+        renderModal();
+      };
+    });
+    document.querySelectorAll(".cattxn-amortize[data-txnid]").forEach(btn=>{
+      btn.onclick = (e)=>{
+        e.stopPropagation();
+        openAdjustmentForm(null, {
+          month: btn.dataset.month,
+          groupe: superGroupeName,
+          categorie: catKey,
+          montant: -Number(btn.dataset.amount),
+          remarque: "Amortissement : "+catKey,
+          amorti: true
+        });
+      };
+    });
+    document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
+      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+    });
+    document.querySelectorAll(".cattxn-row[data-adjidx]").forEach(el=>{
+      if(el.dataset.txnid) return;
+      el.onclick = ()=>{
+        const idx = Number(el.dataset.adjidx);
+        const a = Object.assign({__idx:idx}, (cfg.adjustments||[])[idx]);
+        openAdjustmentForm(a);
+      };
+    });
+  }
+
+  renderModal();
+  APP.openOverlay("overlay-detail");
+}
+
+/* Détail des transactions d'un groupe voyage (ou des ajustements sans catégorie) affiché dans une carte Budget */
+function openVoyageTxnSheet(superGroupeName, voyKey){
+  const cfg = Store.settings.budget;
+  const months = monthsInRange(periodFrom, periodTo);
+  const monthSet = new Set(months);
+
+  const items = [];
+  if(voyKey === "__ajustement__"){
+    (cfg.adjustments||[]).forEach(adj=>{
+      if(adj.groupe !== superGroupeName) return;
+      if(adj.categorie) return;
+      if(!monthSet.has(adj.month)) return;
+      const amt = Number(adj.montant)||0;
+      const [ay,am] = adj.month.split("-").map(Number);
+      items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
+    });
+  } else {
+    Store.transactions.forEach(t=>{
+      if(t.type==="Transfer") return;
+      if(!groupSelectionMatches(t, superGroupeName)) return;
+      const base = t.groupeBase || U.baseGroupe(t.groupe);
+      if(AGG.getGroupKind(base)!=="voyage") return;
+      if(t.groupe !== voyKey) return;
+      const tr = t.transform;
+      let inPeriod;
+      if(tr.mode==="yearsplit"){
+        inPeriod = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
+      } else {
+        const forced = AGG.getGroupVoyageMonth(base);
+        let targetMonth = forced;
+        if(!targetMonth){
+          if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
+          else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
+        }
+        inPeriod = monthSet.has(targetMonth);
+      }
+      if(!inPeriod) return;
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount: t.montant});
+    });
+  }
+
+  items.sort((a,b)=> b.date - a.date);
+
+  const budgetRes = computeGroupBudget(superGroupeName, months);
+  const voyEntry = budgetRes.voyages.find(v=>v.key===voyKey);
+  const total = voyEntry ? (voyEntry.income||0)+(voyEntry.expense||0) : 0;
+  const label = voyEntry ? (voyEntry.label||voyEntry.key) : voyKey;
+
+  const KIND_STYLE = {
+    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
+    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
+  };
+
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
-      <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
+      <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+      <button class="icon-btn" id="voytxn-close">${ICONS.close}</button>
     </div>
     <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${items.length} élément${items.length>1?"s":""}</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};">Réel : ${U.fmtMoneySigned(realTotal)}</span>
-      ${amortTotal!==0 ? `<span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};">Amorti : ${U.fmtMoneySigned(amortTotal)}</span>` : ""}
-      ${adjTotal!==0 ? `<span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};">Ajouts : ${U.fmtMoneySigned(adjTotal)}</span>` : ""}
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};">Total : ${U.fmtMoneySigned(total)}</span>
     </div>
     <div style="max-height:56vh;overflow-y:auto;">
       ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction sur la période affichée.</div>` :
@@ -2902,7 +3255,7 @@ function openCategoryTxnSheet(superGroupeName, catKey){
         <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}</span>
           </span>
           <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
             <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
@@ -2912,147 +3265,15 @@ function openCategoryTxnSheet(superGroupeName, catKey){
       `).join("")}
     </div>
   `;
-  document.getElementById("cattxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("voytxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
     el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
   });
   APP.openOverlay("overlay-detail");
 }
 
-/* ---------------- Paramètres de l'onglet Budget ---------------- */
-let adjRowSeq = 0;
-function adjustmentRowHtml(adj, groupOptions){
-  const id = "bgadj"+(adjRowSeq++);
-  return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px;margin-bottom:10px;" data-rowid="${id}">
-    <div class="daterange" style="margin-bottom:8px;">
-      <input type="month" data-field="month" value="${U.escHtml(adj.month||'')}">
-      <select data-field="groupe" class="search-mini" style="margin:0;">
-        <option value="">— Groupe —</option>
-        ${groupOptions.map(g=>`<option value="${U.escHtml(g)}" ${adj.groupe===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
-      </select>
-    </div>
-    <input type="text" class="search-mini" style="margin-bottom:8px;" placeholder="Catégorie (laisser vide pour un ajustement global au groupe)" data-field="categorie" value="${U.escHtml(adj.categorie||'')}">
-    <input type="number" step="0.01" class="search-mini" style="margin-bottom:8px;" placeholder="Montant (négatif = dépense)" data-field="montant" value="${adj.montant!=null?adj.montant:''}">
-    <input type="text" class="search-mini" placeholder="Remarque" data-field="remarque" value="${U.escHtml(adj.remarque||'')}">
-    <button class="btn btn-ghost btn-sm" data-del="${id}" style="margin-top:8px;color:var(--expense);">${ICONS.trash} Supprimer</button>
-  </div>`;
-}
-function wireAdjDeletes(){
-  document.querySelectorAll("[data-del]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
-      if(card) card.remove();
-    };
-  });
-}
-
-function renderBudgetSettings(){
-  const sheet = document.getElementById("sheet-budgetset");
-  const cfg = Store.settings.budget;
-  const groups = candidateSuperGroupes();
-  const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
-  const selectedExtra = new Set(cfg.extraGroups||[]);
-  const selectedAmort = new Set(cfg.amortCategories||[]);
-
-  sheet.innerHTML = `
-    <div class="sheet-handle"></div>
-    <div class="sheet-head"><h2>Paramètres du budget</h2><button class="icon-btn" id="bgs-close">${ICONS.close}</button></div>
-    <div class="sheet-body">
-
-      <div class="field-label" style="margin-top:0;">Vue</div>
-      <div class="seg" id="bgs-scope-seg" style="margin-bottom:18px;">
-        <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso (x1)</button>
-        <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple (x2)</button>
-      </div>
-
-      <div class="field-label" style="margin-top:0;">Mois de début</div>
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Les dépenses antérieures à ce mois sont considérées comme amorties plutôt qu'affichées telles quelles.</div>
-      <input type="month" class="search-mini" id="bgs-start" value="${U.escHtml(cfg.startMonth||'')}" style="margin-bottom:18px;">
-
-      <div class="field-label" style="margin-top:0;">Groupe de groupe principal</div>
-      <select class="search-mini" id="bgs-main" style="margin-bottom:18px;">
-        <option value="">— Choisir —</option>
-        ${groups.map(g=>`<option value="${U.escHtml(g)}" ${cfg.mainGroup===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
-      </select>
-
-      <div class="field-label" style="margin-top:0;">Groupes de groupe additionnels</div>
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Affichés en dessous, avec seulement Revenus / Dépenses / Total.</div>
-      <div class="check-list" style="margin-bottom:18px;">
-        ${groups.map(g=>`
-          <div class="check-item bgs-extra-item ${selectedExtra.has(g)?'selected':''}" data-g="${U.escHtml(g)}">
-            <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(g)}</span>
-          </div>
-        `).join("")}
-      </div>
-
-      <div class="field-label" style="margin-top:0;">Catégories amorties</div>
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Ces catégories sont retirées du calcul mensuel brut, puis lissées sur la période où on reste (ci-dessous) et réparties également sur chaque mois affiché.</div>
-      <div class="check-list" style="margin-bottom:12px;">
-        ${cats.map(c=>`
-          <div class="check-item bgs-amort-item ${selectedAmort.has(c)?'selected':''}" data-c="${U.escHtml(c)}">
-            <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(c)}</span>
-          </div>
-        `).join("")}
-      </div>
-      <div class="field-label" style="margin-top:0;">Période où on reste (en mois)</div>
-      <input type="number" min="1" class="search-mini" id="bgs-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin-bottom:22px;">
-
-      <div class="field-label" style="margin-top:0;">Ajustements mensuels</div>
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Montant fixe ajouté pour un mois/groupe (et éventuellement une catégorie précise). Non affecté par la vue couple/perso. Actif uniquement en mode "Avec amortissement + ajouts".</div>
-      <div id="bgs-adj-rows">${(cfg.adjustments||[]).map(a=>adjustmentRowHtml(a, groups)).join("")}</div>
-      <button class="btn btn-ghost btn-block" id="bgs-adj-add">${ICONS.plus} Ajouter un ajustement</button>
-    </div>
-    <div class="sheet-foot">
-      <button class="btn btn-ghost" id="bgs-cancel">Annuler</button>
-      <button class="btn btn-primary" id="bgs-save">Enregistrer</button>
-    </div>
-  `;
-
-  document.getElementById("bgs-close").onclick = ()=>APP.closeOverlay("overlay-budgetset");
-  document.getElementById("bgs-cancel").onclick = ()=>APP.closeOverlay("overlay-budgetset");
-  document.querySelectorAll("#bgs-scope-seg button").forEach(b=>{
-    b.onclick = ()=>{ document.querySelectorAll("#bgs-scope-seg button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); };
-  });
-  document.querySelectorAll(".bgs-extra-item").forEach(el=>{
-    el.onclick = ()=> el.classList.toggle("selected");
-  });
-  document.querySelectorAll(".bgs-amort-item").forEach(el=>{
-    el.onclick = ()=> el.classList.toggle("selected");
-  });
-  wireAdjDeletes();
-  document.getElementById("bgs-adj-add").onclick = ()=>{
-    document.getElementById("bgs-adj-rows").insertAdjacentHTML("beforeend", adjustmentRowHtml({}, groups));
-    wireAdjDeletes();
-  };
-  document.getElementById("bgs-save").onclick = ()=>{
-    cfg.scope = document.querySelector("#bgs-scope-seg button.active").dataset.v;
-    cfg.startMonth = document.getElementById("bgs-start").value || null;
-    cfg.mainGroup = document.getElementById("bgs-main").value || null;
-    cfg.extraGroups = Array.from(document.querySelectorAll(".bgs-extra-item.selected")).map(el=>el.dataset.g);
-    cfg.amortCategories = Array.from(document.querySelectorAll(".bgs-amort-item.selected")).map(el=>el.dataset.c);
-    cfg.amortPeriodMonths = Number(document.getElementById("bgs-amortperiod").value) || null;
-    const rows = Array.from(document.querySelectorAll("#bgs-adj-rows > .card"));
-    cfg.adjustments = rows.map(row=>({
-      month: row.querySelector('[data-field="month"]').value || null,
-      groupe: row.querySelector('[data-field="groupe"]').value || "",
-      categorie: row.querySelector('[data-field="categorie"]').value.trim(),
-      montant: Number(row.querySelector('[data-field="montant"]').value) || 0,
-      remarque: row.querySelector('[data-field="remarque"]').value.trim(),
-    })).filter(a=>a.month && a.groupe && a.montant);
-    Store.saveSettings();
-    APP.closeOverlay("overlay-budgetset");
-    APP.showToast("Paramètres du budget enregistrés");
-    renderBudget();
-  };
-}
-function openBudgetSettings(){
-  renderBudgetSettings();
-  APP.openOverlay("overlay-budgetset");
-}
-
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderBudget = renderBudget;
-window.__SF_BUDGET = {open: openBudgetSettings};
 })();
 (function(){
 "use strict";
@@ -3884,9 +4105,6 @@ function renderMenuSheet(){
         <div class="rowline" id="menu-accttype" style="cursor:pointer;">
           <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.wallet} Gérer les types de compte</span>
         </div>
-        <div class="rowline" id="menu-budgetset" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.budget} Paramètres du budget</span>
-        </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Données</div>
       <div class="card" style="padding:4px 6px;">
@@ -3946,7 +4164,6 @@ function renderMenuSheet(){
   document.getElementById("menu-personmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_PERSONMGR.open(); };
   document.getElementById("menu-catmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_CATMGR.open(); };
   document.getElementById("menu-accttype").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_ACCTTYPE.open(); };
-  document.getElementById("menu-budgetset").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_BUDGET.open(); };
   document.getElementById("menu-reset").onclick = ()=>{
     if(Store.transactions.length===0){ APP.showToast("Aucune donnée à supprimer"); return; }
     confirmResetAll();
@@ -4031,8 +4248,15 @@ function createAliasManager(cfg){
     </div>`;
   }
 
+  let openSections = new Set();
+
   function renderList(){
     const sheet = document.getElementById(cfg.sheetId);
+    const prevBody = sheet.querySelector(".sheet-body");
+    const prevScroll = prevBody ? prevBody.scrollTop : 0;
+    sheet.querySelectorAll("details[data-sup]").forEach(d=>{
+      if(d.open) openSections.add(d.dataset.sup); else openSections.delete(d.dataset.sup);
+    });
     const {sections, flat} = cfg.hierarchyFn(Store.transactions);
     const q = U.normalize(searchTerm);
     const sectionNames = Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -4041,7 +4265,8 @@ function createAliasManager(cfg){
       const children = sections.get(sup).filter(b=> !q || U.normalize(b.base).includes(q) || U.normalize(sup).includes(q));
       if(q && children.length===0) return "";
       const totalCount = sections.get(sup).reduce((s,c)=>s+c.count,0);
-      return `<details class="card" style="padding:0;margin-bottom:10px;">
+      const isOpen = openSections.has(sup) || (!!q && children.length>0);
+      return `<details class="card" data-sup="${U.escHtml(sup)}" style="padding:0;margin-bottom:10px;" ${isOpen?'open':''}>
         <summary style="list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-weight:800;font-size:14.5px;flex:1;">${U.escHtml(sup)}</span>
           <span style="color:var(--text-sub);font-size:12.5px;">${sections.get(sup).length} · ${totalCount}</span>
@@ -4100,6 +4325,8 @@ function createAliasManager(cfg){
         el.onclick = ()=>{ editingBase = el.dataset.base; view="edit"; renderEdit(); };
       });
     }
+    const newBody = sheet.querySelector(".sheet-body");
+    if(newBody) newBody.scrollTop = prevScroll;
   }
 
   /* ---- Déplacement groupé : applique un même groupe de groupe / groupe de personnes à plusieurs éléments sélectionnés ---- */
@@ -4340,7 +4567,7 @@ function createAliasManager(cfg){
   }
 
   function open(){
-    view="list"; searchTerm=""; selectMode=false; selected.clear();
+    view="list"; searchTerm=""; selectMode=false; selected.clear(); openSections.clear();
     renderList();
     APP.openOverlay(cfg.overlayId);
   }
