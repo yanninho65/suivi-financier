@@ -258,6 +258,8 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 }
 .oneui-pill .pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .oneui-pill .pill-chev{flex:0 0 auto;opacity:.85;width:13px;height:13px;}
+.chev-rot{transition:transform .15s ease;}
+details[open] > summary .chev-rot{transform:rotate(180deg);}
 .seg button.active{background:var(--primary);color:#fff;}
 
 /* ---------- Transactions list ---------- */
@@ -394,6 +396,7 @@ const ICONS = {
   budget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
+  plane:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1 0-1.3.4l-.7.9c-.4.4-.2 1.1.3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.6 6.4c.3.5.9.7 1.3.3l.9-.7c.4-.3.5-.8.4-1.3z"/></svg>',
 };
 
 /* ---------------- Utils ---------------- */
@@ -1627,7 +1630,8 @@ function updateFilterBadge(){
 function renderHero(){
   const hero = document.getElementById("hero");
   const showOnTab = (currentTab==="dashboard" || currentTab==="transactions");
-  if(!showOnTab || Store.transactions.length===0){ hero.innerHTML=""; return; }
+  if(!showOnTab || Store.transactions.length===0){ hero.innerHTML=""; hero.style.display="none"; return; }
+  hero.style.display="";
   const balances = AGG.computeAccountBalances(Store.transactions);
   const total = balances.reduce((s,a)=>s+a.balance,0);
   const now = new Date();
@@ -2455,6 +2459,7 @@ const PICKER = window.__SF_PICKER;
 
 /* état local de la vue (période affichée) */
 let periodFrom = null, periodTo = null; // "YYYY-MM"
+let amortSectionOpen = false;
 let amortCatsSectionOpen = false;
 function ensurePeriod(){
   if(periodFrom && periodTo) return;
@@ -2482,6 +2487,13 @@ function monthsInRange(from, to){
     guard++;
   }
   return out;
+}
+/* Pour une dépense "lissée sur l'année" (remarque finissant par une année, montant réparti sur 12 mois) :
+   nombre de mois de cette année-là compris dans la période affichée (monthSet). */
+function yearsplitMonthsInPeriod(year, monthSet){
+  let c=0;
+  for(let m=1;m<=12;m++){ if(monthSet.has(year+"-"+U.pad2(m))) c++; }
+  return c;
 }
 
 /* ---------------- Moteur de calcul du budget ---------------- */
@@ -2699,38 +2711,46 @@ function amortSettingsHtml(){
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
   const selectedAmort = new Set(cfg.amortCategories||[]);
   return `
-    <div class="card" style="margin:0 4px 14px;padding:12px 14px;">
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Mois de début</div>
-          <input type="month" class="search-mini" id="bg-startmonth" value="${U.escHtml(cfg.startMonth||'')}" style="margin:0;">
+    <details id="bg-amort-details" class="card" style="margin:0 4px 14px;padding:0;" ${amortSectionOpen?'open':''}>
+      <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:14px;font-weight:800;">Amortissement</span>
+        <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <div style="padding:0 14px 14px;">
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Mois de début</div>
+            <input type="month" class="search-mini" id="bg-startmonth" value="${U.escHtml(cfg.startMonth||'')}" style="margin:0;">
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
+            <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;">
+          </div>
         </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
-          <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;">
-        </div>
+        ${cats.length ? `
+        <details id="bg-amortcats-details" style="margin-top:10px;" ${amortCatsSectionOpen?'open':''}>
+          <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:13px;font-weight:700;">Catégories amorties</span>
+            <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
+              ${selectedAmort.size} sélectionnée${selectedAmort.size>1?"s":""}
+              <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </summary>
+          <div class="check-list" style="max-height:34vh;margin-top:8px;">
+            ${cats.map(c=>`
+              <div class="check-item bg-amort-item ${selectedAmort.has(c)?'selected':''}" data-c="${U.escHtml(c)}">
+                <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(c)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </details>` : ""}
       </div>
-      ${cats.length ? `
-      <details id="bg-amortcats-details" style="margin-top:10px;" ${amortCatsSectionOpen?'open':''}>
-        <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
-          <span style="font-size:13px;font-weight:700;">Catégories amorties</span>
-          <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
-            ${selectedAmort.size} sélectionnée${selectedAmort.size>1?"s":""}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
-          </span>
-        </summary>
-        <div class="check-list" style="max-height:34vh;margin-top:8px;">
-          ${cats.map(c=>`
-            <div class="check-item bg-amort-item ${selectedAmort.has(c)?'selected':''}" data-c="${U.escHtml(c)}">
-              <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(c)}</span>
-            </div>
-          `).join("")}
-        </div>
-      </details>` : ""}
-    </div>
+    </details>
   `;
 }
 function wireAmortSettings(){
+  const outer = document.getElementById("bg-amort-details");
+  if(outer) outer.addEventListener("toggle", function(){ amortSectionOpen = this.open; });
   const details = document.getElementById("bg-amortcats-details");
   if(details) details.addEventListener("toggle", function(){ amortCatsSectionOpen = this.open; });
   const cfg = Store.settings.budget;
@@ -2738,13 +2758,20 @@ function wireAmortSettings(){
   document.getElementById("bg-amortperiod").onchange = (e)=>{ cfg.amortPeriodMonths = Number(e.target.value) || null; Store.saveSettings(); renderBudget(); };
   document.querySelectorAll(".bg-amort-item[data-c]").forEach(el=>{
     el.onclick = ()=>{
+      amortSectionOpen = true;
       amortCatsSectionOpen = true;
       const c = el.dataset.c;
       const set = new Set(cfg.amortCategories||[]);
       if(set.has(c)) set.delete(c); else set.add(c);
       cfg.amortCategories = Array.from(set);
       Store.saveSettings();
+      const listEl = document.querySelector("#bg-amortcats-details .check-list");
+      const listScroll = listEl ? listEl.scrollTop : 0;
+      const winScroll = window.scrollY;
       renderBudget();
+      const newList = document.querySelector("#bg-amortcats-details .check-list");
+      if(newList) newList.scrollTop = listScroll;
+      window.scrollTo(0, winScroll);
     };
   });
 }
@@ -2901,8 +2928,8 @@ function groupCardHtml(title, res, isMain){
         <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
         <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(res.net)}</span>
       </div>
-      <div class="detail-row"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(res.income)}</span></div>
-      <div class="detail-row"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(res.expense))}</span></div>
+      <div class="detail-row ${!isMain?'bg-typetxn-row':''}" ${!isMain?`data-supergroupe="${U.escHtml(title)}" data-type="Income" style="cursor:pointer;"`:''}><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(res.income)}</span></div>
+      <div class="detail-row ${!isMain?'bg-typetxn-row':''}" ${!isMain?`data-supergroupe="${U.escHtml(title)}" data-type="Expense" style="cursor:pointer;"`:''}><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(res.expense))}</span></div>
       ${isMain ? `
         ${res.categories.length ? `<div class="field-label">Catégories</div>${catRowsHtml(res.categories)}` : ""}
         ${res.voyages.length ? `<div class="field-label">Voyages / ajustements</div>${voyRowsHtml(res.voyages)}` : ""}
@@ -2946,16 +2973,22 @@ function renderBudget(){
   const selectedExtra = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
 
   view.innerHTML = `
-    <div class="section" style="padding-top:8px;">
-      <div style="display:flex;align-items:center;gap:8px;margin:0 4px 10px;">
+    <div class="section" style="padding-top:2px;">
+      <div style="display:flex;align-items:center;gap:8px;margin:0 4px 10px;flex-wrap:wrap;">
         <button type="button" class="oneui-pill" id="bg-main-pill">
           <span class="pill-label">${U.escHtml(cfg.mainGroup)}</span>
           <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
+        <div id="bg-extra-chips" style="display:contents;">
+          ${selectedExtra.map(g=>`
+            <div class="chip-opt selected" data-extra="${U.escHtml(g)}" style="gap:8px;">
+              <span>${U.escHtml(g)}</span><span style="font-weight:900;opacity:.8;">×</span>
+            </div>
+          `).join("")}
+        </div>
         <button type="button" class="oneui-pill" id="bg-add-extra-btn" style="padding:8px 12px;background:var(--primary-soft);color:var(--primary);" title="Ajouter un groupe additionnel">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
-        <div style="flex:1;"></div>
       </div>
 
       <div style="display:flex;gap:8px;margin:0 4px 10px;">
@@ -2968,17 +3001,6 @@ function renderBudget(){
           <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
         </div>
       </div>
-
-      ${selectedExtra.length ? `
-      <div style="margin:0 4px 12px;">
-        <div class="chiprow" id="bg-extra-chips">
-          ${selectedExtra.map(g=>`
-            <div class="chip-opt selected" data-extra="${U.escHtml(g)}" style="gap:8px;">
-              <span>${U.escHtml(g)}</span><span style="font-weight:900;opacity:.8;">×</span>
-            </div>
-          `).join("")}
-        </div>
-      </div>` : ""}
 
       ${periodPickerHtml()}
       ${amortSettingsHtml()}
@@ -3052,6 +3074,9 @@ function renderBudget(){
   document.querySelectorAll(".budget-voy-row[data-voy]").forEach(el=>{
     el.onclick = ()=> openVoyageTxnSheet(el.dataset.supergroupe, el.dataset.voy);
   });
+  document.querySelectorAll(".bg-typetxn-row[data-type]").forEach(el=>{
+    el.onclick = ()=> openGroupTypeTxnSheet(el.dataset.supergroupe, el.dataset.type);
+  });
 }
 
 /* ---------------- Détail des transactions d'une catégorie (Amorti / Réel) ---------------- */
@@ -3080,9 +3105,13 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     const inPeriod = amortized || monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
     if(!inPeriod) return;
     // Pour une dépense amortie, on affiche sa part mensuelle (montant / nombre de mois de la période
-    // d'amortissement) plutôt que le montant total de la transaction d'origine.
-    const displayAmount = amortized ? (t.montant / periodMonths) : t.montant;
-    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey});
+    // d'amortissement) plutôt que le montant total de la transaction d'origine. Pour une dépense
+    // "lissée sur l'année" (remarque finissant par une année), on n'affiche que la part correspondant
+    // aux mois de la période sélectionnée (même principe).
+    let displayAmount = t.montant;
+    if(amortized) displayAmount = t.montant / periodMonths;
+    else if(tr.mode==="yearsplit") displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet);
+    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit" && !amortized});
   });
 
   // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée.
@@ -3137,7 +3166,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
           <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
             <span style="display:flex;flex-direction:column;min-width:0;">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}</span>
+              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
               ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
@@ -3223,7 +3252,8 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
         inPeriod = monthSet.has(targetMonth);
       }
       if(!inPeriod) return;
-      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount: t.montant});
+      const displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, yearsplit: tr.mode==="yearsplit"});
     });
   }
 
@@ -3255,7 +3285,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
         <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
           </span>
           <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
             <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
@@ -3266,6 +3296,79 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
     </div>
   `;
   document.getElementById("voytxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
+    el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+  });
+  APP.openOverlay("overlay-detail");
+}
+
+/* Transactions Revenus/Dépenses d'un groupe (utilisé pour les groupes additionnels, sans détail par catégorie) */
+function collectGroupTypeItems(superGroupeName, type, months){
+  const monthSet = new Set(months);
+  const items = [];
+  Store.transactions.forEach(t=>{
+    if(t.type!==type) return;
+    if(!groupSelectionMatches(t, superGroupeName)) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    const kind = AGG.getGroupKind(base);
+    const tr = t.transform;
+    let inPeriod = false;
+    if(kind==="voyage"){
+      const forced = AGG.getGroupVoyageMonth(base);
+      if(tr.mode==="yearsplit" && !forced){
+        inPeriod = String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4);
+      } else {
+        let targetMonth = forced;
+        if(!targetMonth){
+          if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
+          else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
+        }
+        inPeriod = monthSet.has(targetMonth);
+      }
+    } else {
+      const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+      inPeriod = monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
+    }
+    if(!inPeriod) return;
+    const isYearsplit = tr.mode==="yearsplit" && !(kind==="voyage" && AGG.getGroupVoyageMonth(base));
+    const montant = isYearsplit ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
+    items.push({date: t.date, txnId: t.id, remarque: t.remarque || t.categorie || t.groupe || "—", sub: kind==="voyage" ? (t.groupe||"") : (t.categorie||""), montant, yearsplit: isYearsplit});
+  });
+  items.sort((a,b)=> b.date - a.date);
+  return items;
+}
+function openGroupTypeTxnSheet(superGroupeName, type){
+  const months = monthsInRange(periodFrom, periodTo);
+  const items = collectGroupTypeItems(superGroupeName, type, months);
+  const total = items.reduce((s,x)=>s+x.montant,0);
+  const label = type==="Income" ? "Revenus" : "Dépenses";
+  const color = type==="Income" ? "var(--income)" : "var(--expense)";
+  const bg = type==="Income" ? "var(--income-soft)" : "var(--expense-soft)";
+
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:800;font-size:17px;">${label}</span>
+      <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
+    </div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${items.length} élément${items.length>1?"s":""}</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${U.fmtMoneySigned(total)}</span>
+    </div>
+    <div style="max-height:56vh;overflow-y:auto;">
+      ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction sur la période affichée.</div>` :
+      items.map(x=>`
+        <div class="detail-row cattxn-row" data-txnid="${U.escHtml(x.txnId)}" style="align-items:center;cursor:pointer;">
+          <span style="display:flex;flex-direction:column;min-width:0;">
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(x.remarque)}</span>
+            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+          </span>
+          <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${x.montant<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.montant)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("grptxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
     el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
   });
@@ -4195,6 +4298,7 @@ function createAliasManager(cfg){
 
   let view = "list"; // "list" | "edit" | "all" | "bulk"
   let editingBase = null;
+  let editingFull = null;
   let searchTerm = "";
   let rowSeq = 0;
   let selectMode = false;
@@ -4207,6 +4311,17 @@ function createAliasManager(cfg){
   }
   function existingBaseNames(){
     return cfg.distinctBaseFn(Store.transactions).map(b=>b.base).sort((a,b)=>a.localeCompare(b,'fr'));
+  }
+  /* Identifiant réel utilisé pour les règles (nom de base, sans le suffixe de date entre parenthèses) —
+     l'affichage, lui, montre toujours le libellé complet (avec la date) tel que fourni par hierarchyFn. */
+  function trueBase(val){ return U.baseGroupe(val); }
+  /* Icône Voyage (avion) / Vie quotidienne (maison) affichée devant chaque groupe, pour voir le type sans avoir à cliquer. */
+  function kindIconHtml(base){
+    if(!cfg.showKind) return "";
+    const kind = AGG.getGroupKind(base);
+    const icon = (kind==="voyage" ? ICONS.plane : ICONS.home).replace('<svg ', '<svg style="width:14px;height:14px;" ');
+    const title = kind==="voyage" ? "Voyage" : "Vie quotidienne";
+    return `<span title="${title}" style="display:inline-flex;align-items:center;margin-right:7px;color:var(--text-faint);vertical-align:-3px;">${icon}</span>`;
   }
 
   function viewToggleHtml(){
@@ -4222,29 +4337,31 @@ function createAliasManager(cfg){
   }
 
   function childRowHtml(b){
-    const isSel = selected.has(b.base);
+    const realBase = trueBase(b.base);
+    const isSel = selected.has(realBase);
     if(selectMode){
-      return `<div class="check-item groupe-child-item ${isSel?'selected':''}" data-sel="${U.escHtml(b.base)}" style="cursor:pointer;">
+      return `<div class="check-item groupe-child-item ${isSel?'selected':''}" data-sel="${U.escHtml(realBase)}" style="cursor:pointer;">
         <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+        <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       </div>`;
     }
-    return `<div class="check-item groupe-child-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
-      <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+    return `<div class="check-item groupe-child-item" data-base="${U.escHtml(realBase)}" data-full="${U.escHtml(b.base)}" style="cursor:pointer;">
+      <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
     </div>`;
   }
 
   function flatRowHtml(b){
-    const isSel = selected.has(b.base);
+    const realBase = trueBase(b.base);
+    const isSel = selected.has(realBase);
     if(selectMode){
-      return `<div class="check-item ${isSel?'selected':''}" data-sel="${U.escHtml(b.base)}" style="cursor:pointer;">
+      return `<div class="check-item ${isSel?'selected':''}" data-sel="${U.escHtml(realBase)}" style="cursor:pointer;">
         <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+        <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       </div>`;
     }
-    return `<div class="check-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
-      <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+    return `<div class="check-item" data-base="${U.escHtml(realBase)}" data-full="${U.escHtml(b.base)}" style="cursor:pointer;">
+      <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
     </div>`;
   }
 
@@ -4322,7 +4439,7 @@ function createAliasManager(cfg){
       if(moveBtn) moveBtn.onclick = ()=>{ view="bulk"; renderBulk(); };
     } else {
       document.querySelectorAll("[data-base]").forEach(el=>{
-        el.onclick = ()=>{ editingBase = el.dataset.base; view="edit"; renderEdit(); };
+        el.onclick = ()=>{ editingBase = el.dataset.base; editingFull = cfg.hasDates ? (el.dataset.full || null) : null; view="edit"; renderEdit(); };
       });
     }
     const newBody = sheet.querySelector(".sheet-body");
@@ -4457,20 +4574,39 @@ function createAliasManager(cfg){
 
   function renderEdit(){
     const sheet = document.getElementById(cfg.sheetId);
-    const rls = rulesForBase(editingBase).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    const isDatedOccurrence = !!(cfg.hasDates && editingFull && editingFull !== editingBase);
+    let range = null;
+    if(isDatedOccurrence){
+      const txns = Store.transactions.filter(t=>t.groupe===editingFull);
+      if(txns.length){
+        let min=txns[0].date, max=txns[0].date;
+        txns.forEach(t=>{ if(t.date<min) min=t.date; if(t.date>max) max=t.date; });
+        range = {from:U.toISO(min), to:U.toISO(max), sampleDate:min};
+      }
+    }
+    const repDate = range ? range.sampleDate : new Date();
+    const currentRule = cfg.hasDates ? AGG.findGroupAliasRule(editingBase, repDate) : (rulesForBase(editingBase)[0]||null);
+    const currentValue = currentRule ? (currentRule[cfg.superField]||"") : "";
+    const currentIsGlobal = currentRule ? (!currentRule.dateFrom && !currentRule.dateTo) : false;
+
     sheet.innerHTML = `
       <div class="sheet-handle"></div>
       <div class="sheet-head">
         <button class="icon-btn" id="am-back">${ICONS.arrowLeft}</button>
-        <h2 style="flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(editingBase)}</h2>
+        <h2 style="flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(editingFull || editingBase)}</h2>
         <button class="icon-btn" id="am-close">${ICONS.close}</button>
       </div>
       <div class="sheet-body">
         ${kindSectionHtml()}
-        <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}(s)</div>
+        ${range ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:14px;line-height:1.4;">Ce groupe couvre les transactions du ${U.fmtDateShort(new Date(range.from))} au ${U.fmtDateShort(new Date(range.to))}.</div>` : ""}
+        <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}</div>
         ${datalistsHtml()}
-        <div id="am-rows">${rls.length ? rls.map(r=>ruleRowHtml(r,false)).join("") : ""}</div>
-        <button class="btn btn-ghost btn-block" id="am-add-row">+ Ajouter une période / un ${cfg.superLabel}</button>
+        <input type="text" class="search-mini" id="am-super-input" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
+        ${currentRule && isDatedOccurrence && currentIsGlobal ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} ». Enregistrer ici crée une règle spécifique à cette période uniquement, sans toucher aux autres.</div>` : ""}
+        ${isDatedOccurrence ? `
+        <div class="check-item" id="am-allperiods-toggle" style="margin-bottom:16px;cursor:pointer;">
+          <span class="cbox">${ICONS.check}</span><span class="lbl">Appliquer à toutes les périodes de « ${U.escHtml(editingBase)} », pas seulement celle-ci</span>
+        </div>` : ""}
       </div>
       <div class="sheet-foot">
         <button class="btn btn-ghost" id="am-cancel">Annuler</button>
@@ -4480,27 +4616,28 @@ function createAliasManager(cfg){
     document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
     document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
     document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
-    wireRowDeletes();
     wireKindSection();
-    document.getElementById("am-add-row").onclick = ()=>{
-      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({superName:"",dateFrom:"",dateTo:""}, false));
-      wireRowDeletes();
-    };
+    const allPeriodsToggle = document.getElementById("am-allperiods-toggle");
+    if(allPeriodsToggle) allPeriodsToggle.onclick = ()=> allPeriodsToggle.classList.toggle("selected");
     document.getElementById("am-save").onclick = ()=>{
-      const rows = Array.from(document.querySelectorAll("#am-rows > .card"));
-      const newRules = [];
-      rows.forEach(row=>{
-        const sg = row.querySelector('[data-field="super"]').value.trim();
-        const dfEl = row.querySelector('[data-field="dateFrom"]');
-        const dtEl = row.querySelector('[data-field="dateTo"]');
-        const df = dfEl ? (dfEl.value || null) : null;
-        const dt = dtEl ? (dtEl.value || null) : null;
-        const entry = {[cfg.baseField]:editingBase, [cfg.superField]:sg};
-        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
-        if(sg) newRules.push(entry);
+      const sg = document.getElementById("am-super-input").value.trim();
+      const allPeriods = !isDatedOccurrence || (allPeriodsToggle && allPeriodsToggle.classList.contains("selected"));
+      const all = rules();
+      const keepOthers = all.filter(r=>{
+        if(r[cfg.baseField] !== editingBase) return true;
+        if(!cfg.hasDates) return false;
+        if(allPeriods) return !(!r.dateFrom && !r.dateTo);
+        return !(range && r.dateFrom===range.from && r.dateTo===range.to);
       });
-      const others = rules().filter(r=>r[cfg.baseField]!==editingBase);
-      Store.settings[cfg.settingsKey] = others.concat(newRules);
+      if(sg){
+        const entry = {[cfg.baseField]: editingBase, [cfg.superField]: sg};
+        if(cfg.hasDates){
+          if(allPeriods){ entry.dateFrom=null; entry.dateTo=null; }
+          else { entry.dateFrom = range?range.from:null; entry.dateTo = range?range.to:null; }
+        }
+        keepOthers.push(entry);
+      }
+      Store.settings[cfg.settingsKey] = keepOthers;
       saveKindSection();
       Store.saveSettings();
       APP.showToast("Mis à jour");
@@ -4567,7 +4704,7 @@ function createAliasManager(cfg){
   }
 
   function open(){
-    view="list"; searchTerm=""; selectMode=false; selected.clear(); openSections.clear();
+    view="list"; searchTerm=""; selectMode=false; selected.clear(); openSections.clear(); editingBase=null; editingFull=null;
     renderList();
     APP.openOverlay(cfg.overlayId);
   }
@@ -4582,7 +4719,7 @@ window.__SF_GROUPMGR = createAliasManager({
   sheetId:"sheet-groupmgr", overlayId:"overlay-groupmgr", title:"Gérer les groupes",
   itemLabel:"un groupe", itemLabelPlural:"groupes", superLabel:"groupe de groupe",
   baseField:"groupe", superField:"superGroupe", settingsKey:"groupAliasRules", hasDates:true, showKind:true,
-  hierarchyFn:(txns)=>AGG.groupeHierarchy(txns), distinctBaseFn:(txns)=>AGG.distinctBaseGroupes(txns),
+  hierarchyFn:(txns)=>AGG.groupeHierarchyFull(txns), distinctBaseFn:(txns)=>AGG.distinctBaseGroupes(txns),
   helpText:'Rangez chaque groupe dans un groupe de groupe (ex. plusieurs séjours "Cliff Haven" → "Ghana"). Vous pouvez limiter une règle à une période avec des dates. Indiquez aussi si ce groupe relève de la vie quotidienne ou d\'un voyage (utilisé par l\'onglet Budget).'
 });
 })();
