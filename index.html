@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#F0F1F4" id="theme-color-meta">
 <title>Suivi financier</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2716%27%20fill%3D%27%231259D6%27/%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23FFFFFF%27%20stroke-width%3D%273.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M46%2021V13.5H17a5.5%205.5%200%200%200%200%2011h29v10%27/%3E%3Cpath%20d%3D%27M12.5%2016v29a5%205%200%200%200%205%205h29v-12.5%27/%3E%3Cpath%20d%3D%27M38%2032.5a5%205%200%200%200%200%2010h9v-10z%27%20fill%3D%27%23FFFFFF%27/%3E%3C/g%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2716%27%20fill%3D%27%231259D6%27/%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23FFFFFF%27%20stroke-width%3D%273.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M46%2021V13.5H17a5.5%205.5%200%200%200%200%2011h29v10%27/%3E%3Cpath%20d%3D%27M12.5%2016v29a5%205%200%200%200%205%205h29v-12.5%27/%3E%3Cpath%20d%3D%27M38%2032.5a5%205%200%200%200%200%2010h9v-10z%27%20fill%3D%27%23FFFFFF%27/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
 :root{
   --bg:#F0F1F4;
@@ -67,6 +68,10 @@ body{
 button{font-family:inherit;}
 input,select{font-family:inherit;}
 ::-webkit-scrollbar{width:0;height:0;}
+/* Taille par défaut de toutes les icônes SVG inline (évite qu'une icône sans classe dédiée
+   s'affiche à sa taille intrinsèque, ce qui la rendrait disproportionnée dans un bouton/une ligne).
+   Les règles plus spécifiques ci-dessous (.icon-btn svg, .navbtn svg, etc.) restent prioritaires. */
+svg{width:20px;height:20px;flex:0 0 auto;}
 
 .app{max-width:560px;margin:0 auto;min-height:100%;position:relative;padding-bottom:calc(150px + var(--safe-bottom));}
 
@@ -194,6 +199,7 @@ input,select{font-family:inherit;}
 .modal-center{
   width:92%;max-width:420px;background:var(--card);border-radius:var(--radius-lg);
   padding:22px;animation:popin .18s ease-out;
+  max-height:86vh;overflow-y:auto;
 }
 @keyframes popin{from{transform:scale(.92);opacity:0;}to{transform:scale(1);opacity:1;}}
 
@@ -243,6 +249,15 @@ input,select{font-family:inherit;}
 .daterange input{flex:1;border:1.5px solid var(--divider);border-radius:14px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);}
 .seg{display:flex;background:var(--card-alt);border-radius:100px;padding:4px;}
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:100px;font-size:13px;font-weight:700;color:var(--text-sub);cursor:pointer;}
+.seg-sm{padding:3px;}
+.seg-sm button{padding:6px 4px;font-size:11px;}
+.oneui-pill{
+  display:inline-flex;align-items:center;gap:6px;border:none;border-radius:100px;
+  padding:8px 14px 8px 16px;background:var(--primary);color:#fff;font-weight:800;
+  font-size:14px;cursor:pointer;max-width:100%;
+}
+.oneui-pill .pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.oneui-pill .pill-chev{flex:0 0 auto;opacity:.85;width:13px;height:13px;}
 .seg button.active{background:var(--primary);color:#fff;}
 
 /* ---------- Transactions list ---------- */
@@ -374,6 +389,7 @@ const ICONS = {
   more:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
   budget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
 };
 
 /* ---------------- Utils ---------------- */
@@ -390,7 +406,7 @@ function fmtMoney(n){
   return sign + abs.toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}) + " €";
 }
 function fmtMoneySigned(n){
-  return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR') + " €";
+  return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{maximumFractionDigits:2}) + " €";
 }
 const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 const MONTHS_FR_SHORT = ["jan.","fév.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
@@ -753,6 +769,7 @@ function parseParametresSheet(wb){
   const accountTypes = {};
   const groupKind = {};
   const groupVoyageMonth = {};
+  const categoryTypeOverride = {};
   if(sheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false});
     rows.forEach(r=>{
@@ -767,6 +784,8 @@ function parseParametresSheet(wb){
       const kGroupe = norm["groupe (type budget)"];
       const kType = norm["type budget (quotidien/voyage)"];
       const kMonth = norm["mois voyage (aaaa-mm)"];
+      const catForced = norm["categorie (classement force)"];
+      const catForcedType = norm["type force (revenus/depenses)"];
       if(groupe && superGroupe){
         const df = U.parseDateValue(norm["date debut"]);
         const dt = U.parseDateValue(norm["date fin"]);
@@ -791,6 +810,9 @@ function parseParametresSheet(wb){
         groupKind[base] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
         if(kMonth) groupVoyageMonth[base] = String(kMonth).trim();
       }
+      if(catForced && catForcedType){
+        categoryTypeOverride[String(catForced).trim()] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
+      }
     });
   }
   const budgetSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget");
@@ -811,8 +833,52 @@ function parseParametresSheet(wb){
       }
     });
   }
-  if(!sheetName && !budgetSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, budgetAdjustments};
+  const bsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_reglages");
+  let budgetSettings = null;
+  if(bsSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[bsSheetName], {defval:null, raw:false, header:1});
+    const map = {};
+    rows.forEach(row=>{
+      if(!row || row.length<2) return;
+      const key = U.normalize(String(row[0]||""));
+      map[key] = row[1];
+    });
+    budgetSettings = {
+      mode: map["mode"] ? String(map["mode"]).trim() : null,
+      scope: map["vue (perso/couple)"] ? String(map["vue (perso/couple)"]).trim() : null,
+      startMonth: map["mois de debut"] ? String(map["mois de debut"]).trim() : null,
+      mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
+      extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
+      amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
+      amortPeriodMonths: map["periode d'amortissement (mois)"] ? Number(map["periode d'amortissement (mois)"]) : null,
+      periodFrom: map["periode affichee - de"] ? String(map["periode affichee - de"]).trim() : null,
+      periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
+    };
+  }
+  const filtresSheetName = wb.SheetNames.find(n=>U.normalize(n)==="filtres");
+  let filters = null;
+  if(filtresSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[filtresSheetName], {defval:null, raw:false, header:1});
+    const map = {};
+    rows.forEach(row=>{
+      if(!row || row.length<2) return;
+      const key = U.normalize(String(row[0]||""));
+      map[key] = row[1];
+    });
+    const splitList = v=> v ? String(v).split("|").map(s=>s.trim()).filter(Boolean) : [];
+    filters = {
+      search: map["recherche texte"] ? String(map["recherche texte"]).trim() : "",
+      dateFrom: map["date debut"] ? String(map["date debut"]).trim() : null,
+      dateTo: map["date fin"] ? String(map["date fin"]).trim() : null,
+      types: splitList(map["types"]),
+      categories: splitList(map["categories"]),
+      personnes: splitList(map["personnes"]),
+      comptes: splitList(map["comptes"]),
+      groupes: splitList(map["groupes"]),
+    };
+  }
+  if(!sheetName && !budgetSheetName && !bsSheetName && !filtresSheetName) return null;
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, categoryTypeOverride, budgetAdjustments, budgetSettings, filters};
 }
 
 function parseFile(file){
@@ -1018,7 +1084,9 @@ function getGroupeDisplay(t){
   if(!t.groupe) return "(Non renseigné)";
   const base = t.groupeBase || U.baseGroupe(t.groupe);
   const rule = findGroupAliasRule(base, t.date);
-  return rule ? rule.superGroupe : base;
+  // Si aucune règle de groupe de groupe ne s'applique, on conserve le libellé complet
+  // (avec la date entre parenthèses) plutôt que de le remplacer par le nom de base seul.
+  return rule ? rule.superGroupe : t.groupe;
 }
 /* Effective super-groupe for a base name shown in management UI (ignoring date, first rule found) */
 function getSuperGroupeForBase(base){
@@ -1173,8 +1241,9 @@ function classifyCategoryTypes(transactions){
     const o = stats.get(t.categorie);
     if(t.type==="Income") o.inc++; else if(t.type==="Expense") o.exp++;
   });
+  const overrides = Store.settings.categoryTypeOverride || {};
   const map = new Map();
-  stats.forEach((o,cat)=> map.set(cat, o.inc>=o.exp ? "Income" : "Expense"));
+  stats.forEach((o,cat)=> map.set(cat, overrides[cat] || (o.inc>=o.exp ? "Income" : "Expense")));
   return map;
 }
 /* Distinct catégorie list ordered: Income (A→Z), then Expense (A→Z) */
@@ -1392,9 +1461,6 @@ let txnLimit = 60;
 let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | categorie | compte | personne
 let txnGroupsShown = 20; // for dimension-based grouping (limits number of group headers shown)
 let txnPerGroupShown = {}; // groupKey -> number of items shown within that group
-let evoState = {granularity:"month", dateBasis:"indiquee", dimension:"none"};
-let bdState = {dimension:"groupe", kind:"expense"};
-let chartInstances = {};
 let pendingImport = null; // {txns, skipped, total, fileName, isJson}
 let detailTxnId = null;
 
@@ -1434,8 +1500,6 @@ function buildShell(){
     <div class="view active" id="view-dashboard"></div>
     <div class="view" id="view-transactions"></div>
     <div class="view" id="view-budget"></div>
-    <div class="view" id="view-evolution"></div>
-    <div class="view" id="view-breakdown"></div>
     <div class="view" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
@@ -1450,19 +1514,19 @@ function buildShell(){
       <button class="navbtn" data-tab="transactions">${ICONS.list}<span>Transactions</span></button>
       <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
       <button class="navbtn" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
-      <button class="navbtn" id="btn-more" data-tab="more">${ICONS.more}<span>Plus</span></button>
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
     <div class="overlay" id="overlay-import"><div class="sheet" id="sheet-import"></div></div>
     <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
-    <div class="overlay" id="overlay-more"><div class="sheet" id="sheet-more"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-detail"><div class="modal-center" id="modal-detail"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
     <div class="overlay overlay-large" id="overlay-groupmgr"><div class="sheet sheet-large" id="sheet-groupmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-personmgr"><div class="sheet sheet-large" id="sheet-personmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-accttype"><div class="sheet sheet-large" id="sheet-accttype"></div></div>
+    <div class="overlay overlay-large" id="overlay-catmgr"><div class="sheet sheet-large" id="sheet-catmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-budgetset"><div class="sheet sheet-large" id="sheet-budgetset"></div></div>
+    <div class="overlay overlay-large" id="overlay-picker"><div class="sheet sheet-large" id="sheet-picker"></div></div>
   `;
 
   document.getElementById("btn-theme").onclick = cycleTheme;
@@ -1476,47 +1540,22 @@ function buildShell(){
   }, 180);
 
   document.querySelectorAll(".navbtn").forEach(btn=>{
-    btn.onclick = ()=> btn.dataset.tab==="more" ? openMoreSheet() : switchTab(btn.dataset.tab);
+    btn.onclick = ()=> switchTab(btn.dataset.tab);
   });
 
   document.getElementById("overlay-filter").onclick = (e)=>{ if(e.target.id==="overlay-filter") closeOverlay("overlay-filter"); };
   document.getElementById("overlay-import").onclick = (e)=>{ if(e.target.id==="overlay-import") closeOverlay("overlay-import"); };
   document.getElementById("overlay-menu").onclick = (e)=>{ if(e.target.id==="overlay-menu") closeOverlay("overlay-menu"); };
-  document.getElementById("overlay-more").onclick = (e)=>{ if(e.target.id==="overlay-more") closeOverlay("overlay-more"); };
   document.getElementById("overlay-detail").onclick = (e)=>{ if(e.target.id==="overlay-detail") closeOverlay("overlay-detail"); };
   document.getElementById("overlay-confirm").onclick = (e)=>{ if(e.target.id==="overlay-confirm") closeOverlay("overlay-confirm"); };
   document.getElementById("overlay-groupmgr").onclick = (e)=>{ if(e.target.id==="overlay-groupmgr") closeOverlay("overlay-groupmgr"); };
   document.getElementById("overlay-personmgr").onclick = (e)=>{ if(e.target.id==="overlay-personmgr") closeOverlay("overlay-personmgr"); };
   document.getElementById("overlay-accttype").onclick = (e)=>{ if(e.target.id==="overlay-accttype") closeOverlay("overlay-accttype"); };
+  document.getElementById("overlay-catmgr").onclick = (e)=>{ if(e.target.id==="overlay-catmgr") closeOverlay("overlay-catmgr"); };
   document.getElementById("overlay-budgetset").onclick = (e)=>{ if(e.target.id==="overlay-budgetset") closeOverlay("overlay-budgetset"); };
+  document.getElementById("overlay-picker").onclick = (e)=>{ if(e.target.id==="overlay-picker") closeOverlay("overlay-picker"); };
 
   applyThemeToDom();
-}
-
-/* ================= "PLUS" — onglets secondaires (Évolution / Répartition) ================= */
-function openMoreSheet(){
-  const sheet = document.getElementById("sheet-more");
-  sheet.innerHTML = `
-    <div class="sheet-handle"></div>
-    <div class="sheet-head"><h2>Plus d'onglets</h2><button class="icon-btn" id="more-close">${ICONS.close}</button></div>
-    <div class="sheet-body">
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
-        Ces onglets sont en pause (bugs en cours de correction) mais restent accessibles ici.
-      </div>
-      <div class="card" style="padding:4px 6px;">
-        <div class="rowline" id="more-evolution" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.trend} Évolution</span>
-        </div>
-        <div class="rowline" id="more-breakdown" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.pie} Répartition</span>
-        </div>
-      </div>
-    </div>
-  `;
-  document.getElementById("more-close").onclick = ()=>closeOverlay("overlay-more");
-  document.getElementById("more-evolution").onclick = ()=>{ closeOverlay("overlay-more"); switchTab("evolution"); };
-  document.getElementById("more-breakdown").onclick = ()=>{ closeOverlay("overlay-more"); switchTab("breakdown"); };
-  openOverlay("overlay-more");
 }
 
 function closeOverlay(id){ document.getElementById(id).classList.remove("open"); }
@@ -1553,11 +1592,10 @@ function updateThemeColorMeta(){
 function switchTab(tab){
   currentTab = tab;
   resetTxnPagination();
-  const moreTabs = (tab==="evolution"||tab==="breakdown");
-  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab || (moreTabs && b.dataset.tab==="more")));
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById("view-"+tab).classList.add("active");
-  const showFloat = (tab==="transactions"||tab==="evolution"||tab==="breakdown");
+  const showFloat = (tab==="transactions");
   document.getElementById("floatbar-wrap").style.display = showFloat ? "flex" : "none";
   refreshCurrentTab();
 }
@@ -1570,8 +1608,6 @@ function refreshCurrentTab(){
   if(currentTab==="dashboard") V.renderDashboard();
   else if(currentTab==="transactions") V.renderTransactions();
   else if(currentTab==="budget") V.renderBudget && V.renderBudget();
-  else if(currentTab==="evolution") V.renderEvolution();
-  else if(currentTab==="breakdown") V.renderBreakdown();
   else if(currentTab==="accounts") V.renderAccounts();
 }
 
@@ -1588,7 +1624,8 @@ function updateFilterBadge(){
 /* ================= HERO ================= */
 function renderHero(){
   const hero = document.getElementById("hero");
-  if(Store.transactions.length===0){ hero.innerHTML=""; return; }
+  const showOnTab = (currentTab==="dashboard" || currentTab==="transactions");
+  if(!showOnTab || Store.transactions.length===0){ hero.innerHTML=""; return; }
   const balances = AGG.computeAccountBalances(Store.transactions);
   const total = balances.reduce((s,a)=>s+a.balance,0);
   const now = new Date();
@@ -1606,13 +1643,13 @@ function renderHero(){
 
 window.__SF_APP = {
   buildShell, closeOverlay, openOverlay, switchTab, refreshCurrentTab, showToast, resetTxnPagination, updateThemeColorMeta,
-  state:{get currentTab(){return currentTab;}, get evoState(){return evoState;}, get bdState(){return bdState;},
+  state:{get currentTab(){return currentTab;},
          get txnLimit(){return txnLimit;}, set txnLimit(v){txnLimit=v;},
          get txnGroupBy(){return txnGroupBy;}, set txnGroupBy(v){txnGroupBy=v;},
          get txnGroupsShown(){return txnGroupsShown;}, set txnGroupsShown(v){txnGroupsShown=v;},
          get txnPerGroupShown(){return txnPerGroupShown;},
          get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;}},
-  DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE, chartInstances,
+  DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE,
   pendingImportRef:{get(){return pendingImport;}, set(v){pendingImport=v;}}
 };
 })();
@@ -1624,6 +1661,7 @@ const F = window.__SF_FILTERS;
 const AGG = window.__SF_AGG;
 const APP = window.__SF_APP;
 const ICONS = U.ICONS;
+const DATA = window.__SF_DATA;
 
 function emptyStateHtml(opts){
   return `<div class="empty-state">
@@ -1985,9 +2023,13 @@ function openTxnDetail(id){
       <div class="detail-row"><span>Groupe</span><span>${U.escHtml(t.groupe||"—")}</span></div>
       <div class="detail-row"><span>Type</span><span>${t.type==="Income"?"Revenu":t.type==="Expense"?"Dépense":"Transfert"}</span></div>
     </div>
-    <button class="btn btn-ghost btn-block" id="detail-delete" style="margin-top:16px;color:var(--expense);">${ICONS.trash}Supprimer cette transaction</button>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost" id="detail-edit" style="flex:1;">${ICONS.edit||""}Modifier</button>
+      <button class="btn btn-ghost" id="detail-delete" style="flex:1;color:var(--expense);">${ICONS.trash}Supprimer</button>
+    </div>
   `;
   document.getElementById("detail-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("detail-edit").onclick = ()=> openTxnEdit(id);
   document.getElementById("detail-delete").onclick = ()=>{
     Store.transactions = Store.transactions.filter(x=>x.id!==id);
     APP.closeOverlay("overlay-detail");
@@ -1999,11 +2041,314 @@ function openTxnDetail(id){
   APP.openOverlay("overlay-detail");
 }
 
+/* ================= TRANSACTION EDIT (menus déroulants) ================= */
+/* ================= PICKER PLEIN ÉCRAN (sélection en un seul appui) ================= */
+/* Remplace les <select> natifs (qui exigent un second appui "OK" sur mobile) par une liste
+   dans laquelle taper une valeur la sélectionne immédiatement et referme l'écran.
+   opts.hierarchy (optionnel) : {sections: Map(nom du groupe de groupe -> [{base, count}]), flat: [{base, count}]}
+   Si fourni, affiche les groupes de groupe (triés alphabétiquement) en en-tête dépliable —
+   taper l'en-tête sélectionne le groupe de groupe, taper un élément à l'intérieur sélectionne ce groupe précis —
+   puis les groupes non classés (triés alphabétiquement) en dessous. */
+function renderPickerList(opts){
+  const sheet = document.getElementById("sheet-picker");
+  const options = opts.options || [];
+  const hasHierarchy = !!opts.hierarchy;
+
+  function hierarchyListHtml(){
+    const h = opts.hierarchy;
+    const sectionNames = Array.from(h.sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+    let html = sectionNames.map((sup,idx)=>{
+      const children = h.sections.get(sup).slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+      return `<div class="groupe-section">
+        <div class="check-item groupe-section-head ${sup===opts.value?'selected':''}" data-pv="${U.escHtml(sup)}">
+          <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
+          <span class="cnt">${children.length}</span>
+          <button type="button" class="icon-btn pk-expand-btn" data-expand="pk-hsec-${idx}" style="width:30px;height:30px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:14px;height:14px;transform:rotate(-90deg);" ')}</button>
+        </div>
+        <div class="groupe-section-children" id="pk-hsec-${idx}" style="display:none;">
+          ${children.map(c=>`
+            <div class="check-item ${c.base===opts.value?'selected':''}" data-pv="${U.escHtml(c.base)}">
+              <span class="lbl">${U.escHtml(c.base)}</span><span class="cnt">${c.count}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>`;
+    }).join("");
+    const flat = h.flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+    html += flat.map(f=>`
+      <div class="check-item ${f.base===opts.value?'selected':''}" data-pv="${U.escHtml(f.base)}">
+        <span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
+      </div>
+    `).join("");
+    return html;
+  }
+
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>${U.escHtml(opts.title)}</h2><button class="icon-btn" id="pk-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      ${(hasHierarchy || options.length>6) ? `<input type="text" class="search-mini" id="pk-search" placeholder="Rechercher…">` : ""}
+      <div class="check-list" style="max-height:none;" id="pk-list">
+        <div class="check-item ${!opts.value?'selected':''}" data-pv="">
+          <span class="lbl" style="color:var(--text-faint);">— Aucun(e) —</span>
+        </div>
+        ${hasHierarchy ? hierarchyListHtml() : options.map(v=>`
+          <div class="check-item ${v===opts.value?'selected':''}" data-pv="${U.escHtml(v)}">
+            <span class="lbl">${U.escHtml(v)}</span>
+          </div>
+        `).join("")}
+        ${opts.allowNew ? `
+        <div class="check-item" data-pv="__new__" style="color:var(--primary);font-weight:700;">
+          <span class="lbl">${U.escHtml(opts.newLabel || "+ Nouveau…")}</span>
+        </div>` : ""}
+      </div>
+    </div>
+  `;
+  document.getElementById("pk-close").onclick = ()=>APP.closeOverlay("overlay-picker");
+  document.querySelectorAll(".pk-expand-btn").forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      const target = document.getElementById(btn.dataset.expand);
+      const open = target.style.display!=="none";
+      target.style.display = open ? "none" : "block";
+      btn.style.transform = open ? "" : "rotate(180deg)";
+    };
+  });
+  const search = document.getElementById("pk-search");
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      document.querySelectorAll("#pk-list [data-pv]").forEach(el=>{
+        if(el.dataset.pv==="" || el.dataset.pv==="__new__"){ return; }
+        const match = U.normalize(el.dataset.pv).includes(q);
+        el.style.display = match ? "flex" : "none";
+        if(match && q && el.closest(".groupe-section-children")){
+          el.closest(".groupe-section-children").style.display = "block";
+        }
+      });
+    };
+  }
+  document.querySelectorAll("#pk-list [data-pv]").forEach(el=>{
+    el.onclick = ()=>{
+      const v = el.dataset.pv;
+      if(v==="__new__"){ renderPickerNew(opts); return; }
+      APP.closeOverlay("overlay-picker");
+      opts.onSelect(v);
+    };
+  });
+}
+function renderPickerNew(opts){
+  const sheet = document.getElementById("sheet-picker");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <button class="icon-btn" id="pk-back">${ICONS.arrowLeft}</button>
+      <h2 style="flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(opts.newLabel||"Nouvelle valeur")}</h2>
+      <button class="icon-btn" id="pk-close">${ICONS.close}</button>
+    </div>
+    <div class="sheet-body">
+      <input type="text" class="search-mini" id="pk-newval" placeholder="${U.escHtml(opts.newPlaceholder||'')}">
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-ghost" id="pk-new-cancel">Annuler</button>
+      <button class="btn btn-primary" id="pk-new-confirm">Ajouter</button>
+    </div>
+  `;
+  document.getElementById("pk-close").onclick = ()=>APP.closeOverlay("overlay-picker");
+  document.getElementById("pk-back").onclick = ()=> renderPickerList(opts);
+  document.getElementById("pk-new-cancel").onclick = ()=> renderPickerList(opts);
+  const input = document.getElementById("pk-newval");
+  input.focus();
+  const confirm = ()=>{
+    const v = input.value.trim();
+    if(!v){ APP.showToast("Merci de saisir une valeur"); return; }
+    APP.closeOverlay("overlay-picker");
+    opts.onSelect(v);
+  };
+  document.getElementById("pk-new-confirm").onclick = confirm;
+  input.onkeydown = (e)=>{ if(e.key==="Enter") confirm(); };
+}
+/* opts: {title, options:[string], value, allowNew, newLabel, newPlaceholder, onSelect(value)} */
+function openPicker(opts){
+  renderPickerList(opts);
+  APP.openOverlay("overlay-picker");
+}
+
+function categorieList(){
+  const items = AGG.distinctValuesCategorieSorted(Store.transactions); // [{value,count,kind}]
+  const inc = items.filter(i=>i.kind==="Income").map(i=>i.value);
+  const exp = items.filter(i=>i.kind==="Expense").map(i=>i.value);
+  return inc.concat(exp); // Revenus d'abord, puis Dépenses (groupement déjà assuré par le tri)
+}
+
+function fieldPickerBtnHtml(id, label, currentValue){
+  return `<button type="button" class="search-mini" id="${id}" style="margin:0;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">
+    <span id="${id}-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${currentValue?'':'color:var(--text-faint);'}">${U.escHtml(currentValue||label)}</span>
+    <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(-90deg);width:15px;height:15px;" ')}</span>
+  </button>`;
+}
+
+function openTxnEdit(id){
+  const t = Store.transactions.find(x=>x.id===id);
+  if(!t) return;
+  const modal = document.getElementById("modal-detail");
+  const comptes = AGG.distinctValues(Store.transactions, "compte").map(x=>x.value);
+  const personnes = AGG.distinctValues(Store.transactions, "personne").map(x=>x.value);
+  const groupes = AGG.distinctValues(Store.transactions, "groupe").map(x=>x.value);
+  const categories = categorieList();
+
+  // État local du formulaire (les champs remplacent les <select> natifs par des pickers plein écran à sélection immédiate)
+  const state = {
+    type: t.type,
+    categorie: t.categorie || "",
+    personne: t.personne || "",
+    compte: t.compte || "",
+    compteCible: t.compteCible || "",
+    groupe: t.groupe || "",
+  };
+
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span style="font-weight:800;font-size:17px;">Modifier la transaction</span>
+      <button class="icon-btn" id="edit-close">${ICONS.close}</button>
+    </div>
+
+    <div class="field-label" style="margin-top:0;">Type</div>
+    <div class="seg" id="edit-type-seg">
+      <button data-v="Income" class="${state.type==='Income'?'active':''}">Revenu</button>
+      <button data-v="Expense" class="${state.type==='Expense'?'active':''}">Dépense</button>
+      <button data-v="Transfer" class="${state.type==='Transfer'?'active':''}">Transfert</button>
+    </div>
+
+    <div class="field-label">Montant</div>
+    <input type="number" step="0.01" min="0" id="edit-montant" class="search-mini" style="margin:0;" value="${Math.abs(t.montant)}">
+
+    <div class="field-label">Date</div>
+    <input type="date" id="edit-date" class="search-mini" style="margin:0;" value="${t.dateISO}">
+
+    <div id="edit-block-normal">
+      <div class="field-label">Catégorie</div>
+      ${fieldPickerBtnHtml("edit-categorie-btn", "Choisir une catégorie", state.categorie)}
+
+      <div class="field-label">Personne</div>
+      ${fieldPickerBtnHtml("edit-personne-btn", "Choisir une personne", state.personne)}
+    </div>
+
+    <div class="field-label" id="edit-compte-label">Compte${t.type==="Transfer"?" source":""}</div>
+    ${fieldPickerBtnHtml("edit-compte-btn", "Choisir un compte", state.compte)}
+
+    <div id="edit-block-cible">
+      <div class="field-label">Compte cible</div>
+      ${fieldPickerBtnHtml("edit-compte-cible-btn", "Choisir un compte", state.compteCible)}
+    </div>
+
+    <div class="field-label">Groupe</div>
+    ${fieldPickerBtnHtml("edit-groupe-btn", "Choisir un groupe", state.groupe)}
+
+    <div class="field-label">Remarque</div>
+    <input type="text" id="edit-remarque" class="search-mini" style="margin:0;" value="${U.escHtml(t.remarque||"")}">
+
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <button class="btn btn-ghost" id="edit-cancel" style="flex:1;">Annuler</button>
+      <button class="btn btn-primary" id="edit-save" style="flex:1;">Enregistrer</button>
+    </div>
+  `;
+
+  function refreshTypeVisibility(){
+    const isTransfer = state.type==="Transfer";
+    document.getElementById("edit-block-normal").style.display = isTransfer ? "none" : "block";
+    document.getElementById("edit-block-cible").style.display = isTransfer ? "block" : "none";
+    document.getElementById("edit-compte-label").textContent = isTransfer ? "Compte source" : "Compte";
+  }
+  refreshTypeVisibility();
+  document.querySelectorAll("#edit-type-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      state.type = b.dataset.v;
+      document.querySelectorAll("#edit-type-seg button").forEach(x=>x.classList.toggle("active", x===b));
+      refreshTypeVisibility();
+    };
+  });
+
+  function updateFieldLabel(btnId, value, placeholder){
+    const lbl = document.getElementById(btnId+"-label");
+    lbl.textContent = value || placeholder;
+    lbl.style.color = value ? "" : "var(--text-faint)";
+  }
+
+  document.getElementById("edit-categorie-btn").onclick = ()=> openPicker({
+    title:"Catégorie", options:categories, value:state.categorie, allowNew:true,
+    newLabel:"+ Nouvelle catégorie…", newPlaceholder:"Nom de la catégorie",
+    onSelect:(v)=>{ state.categorie=v; updateFieldLabel("edit-categorie-btn", v, "Choisir une catégorie"); }
+  });
+  document.getElementById("edit-personne-btn").onclick = ()=> openPicker({
+    title:"Personne", options:personnes, value:state.personne, allowNew:true,
+    newLabel:"+ Nouvelle personne…", newPlaceholder:"Nom de la personne",
+    onSelect:(v)=>{ state.personne=v; updateFieldLabel("edit-personne-btn", v, "Choisir une personne"); }
+  });
+  document.getElementById("edit-compte-btn").onclick = ()=> openPicker({
+    title:"Compte", options:comptes, value:state.compte, allowNew:true,
+    newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
+    onSelect:(v)=>{ state.compte=v; updateFieldLabel("edit-compte-btn", v, "Choisir un compte"); }
+  });
+  document.getElementById("edit-compte-cible-btn").onclick = ()=> openPicker({
+    title:"Compte cible", options:comptes, value:state.compteCible, allowNew:true,
+    newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
+    onSelect:(v)=>{ state.compteCible=v; updateFieldLabel("edit-compte-cible-btn", v, "Choisir un compte"); }
+  });
+  document.getElementById("edit-groupe-btn").onclick = ()=> openPicker({
+    title:"Groupe", options:groupes, value:state.groupe, allowNew:true,
+    newLabel:"+ Nouveau groupe…", newPlaceholder:"Nom du groupe (ex. Lieu (25-01))",
+    onSelect:(v)=>{ state.groupe=v; updateFieldLabel("edit-groupe-btn", v, "Choisir un groupe"); }
+  });
+
+  document.getElementById("edit-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("edit-cancel").onclick = ()=> openTxnDetail(id);
+
+  document.getElementById("edit-save").onclick = ()=>{
+    const type = state.type;
+    const montantAbs = Math.abs(Number(document.getElementById("edit-montant").value));
+    const dateVal = document.getElementById("edit-date").value;
+    if(!dateVal || isNaN(montantAbs) || montantAbs<=0){
+      APP.showToast("Merci de renseigner une date et un montant valides");
+      return;
+    }
+    const montant = type==="Expense" ? -montantAbs : montantAbs;
+    const row = {
+      date: dateVal,
+      montant: montant,
+      type: type,
+      categorie: type==="Transfer" ? "" : state.categorie,
+      personne: type==="Transfer" ? "" : state.personne,
+      compte: state.compte,
+      "compte cible": type==="Transfer" ? state.compteCible : "",
+      groupe: state.groupe,
+      remarque: document.getElementById("edit-remarque").value.trim(),
+    };
+    const updated = DATA.rowToTxn(row);
+    if(!updated){
+      APP.showToast("Impossible d'enregistrer : données invalides");
+      return;
+    }
+    const idx = Store.transactions.findIndex(x=>x.id===id);
+    if(idx===-1){ APP.closeOverlay("overlay-detail"); return; }
+    Store.transactions[idx] = updated;
+    APP.closeOverlay("overlay-detail");
+    APP.refreshCurrentTab();
+    Store.saveTransactions().then(ok=>{
+      APP.showToast(ok ? "Transaction modifiée" : "Modifiée, mais la sauvegarde a échoué");
+    });
+  };
+
+  APP.openOverlay("overlay-detail");
+}
+
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderDashboard = renderDashboard;
 window.__SF_VIEWS.renderTransactions = renderTransactions;
 window.__SF_VIEWS.openTxnDetail = openTxnDetail;
+window.__SF_VIEWS.openTxnEdit = openTxnEdit;
 window.__SF_VIEWS.makeTxnItemEl = makeTxnItemEl;
+window.__SF_PICKER = {openPicker, fieldPickerBtnHtml};
 })();
 (function(){
 "use strict";
@@ -2011,257 +2356,7 @@ const U = window.__SF_UTILS;
 const Store = window.__SF_STORE;
 const AGG = window.__SF_AGG;
 const APP = window.__SF_APP;
-const F = window.__SF_FILTERS;
 const ICONS = U.ICONS;
-const PALETTE = APP.PALETTE;
-const DIM_LABEL = APP.DIM_LABEL;
-
-function destroyChart(key){
-  if(APP.chartInstances[key]){ APP.chartInstances[key].destroy(); delete APP.chartInstances[key]; }
-}
-
-function emptyBlock(){
-  return `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour visualiser leur évolution.</p><button class="btn btn-primary" id="empty-import-btn2">${ICONS.upload}Importer des données</button></div></div>`;
-}
-
-function renderEvolution(){
-  const view = document.getElementById("view-evolution");
-  if(Store.transactions.length===0){
-    view.innerHTML = emptyBlock();
-    const b = document.getElementById("empty-import-btn2");
-    if(b) b.onclick = ()=>window.__SF_IMPORT.open();
-    return;
-  }
-  const st = APP.state.evoState;
-  const filtered = AGG.applyFilters(Store.transactions);
-
-  view.innerHTML = `
-    <div class="section" style="padding-top:14px;">
-      <div class="chips-bar" id="evo-chips" style="display:none;"></div>
-      <div class="card">
-        <div class="seg" id="evo-gran">
-          <button data-v="month" class="${st.granularity==='month'?'active':''}">Par mois</button>
-          <button data-v="year" class="${st.granularity==='year'?'active':''}">Par année</button>
-        </div>
-        <div style="height:10px;"></div>
-        <div class="seg" id="evo-basis">
-          <button data-v="indiquee" class="${st.dateBasis==='indiquee'?'active':''}">Date indiquée</button>
-          <button data-v="transformee" class="${st.dateBasis==='transformee'?'active':''}">Date transformée</button>
-        </div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section-title">Décomposer par</div>
-      <div class="dimtabs" id="evo-dim">
-        <button data-v="none" class="${st.dimension==='none'?'active':''}">Aucune</button>
-        <button data-v="groupe" class="${st.dimension==='groupe'?'active':''}">Groupe</button>
-        <button data-v="categorie" class="${st.dimension==='categorie'?'active':''}">Catégorie</button>
-        <button data-v="personne" class="${st.dimension==='personne'?'active':''}">Personne</button>
-        <button data-v="compte" class="${st.dimension==='compte'?'active':''}">Compte</button>
-      </div>
-    </div>
-    <div class="section">
-      <div class="card">
-        <div class="chart-wrap tall"><canvas id="evo-canvas"></canvas></div>
-      </div>
-    </div>
-    <div class="section" id="evo-breakdown-section"></div>
-    <div class="section">
-      <div class="section-title">Détail par période</div>
-      <div class="card" id="evo-table"></div>
-    </div>
-  `;
-
-  document.querySelectorAll("#evo-gran button").forEach(b=>b.onclick=()=>{ st.granularity=b.dataset.v; renderEvolution(); });
-  document.querySelectorAll("#evo-basis button").forEach(b=>b.onclick=()=>{ st.dateBasis=b.dataset.v; renderEvolution(); });
-  document.querySelectorAll("#evo-dim button").forEach(b=>b.onclick=()=>{ st.dimension=b.dataset.v; renderEvolution(); });
-  F.renderChipsBar("evo-chips", ()=>renderEvolution());
-
-  const dimension = st.dimension==="none" ? null : st.dimension;
-  const series = AGG.computeTimeSeries(filtered, st.granularity, st.dateBasis, dimension);
-  const buckets = series.buckets.slice(-24); // keep chart readable
-
-  destroyChart("evo");
-  const ctx = document.getElementById("evo-canvas").getContext("2d");
-  const isDark = document.documentElement.getAttribute("data-theme")==="dark";
-  const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.06)";
-  const fontColor = isDark ? "#9BA0AC" : "#6B707A";
-
-  let datasets;
-  if(!dimension){
-    datasets = [
-      {label:"Revenus", data:buckets.map(b=>b.income), backgroundColor:"#1A9E63"},
-      {label:"Dépenses", data:buckets.map(b=>b.expense), backgroundColor:"#E4402E"},
-    ];
-  } else {
-    const topDims = Array.from(series.dimTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,7).map(x=>x[0]);
-    datasets = topDims.map((dv,i)=>({
-      label: dv, backgroundColor: PALETTE[i%PALETTE.length],
-      data: buckets.map(b=>b.byDim.get(dv)||0), stack:"s1"
-    }));
-    const hasOthers = Array.from(series.dimTotals.keys()).length > topDims.length;
-    if(hasOthers){
-      datasets.push({label:"Autres", backgroundColor:"#B5BAC3", stack:"s1",
-        data: buckets.map(b=>{
-          let sum=0; b.byDim.forEach((v,k)=>{ if(!topDims.includes(k)) sum+=v; }); return sum;
-        })});
-    }
-  }
-
-  APP.chartInstances.evo = new Chart(ctx, {
-    type:"bar",
-    data:{ labels: buckets.map(b=>b.label), datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      scales:{
-        x:{stacked:!!dimension, ticks:{color:fontColor}, grid:{display:false}},
-        y:{stacked:!!dimension, ticks:{color:fontColor}, grid:{color:gridColor}}
-      },
-      plugins:{ legend:{ position:"bottom", labels:{color:fontColor, boxWidth:11, font:{size:11}} } }
-    }
-  });
-
-  // Breakdown legend/table when dimension selected
-  const bdSection = document.getElementById("evo-breakdown-section");
-  if(dimension){
-    const rows = Array.from(series.dimTotals.entries()).sort((a,b)=>b[1]-a[1]);
-    const max = rows.length ? rows[0][1] : 1;
-    bdSection.innerHTML = `<div class="section-title">Total par ${DIM_LABEL[dimension].toLowerCase()}</div>
-      <div class="card">${rows.slice(0,15).map((r,i)=>`
-        <div class="bd-item">
-          <div class="bd-row">
-            <span class="bd-dot" style="background:${PALETTE[i%PALETTE.length]}"></span>
-            <span class="bd-name">${U.escHtml(r[0])}</span>
-            <span class="bd-val">${U.fmtMoney(r[1])}</span>
-          </div>
-          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${(r[1]/max*100).toFixed(1)}%;background:${PALETTE[i%PALETTE.length]}"></div></div>
-        </div>`).join("")}
-      </div>`;
-  } else {
-    bdSection.innerHTML = "";
-  }
-
-  // Period table
-  const table = document.getElementById("evo-table");
-  const rowsRev = buckets.slice().reverse();
-  table.innerHTML = rowsRev.map(b=>`
-    <div class="rowline">
-      <span style="font-weight:600;font-size:14px;">${b.label}</span>
-      <span style="font-size:13px;">
-        <span style="color:var(--income);font-weight:700;">${U.fmtMoney(b.income)}</span>
-        &nbsp;/&nbsp;
-        <span style="color:var(--expense);font-weight:700;">${U.fmtMoney(b.expense)}</span>
-      </span>
-    </div>
-  `).join("") || `<div style="padding:16px;color:var(--text-sub);font-size:13.5px;">Aucune donnée sur la période filtrée.</div>`;
-}
-
-window.__SF_VIEWS = window.__SF_VIEWS || {};
-window.__SF_VIEWS.renderEvolution = renderEvolution;
-})();
-(function(){
-"use strict";
-const U = window.__SF_UTILS;
-const Store = window.__SF_STORE;
-const AGG = window.__SF_AGG;
-const APP = window.__SF_APP;
-const F = window.__SF_FILTERS;
-const ICONS = U.ICONS;
-const PALETTE = APP.PALETTE;
-const DIM_LABEL = APP.DIM_LABEL;
-
-function destroyChart(key){
-  if(APP.chartInstances[key]){ APP.chartInstances[key].destroy(); delete APP.chartInstances[key]; }
-}
-
-/* ================= BREAKDOWN (Répartition) ================= */
-function renderBreakdown(){
-  const view = document.getElementById("view-breakdown");
-  if(Store.transactions.length===0){
-    view.innerHTML = `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir la répartition de vos dépenses.</p><button class="btn btn-primary" id="empty-import-btn3">${ICONS.upload}Importer des données</button></div></div>`;
-    const b = document.getElementById("empty-import-btn3");
-    if(b) b.onclick = ()=>window.__SF_IMPORT.open();
-    return;
-  }
-  const st = APP.state.bdState;
-  const filtered = AGG.applyFilters(Store.transactions);
-
-  view.innerHTML = `
-    <div class="section" style="padding-top:14px;">
-      <div class="chips-bar" id="bd-chips" style="display:none;"></div>
-      <div class="card">
-        <div class="seg" id="bd-kind">
-          <button data-v="expense" class="${st.kind==='expense'?'active':''}">Dépenses</button>
-          <button data-v="income" class="${st.kind==='income'?'active':''}">Revenus</button>
-        </div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="dimtabs" id="bd-dim">
-        <button data-v="groupe" class="${st.dimension==='groupe'?'active':''}">Groupe</button>
-        <button data-v="categorie" class="${st.dimension==='categorie'?'active':''}">Catégorie</button>
-        <button data-v="personne" class="${st.dimension==='personne'?'active':''}">Personne</button>
-        <button data-v="compte" class="${st.dimension==='compte'?'active':''}">Compte</button>
-      </div>
-    </div>
-    <div class="section">
-      <div class="card">
-        <div class="chart-wrap"><canvas id="bd-canvas"></canvas></div>
-      </div>
-    </div>
-    <div class="section" id="bd-list-section"></div>
-  `;
-
-  document.querySelectorAll("#bd-kind button").forEach(b=>b.onclick=()=>{ st.kind=b.dataset.v; renderBreakdown(); });
-  document.querySelectorAll("#bd-dim button").forEach(b=>b.onclick=()=>{ st.dimension=b.dataset.v; renderBreakdown(); });
-  F.renderChipsBar("bd-chips", ()=>renderBreakdown());
-
-  const kindSet = filtered.filter(t=> st.kind==="expense" ? t.type==="Expense" : t.type==="Income");
-  const rows = AGG.computeBreakdown(kindSet, st.dimension).map(r=>({
-    key:r.key, amount: st.kind==="expense" ? Math.abs(r.expense) : r.income, count:r.count
-  })).filter(r=>r.amount>0).sort((a,b)=>b.amount-a.amount);
-
-  const total = rows.reduce((s,r)=>s+r.amount,0);
-  const top = rows.slice(0,8);
-  const othersSum = rows.slice(8).reduce((s,r)=>s+r.amount,0);
-  const chartRows = othersSum>0 ? top.concat([{key:"Autres", amount:othersSum}]) : top;
-
-  destroyChart("bd");
-  const ctx = document.getElementById("bd-canvas").getContext("2d");
-  const isDark = document.documentElement.getAttribute("data-theme")==="dark";
-  const fontColor = isDark ? "#9BA0AC" : "#6B707A";
-  APP.chartInstances.bd = new Chart(ctx, {
-    type:"doughnut",
-    data:{
-      labels: chartRows.map(r=>r.key),
-      datasets:[{ data: chartRows.map(r=>r.amount),
-        backgroundColor: chartRows.map((r,i)=> r.key==="Autres" ? "#B5BAC3" : PALETTE[i%PALETTE.length]),
-        borderWidth:0 }]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false, cutout:"62%",
-      plugins:{ legend:{position:"bottom", labels:{color:fontColor, boxWidth:11, font:{size:11}, padding:12}} }
-    }
-  });
-
-  const listSection = document.getElementById("bd-list-section");
-  listSection.innerHTML = `
-    <div class="section-title">Total : ${U.fmtMoney(total)} · ${rows.length} ${DIM_LABEL[st.dimension].toLowerCase()}${rows.length>1?"s":""}</div>
-    <div class="card">
-      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune donnée sur la période filtrée.</div>` :
-      rows.map((r,i)=>`
-        <div class="bd-item">
-          <div class="bd-row">
-            <span class="bd-dot" style="background:${i<8?PALETTE[i%PALETTE.length]:'#B5BAC3'}"></span>
-            <span class="bd-name">${U.escHtml(r.key)}</span>
-            <span class="bd-val">${U.fmtMoney(r.amount)}</span>
-          </div>
-          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${(r.amount/rows[0].amount*100).toFixed(1)}%;background:${i<8?PALETTE[i%PALETTE.length]:'#B5BAC3'}"></div></div>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
 
 /* ================= ACCOUNTS ================= */
 function renderAccounts(){
@@ -2275,6 +2370,23 @@ function renderAccounts(){
   const balances = AGG.computeAccountBalances(Store.transactions);
   const total = balances.reduce((s,a)=>s+a.balance,0);
 
+  // Regroupement par type de compte (Courant / Épargne / autre type libre)
+  const byType = new Map(); // type -> {accounts:[], balance}
+  balances.forEach(a=>{
+    const type = AGG.getAccountTypeDisplay(a.name);
+    if(!byType.has(type)) byType.set(type, {type, accounts:[], balance:0});
+    const g = byType.get(type);
+    g.accounts.push(a);
+    g.balance += a.balance;
+  });
+  const TYPE_ORDER = {"Courant":0, "Épargne":1};
+  const typeGroups = Array.from(byType.values()).sort((a,b)=>{
+    const oa = TYPE_ORDER[a.type]!=null ? TYPE_ORDER[a.type] : 2;
+    const ob = TYPE_ORDER[b.type]!=null ? TYPE_ORDER[b.type] : 2;
+    if(oa!==ob) return oa-ob;
+    return a.type.localeCompare(b.type,'fr');
+  });
+
   const view_html = [`
     <div class="section" style="padding-top:14px;">
       <div class="card" style="text-align:center;padding:22px 16px;">
@@ -2282,35 +2394,46 @@ function renderAccounts(){
         <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
       </div>
     </div>
-    <div class="section"><div class="section-title">Comptes (${balances.length})</div></div>
   `];
   view.innerHTML = view_html.join("");
 
-  const section = document.createElement("div");
-  section.className = "section";
-  balances.forEach(a=>{
-    const card = document.createElement("div");
-    card.className = "acc-card";
-    card.innerHTML = `
-      <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
-      <div class="acc-mid">
-        <div class="acc-name">${U.escHtml(a.name)}</div>
-        <div class="acc-flows">${a.count} mouvement${a.count>1?"s":""} · ↑${U.fmtMoney(a.income+a.transferIn)} ↓${U.fmtMoney(Math.abs(a.expense)+a.transferOut)}</div>
+  typeGroups.forEach(g=>{
+    const typeSection = document.createElement("div");
+    typeSection.className = "section";
+    typeSection.innerHTML = `
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:baseline;">
+        <span>${U.escHtml(g.type)} (${g.accounts.length})</span>
+        <span style="font-weight:800;font-size:13.5px;color:${g.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(g.balance)}</span>
       </div>
-      <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
     `;
-    card.onclick = ()=>{
-      window.__SF_FILTERS.comptes = new Set([a.name]);
-      APP.switchTab("transactions");
-      APP.showToast("Filtré sur : "+a.name);
-    };
-    section.appendChild(card);
+    view.appendChild(typeSection);
+
+    const section = document.createElement("div");
+    section.className = "section";
+    section.style.marginTop = "-8px";
+    g.accounts.forEach(a=>{
+      const card = document.createElement("div");
+      card.className = "acc-card";
+      card.innerHTML = `
+        <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
+        <div class="acc-mid">
+          <div class="acc-name">${U.escHtml(a.name)}</div>
+          <div class="acc-flows">${a.count} mouvement${a.count>1?"s":""} · ↑${U.fmtMoney(a.income+a.transferIn)} ↓${U.fmtMoney(Math.abs(a.expense)+a.transferOut)}</div>
+        </div>
+        <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
+      `;
+      card.onclick = ()=>{
+        window.__SF_FILTERS.comptes = new Set([a.name]);
+        APP.switchTab("transactions");
+        APP.showToast("Filtré sur : "+a.name);
+      };
+      section.appendChild(card);
+    });
+    view.appendChild(section);
   });
-  view.appendChild(section);
 }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
-window.__SF_VIEWS.renderBreakdown = renderBreakdown;
 window.__SF_VIEWS.renderAccounts = renderAccounts;
 })();
 /* ================= ONGLET BUDGET ================= */
@@ -2321,6 +2444,7 @@ const Store = window.__SF_STORE;
 const AGG = window.__SF_AGG;
 const APP = window.__SF_APP;
 const ICONS = U.ICONS;
+const PICKER = window.__SF_PICKER;
 
 /* état local de la vue (période affichée) */
 let periodFrom = null, periodTo = null; // "YYYY-MM"
@@ -2356,12 +2480,23 @@ function monthsInRange(from, to){
 /* Calcule, pour un "groupe de groupe" donné (nom affiché résolu) et une période [from,to] (mois inclus),
    les montants par catégorie (groupes "vie quotidienne") + par groupe voyage (groupes "voyage"),
    en tenant compte : date corrigée, amortissement des catégories choisies, ajustements manuels, vue couple/perso. */
+/* Une transaction correspond à un nom de groupe sélectionné (groupe de groupe, groupe précis, ou base)
+   — voir computeGroupBudget pour le détail. Utilisé aussi pour le détail des catégories. */
+function groupSelectionMatches(t, selectedName){
+  if(AGG.getGroupeDisplay(t) === selectedName) return true;
+  if(t.groupe === selectedName) return true;
+  const base = t.groupeBase || U.baseGroupe(t.groupe);
+  if(base === selectedName) return true;
+  return false;
+}
+
 function computeGroupBudget(superGroupeName, months, opts){
+  opts = opts || {};
   const cfg = Store.settings.budget;
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
-  const isAmorti = cfg.mode==="amorti";
+  const isAmorti = !opts.forceBrut && cfg.mode==="amorti";
 
   // catégorie -> {income, expense}
   const catTotals = new Map();
@@ -2371,7 +2506,7 @@ function computeGroupBudget(superGroupeName, months, opts){
   const amortPoolAll = new Map();
 
   function ensureCat(cat){
-    if(!catTotals.has(cat)) catTotals.set(cat, {key:cat, income:0, expense:0});
+    if(!catTotals.has(cat)) catTotals.set(cat, {key:cat, income:0, expense:0, realIncome:0, realExpense:0, amortIncome:0, amortExpense:0, adjIncome:0, adjExpense:0});
     return catTotals.get(cat);
   }
   function ensureVoy(base){
@@ -2379,15 +2514,22 @@ function computeGroupBudget(superGroupeName, months, opts){
     return voyTotals.get(base);
   }
 
+  /* Une transaction correspond à la sélection si son groupe résolu (groupe de groupe) correspond,
+     OU si son groupe littéral (avec date) ou son nom de base correspond exactement — ce qui permet
+     de choisir un groupe précis à l'intérieur d'un groupe de groupe plutôt que le groupe de groupe entier. */
+  function matchesSelection(t){ return groupSelectionMatches(t, superGroupeName); }
+
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
-    if(AGG.getGroupeDisplay(t) !== superGroupeName) return;
+    if(!matchesSelection(t)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(base);
 
     if(kind==="voyage"){
       // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
       const forced = AGG.getGroupVoyageMonth(base);
+      // Le libellé affiché conserve le nom complet du groupe (avec la date entre parenthèses) :
+      // on ne fusionne pas plusieurs séjours du même lieu sous un seul nom de base.
       let targetMonth = forced;
       if(!targetMonth){
         const tr = t.transform;
@@ -2397,7 +2539,7 @@ function computeGroupBudget(superGroupeName, months, opts){
           for(let m=1;m<=12;m++){
             const key = tr.year+"-"+U.pad2(m);
             if(monthSet.has(key)){
-              const o = ensureVoy(base);
+              const o = ensureVoy(t.groupe);
               const amt = t.montant/12*scopeMult;
               if(t.type==="Income") o.income += amt; else o.expense += amt;
             }
@@ -2406,7 +2548,7 @@ function computeGroupBudget(superGroupeName, months, opts){
         } else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
       }
       if(monthSet.has(targetMonth)){
-        const o = ensureVoy(base);
+        const o = ensureVoy(t.groupe);
         const amt = t.montant*scopeMult;
         if(t.type==="Income") o.income += amt; else o.expense += amt;
       }
@@ -2424,7 +2566,7 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(!monthSet.has(key)) return;
       const o = ensureCat(cat);
       const amt = t.montant*weight*scopeMult;
-      if(t.type==="Income") o.income += amt; else o.expense += amt;
+      if(t.type==="Income"){ o.income += amt; o.realIncome += amt; } else { o.expense += amt; o.realExpense += amt; }
     }
     if(amortized){
       // accumulation pour le pool d'amortissement (indépendant des mois affichés)
@@ -2450,8 +2592,9 @@ function computeGroupBudget(superGroupeName, months, opts){
     amortPoolAll.forEach((tot, cat)=>{
       const perMonth = {income: tot.income/periodMonths, expense: tot.expense/periodMonths};
       const o = ensureCat(cat);
-      o.income += perMonth.income*months.length;
-      o.expense += perMonth.expense*months.length;
+      const addInc = perMonth.income*months.length, addExp = perMonth.expense*months.length;
+      o.income += addInc; o.expense += addExp;
+      o.amortIncome += addInc; o.amortExpense += addExp;
     });
   }
 
@@ -2463,7 +2606,7 @@ function computeGroupBudget(superGroupeName, months, opts){
       const amt = Number(adj.montant)||0;
       if(adj.categorie){
         const o = ensureCat(adj.categorie);
-        if(amt>=0) o.income += amt; else o.expense += amt;
+        if(amt>=0){ o.income += amt; o.adjIncome += amt; } else { o.expense += amt; o.adjExpense += amt; }
       } else {
         const o = ensureVoy("__ajustement__");
         o.label = "Ajustements";
@@ -2492,20 +2635,40 @@ function candidateSuperGroupes(){
   return AGG.distinctValuesGroupeDisplay(Store.transactions).map(v=>v.value).sort((a,b)=>a.localeCompare(b,'fr'));
 }
 
+/* Hiérarchie pour les pickers de groupe du Budget : groupes de groupe (triés alpha) avec leurs groupes
+   enfants sélectionnables individuellement, puis les groupes non classés (triés alpha). excludeSet retire
+   des entrées précises (ex. le groupe principal déjà choisi) de la liste proposée. */
+function groupPickerHierarchy(excludeSet){
+  const full = AGG.groupeHierarchyFull(Store.transactions);
+  const sections = new Map();
+  full.sections.forEach((children, sup)=>{
+    if(excludeSet.has(sup)) return;
+    const filtered = children.filter(c=>!excludeSet.has(c.base));
+    if(filtered.length) sections.set(sup, filtered);
+  });
+  const flat = full.flat.filter(f=>!excludeSet.has(f.base));
+  return {sections, flat};
+}
+
 function periodPickerHtml(){
   return `
-    <div class="card" style="margin-bottom:14px;">
-      <div class="field-label" style="margin-top:0;">Période affichée</div>
-      <div class="daterange">
-        <input type="month" id="bg-from" value="${periodFrom}">
-        <input type="month" id="bg-to" value="${periodTo}">
-      </div>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 14px;box-shadow:var(--shadow-1);">
+      <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
+      <input type="month" id="bg-from" value="${periodFrom}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+      <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
+      <input type="month" id="bg-to" value="${periodTo}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
     </div>
   `;
 }
 
 function groupCardHtml(title, res, isMain){
-  const rowsHtml = (list, muted)=>list.map(c=>`
+  const catRowsHtml = list=>list.map(c=>`
+    <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
+      <span>${U.escHtml(c.label||c.key)}</span>
+      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
+    </div>
+  `).join("");
+  const voyRowsHtml = list=>list.map(c=>`
     <div class="detail-row">
       <span>${U.escHtml(c.label||c.key)}</span>
       <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
@@ -2520,8 +2683,8 @@ function groupCardHtml(title, res, isMain){
       <div class="detail-row"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(res.income)}</span></div>
       <div class="detail-row"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(res.expense))}</span></div>
       ${isMain ? `
-        ${res.categories.length ? `<div class="field-label">Catégories</div>${rowsHtml(res.categories)}` : ""}
-        ${res.voyages.length ? `<div class="field-label">Voyages / ajustements</div>${rowsHtml(res.voyages)}` : ""}
+        ${res.categories.length ? `<div class="field-label">Catégories</div>${catRowsHtml(res.categories)}` : ""}
+        ${res.voyages.length ? `<div class="field-label">Voyages / ajustements</div>${voyRowsHtml(res.voyages)}` : ""}
       ` : ""}
     </div>
   `;
@@ -2543,28 +2706,60 @@ function renderBudget(){
     view.innerHTML = `<div class="section">
       <div class="empty-state">
         ${ICONS.budget}<h3>Configurez votre budget</h3>
-        <p>Choisissez un groupe de groupe principal dans les paramètres de cet onglet pour commencer.</p>
-        <button class="btn btn-primary" id="bg-open-settings">${ICONS.settings} Paramètres du budget</button>
+        <p>Choisissez un groupe de groupe principal pour commencer.</p>
+        <div style="width:100%;max-width:320px;margin-top:6px;">${PICKER.fieldPickerBtnHtml("bg-main-btn", "Choisir un groupe principal", cfg.mainGroup)}</div>
       </div>
     </div>`;
-    document.getElementById("bg-open-settings").onclick = ()=>openBudgetSettings();
+    document.getElementById("bg-main-btn").onclick = ()=> PICKER.openPicker({
+      title:"Groupe principal", hierarchy: groupPickerHierarchy(new Set()), value: cfg.mainGroup,
+      onSelect:(v)=>{ cfg.mainGroup = v || null; Store.saveSettings(); renderBudget(); }
+    });
     return;
   }
 
   const mainRes = computeGroupBudget(cfg.mainGroup, months);
-  const extraResults = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup).map(g=>({name:g, res:computeGroupBudget(g, months)}));
+  const extraResults = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup).map(g=>({name:g, res:computeGroupBudget(g, months, {forceBrut:true})}));
   const grandIncome = mainRes.income + extraResults.reduce((s,e)=>s+e.res.income,0);
   const grandExpense = mainRes.expense + extraResults.reduce((s,e)=>s+e.res.expense,0);
 
+  const selectedExtra = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
+
   view.innerHTML = `
-    <div class="section">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:22px 4px 10px;">
-        <div class="seg" id="bg-mode-seg" style="max-width:260px;">
-          <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Avec amort. + ajouts</button>
-          <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
-        </div>
+    <div class="section" style="padding-top:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin:0 4px 10px;">
+        <button type="button" class="oneui-pill" id="bg-main-pill">
+          <span class="pill-label">${U.escHtml(cfg.mainGroup)}</span>
+          <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button type="button" class="oneui-pill" id="bg-add-extra-btn" style="padding:8px 12px;background:var(--primary-soft);color:var(--primary);" title="Ajouter un groupe additionnel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </button>
+        <div style="flex:1;"></div>
         <button class="icon-btn" id="bg-settings-btn" title="Paramètres du budget">${ICONS.settings}</button>
       </div>
+
+      <div style="display:flex;gap:8px;margin:0 4px 10px;">
+        <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.3;">
+          <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
+          <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
+        </div>
+        <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
+          <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
+          <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
+        </div>
+      </div>
+
+      ${selectedExtra.length ? `
+      <div style="margin:0 4px 12px;">
+        <div class="chiprow" id="bg-extra-chips">
+          ${selectedExtra.map(g=>`
+            <div class="chip-opt selected" data-extra="${U.escHtml(g)}" style="gap:8px;">
+              <span>${U.escHtml(g)}</span><span style="font-weight:900;opacity:.8;">×</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>` : ""}
+
       ${periodPickerHtml()}
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -2587,9 +2782,141 @@ function renderBudget(){
       renderBudget();
     };
   });
+  document.querySelectorAll("#bg-scope-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.scope = b.dataset.v;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  document.getElementById("bg-main-pill").onclick = ()=> PICKER.openPicker({
+    title:"Groupe principal", hierarchy: groupPickerHierarchy(new Set()), value: cfg.mainGroup,
+    onSelect:(v)=>{
+      cfg.mainGroup = v || null;
+      cfg.extraGroups = (cfg.extraGroups||[]).filter(g=>g!==v);
+      Store.saveSettings();
+      renderBudget();
+    }
+  });
+  document.querySelectorAll('#bg-extra-chips [data-extra]').forEach(el=>{
+    el.onclick = ()=>{
+      const g = el.dataset.extra;
+      cfg.extraGroups = (cfg.extraGroups||[]).filter(x=>x!==g);
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  document.getElementById("bg-add-extra-btn").onclick = ()=>{
+    const exclude = new Set([cfg.mainGroup].concat(selectedExtra));
+    PICKER.openPicker({
+      title:"Ajouter un groupe", hierarchy: groupPickerHierarchy(exclude), value: null,
+      onSelect:(v)=>{
+        if(!v) return;
+        const set = new Set(cfg.extraGroups||[]);
+        set.add(v);
+        cfg.extraGroups = Array.from(set);
+        Store.saveSettings();
+        renderBudget();
+      }
+    });
+  };
   document.getElementById("bg-settings-btn").onclick = ()=>openBudgetSettings();
   document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
   document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
+  document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
+    el.onclick = ()=> openCategoryTxnSheet(el.dataset.supergroupe, el.dataset.cat);
+  });
+}
+
+/* ---------------- Détail des transactions d'une catégorie (Amorti / Réel) ---------------- */
+function openCategoryTxnSheet(superGroupeName, catKey){
+  const cfg = Store.settings.budget;
+  const months = monthsInRange(periodFrom, periodTo);
+  const monthSet = new Set(months);
+  const amortSet = new Set(cfg.amortCategories||[]);
+  const isAmorti = cfg.mode==="amorti";
+  const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+
+  const items = [];
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(!groupSelectionMatches(t, superGroupeName)) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    if(AGG.getGroupKind(base)==="voyage") return;
+    const cat = t.categorie || "(Non renseigné)";
+    if(cat !== catKey) return;
+    const tr = t.transform;
+    const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+    const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
+    const amortized = isAmorti && (amortSet.has(cat) || beforeStart);
+    const inPeriod = amortized || monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
+    if(!inPeriod) return;
+    // Pour une dépense amortie, on affiche sa part mensuelle (montant / nombre de mois de la période
+    // d'amortissement) plutôt que le montant total de la transaction d'origine.
+    const displayAmount = amortized ? (t.montant / periodMonths) : t.montant;
+    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount});
+  });
+
+  // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée.
+  if(isAmorti){
+    (cfg.adjustments||[]).forEach(adj=>{
+      if(adj.groupe !== superGroupeName) return;
+      if((adj.categorie||"") !== catKey) return;
+      if(!monthSet.has(adj.month)) return;
+      const amt = Number(adj.montant)||0;
+      const [ay,am] = adj.month.split("-").map(Number);
+      items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
+    });
+  }
+
+  items.sort((a,b)=> b.date - a.date);
+
+  // Totaux cohérents avec ceux affichés sur la carte du groupe (calcul identique à computeGroupBudget).
+  const budgetRes = computeGroupBudget(superGroupeName, months);
+  const catEntry = budgetRes.categories.find(c=>c.key===catKey);
+  const realTotal = catEntry ? (catEntry.realIncome||0)+(catEntry.realExpense||0) : 0;
+  const amortTotal = catEntry ? (catEntry.amortIncome||0)+(catEntry.amortExpense||0) : 0;
+  const adjTotal = catEntry ? (catEntry.adjIncome||0)+(catEntry.adjExpense||0) : 0;
+
+  const KIND_STYLE = {
+    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
+    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
+    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
+  };
+
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
+      <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
+    </div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${items.length} élément${items.length>1?"s":""}</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};">Réel : ${U.fmtMoneySigned(realTotal)}</span>
+      ${amortTotal!==0 ? `<span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};">Amorti : ${U.fmtMoneySigned(amortTotal)}</span>` : ""}
+      ${adjTotal!==0 ? `<span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};">Ajouts : ${U.fmtMoneySigned(adjTotal)}</span>` : ""}
+    </div>
+    <div style="max-height:56vh;overflow-y:auto;">
+      ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction sur la période affichée.</div>` :
+      items.map((x,i)=>`
+        <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
+          <span style="display:flex;flex-direction:column;min-width:0;">
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}</span>
+          </span>
+          <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
+            <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.displayAmount)}</span>
+          </span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("cattxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
+    el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+  });
+  APP.openOverlay("overlay-detail");
 }
 
 /* ---------------- Paramètres de l'onglet Budget ---------------- */
@@ -2770,21 +3097,28 @@ function checklistHtml(listId, filterField, selectedSet){
   else if(filterField==="categories") items = AGG.distinctValuesCategorieSorted(Store.transactions);
   else items = AGG.distinctValues(Store.transactions, FILTER_TO_TXNFIELD[filterField]);
   if(items.length===0) return `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucune valeur disponible</div>`;
-  return `<div class="check-list" id="${listId}">
-    ${items.map(it=>`
+  let lastKind = null;
+  const rowsHtml = items.map(it=>{
+    let headHtml = "";
+    if(filterField==="categories" && it.kind && it.kind!==lastKind){
+      lastKind = it.kind;
+      headHtml = `<div class="check-item" style="cursor:default;background:var(--card-alt);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sub);padding:8px 14px;">${it.kind==="Income"?"Revenus":"Dépenses"}</div>`;
+    }
+    return headHtml + `
       <div class="check-item ${selectedSet.has(it.value)?'selected':''}" data-val="${U.escHtml(it.value)}">
         <span class="cbox">${ICONS.check}</span>
         <span class="lbl">${U.escHtml(it.value)}</span>
         <span class="cnt">${it.count}</span>
       </div>
-    `).join("")}
-  </div>`;
+    `;
+  }).join("");
+  return `<div class="check-list" id="${listId}">${rowsHtml}</div>`;
 }
 
 function wireChecklist(listId, field, searchInputId){
   const list = document.getElementById(listId);
   if(!list) return;
-  list.querySelectorAll(".check-item").forEach(el=>{
+  list.querySelectorAll(".check-item[data-val]").forEach(el=>{
     el.onclick = ()=>{
       const val = el.dataset.val;
       const set = F[field];
@@ -2798,7 +3132,7 @@ function wireChecklist(listId, field, searchInputId){
   if(search){
     search.oninput = ()=>{
       const q = U.normalize(search.value);
-      list.querySelectorAll(".check-item").forEach(el=>{
+      list.querySelectorAll(".check-item[data-val]").forEach(el=>{
         const match = U.normalize(el.dataset.val).includes(q);
         el.style.display = match ? "flex" : "none";
       });
@@ -3120,7 +3454,10 @@ function applyParamsImport(params, mode){
   const accountTypes = params.accountTypes || {};
   const groupKind = params.groupKind || {};
   const groupVoyageMonth = params.groupVoyageMonth || {};
+  const categoryTypeOverride = params.categoryTypeOverride || {};
   const budgetAdjustments = params.budgetAdjustments || [];
+  const budgetSettings = params.budgetSettings || null;
+  const filters = params.filters || null;
   Store.settings.budget = Store.settings.budget || {};
   if(mode==="replace"){
     Store.settings.groupAliasRules = groupRules.slice();
@@ -3128,7 +3465,22 @@ function applyParamsImport(params, mode){
     Store.settings.accountTypes = Object.assign({}, accountTypes);
     Store.settings.groupKind = Object.assign({}, groupKind);
     Store.settings.groupVoyageMonth = Object.assign({}, groupVoyageMonth);
+    Store.settings.categoryTypeOverride = Object.assign({}, categoryTypeOverride);
     Store.settings.budget.adjustments = budgetAdjustments.slice();
+    if(budgetSettings){
+      Object.assign(Store.settings.budget, {
+        mode: budgetSettings.mode || Store.settings.budget.mode,
+        scope: budgetSettings.scope || Store.settings.budget.scope,
+        startMonth: budgetSettings.startMonth,
+        mainGroup: budgetSettings.mainGroup,
+        extraGroups: (budgetSettings.extraGroups || []).slice(),
+        amortCategories: (budgetSettings.amortCategories || []).slice(),
+        amortPeriodMonths: budgetSettings.amortPeriodMonths,
+        periodFrom: budgetSettings.periodFrom,
+        periodTo: budgetSettings.periodTo,
+      });
+    }
+    if(filters) Store.settings.filters = Object.assign({}, filters);
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
@@ -3145,10 +3497,23 @@ function applyParamsImport(params, mode){
 
   Store.settings.groupKind = Object.assign({}, Store.settings.groupKind, groupKind);
   Store.settings.groupVoyageMonth = Object.assign({}, Store.settings.groupVoyageMonth, groupVoyageMonth);
+  Store.settings.categoryTypeOverride = Object.assign({}, Store.settings.categoryTypeOverride, categoryTypeOverride);
 
   const existingAdj = Store.settings.budget.adjustments || [];
   mergeRuleList(existingAdj, budgetAdjustments, a=>[a.month,a.groupe,a.categorie||"",a.montant,a.remarque||""].join("|"));
   Store.settings.budget.adjustments = existingAdj;
+
+  // Réglages du budget : on ne remplit que les champs pas encore configurés, sans écraser la config actuelle.
+  if(budgetSettings){
+    const b = Store.settings.budget;
+    if(!b.mainGroup && budgetSettings.mainGroup) b.mainGroup = budgetSettings.mainGroup;
+    if(!b.mode && budgetSettings.mode) b.mode = budgetSettings.mode;
+    if(!b.scope && budgetSettings.scope) b.scope = budgetSettings.scope;
+    if(!b.startMonth && budgetSettings.startMonth) b.startMonth = budgetSettings.startMonth;
+    if((!b.extraGroups || !b.extraGroups.length) && (budgetSettings.extraGroups||[]).length) b.extraGroups = budgetSettings.extraGroups.slice();
+    if((!b.amortCategories || !b.amortCategories.length) && (budgetSettings.amortCategories||[]).length) b.amortCategories = budgetSettings.amortCategories.slice();
+    if(!b.amortPeriodMonths && budgetSettings.amortPeriodMonths) b.amortPeriodMonths = budgetSettings.amortPeriodMonths;
+  }
 
   return {rulesAdded, personRulesAdded, acctAdded};
 }
@@ -3161,7 +3526,9 @@ function renderImportSummary(){
   const hasExisting = Store.transactions.length>0;
   const hasTxns = r.txns.length>0;
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
-    Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length));
+    Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length || Object.keys(r.params.categoryTypeOverride||{}).length ||
+    (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || (r.params.filters && (r.params.filters.search || r.params.filters.dateFrom || r.params.filters.dateTo ||
+      (r.params.filters.types||[]).length || (r.params.filters.categories||[]).length || (r.params.filters.personnes||[]).length || (r.params.filters.comptes||[]).length || (r.params.filters.groupes||[]).length))));
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
@@ -3221,7 +3588,8 @@ function renderImportSummary(){
       <div class="import-summary" style="margin-top:14px;">
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
-        ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget
+        ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${r.params.filters ? " · filtres inclus" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
@@ -3300,13 +3668,27 @@ window.__SF_IMPORT = {open: openImportModal};
 
 /* ================= MENU / SETTINGS SHEET ================= */
 function buildParamsPayload(){
+  const budget = Store.settings.budget || {};
   return {
     groupRules: (Store.settings.groupAliasRules || []).slice(),
     personRules: (Store.settings.personAliasRules || []).slice(),
     accountTypes: Object.assign({}, Store.settings.accountTypes || {}),
     groupKind: Object.assign({}, Store.settings.groupKind || {}),
     groupVoyageMonth: Object.assign({}, Store.settings.groupVoyageMonth || {}),
-    budgetAdjustments: ((Store.settings.budget||{}).adjustments || []).slice()
+    categoryTypeOverride: Object.assign({}, Store.settings.categoryTypeOverride || {}),
+    budgetAdjustments: (budget.adjustments || []).slice(),
+    budgetSettings: {
+      mode: budget.mode || null,
+      scope: budget.scope || null,
+      startMonth: budget.startMonth || null,
+      mainGroup: budget.mainGroup || null,
+      extraGroups: (budget.extraGroups || []).slice(),
+      amortCategories: (budget.amortCategories || []).slice(),
+      amortPeriodMonths: budget.amortPeriodMonths || null,
+      periodFrom: budget.periodFrom || null,
+      periodTo: budget.periodTo || null,
+    },
+    filters: Object.assign({}, Store.settings.filters || {})
   };
 }
 
@@ -3350,20 +3732,22 @@ function exportExcel(scope){
 
   if(scope==="both" || scope==="params"){
     const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Personne","Groupe de personnes",
-      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)"];
+      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
     const rules = Store.settings.groupAliasRules || [];
     const acct = Object.entries(Store.settings.accountTypes || {});
     const personRules = Store.settings.personAliasRules || [];
     const kindEntries = Object.entries(Store.settings.groupKind || {});
-    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, 1);
+    const catOverrideEntries = Object.entries(Store.settings.categoryTypeOverride || {});
+    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, catOverrideEntries.length, 1);
     const pData = [pHeader];
     for(let i=0;i<n;i++){
-      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i];
+      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i];
       pData.push([
         r?r.groupe:"", r?r.superGroupe:"", r&&r.dateFrom?r.dateFrom:"", r&&r.dateTo?r.dateTo:"",
         a?a[0]:"", a?a[1]:"",
         p?p.personne:"", p?p.superPersonne:"",
-        k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):""
+        k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):"",
+        co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):""
       ]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "Paramètres");
@@ -3372,6 +3756,35 @@ function exportExcel(scope){
     const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque"];
     const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||""]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
+
+    const b = Store.settings.budget || {};
+    const bsData = [
+      ["Réglage","Valeur"],
+      ["Mode", b.mode||""],
+      ["Vue (perso/couple)", b.scope||""],
+      ["Mois de début", b.startMonth||""],
+      ["Groupe de groupe principal", b.mainGroup||""],
+      ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
+      ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
+      ["Période d'amortissement (mois)", b.amortPeriodMonths||""],
+      ["Période affichée - de", b.periodFrom||""],
+      ["Période affichée - à", b.periodTo||""],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bsData), "Budget_Reglages");
+
+    const f = Store.settings.filters || {};
+    const fData = [
+      ["Réglage","Valeur"],
+      ["Recherche texte", f.search||""],
+      ["Date début", f.dateFrom||""],
+      ["Date fin", f.dateTo||""],
+      ["Types", (f.types||[]).join(" | ")],
+      ["Catégories", (f.categories||[]).join(" | ")],
+      ["Personnes", (f.personnes||[]).join(" | ")],
+      ["Comptes", (f.comptes||[]).join(" | ")],
+      ["Groupes", (f.groupes||[]).join(" | ")],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fData), "Filtres");
   }
 
   const stamp = U.toISO(new Date());
@@ -3398,7 +3811,7 @@ function openExportScopeChoice(title, onConfirm){
       </div>
       <div class="radio-opt ${scope==='params'?'selected':''}" data-scope="params">
         <span class="rc"></span>
-        <div><div class="rt">Paramètres seulement</div><div class="rd">Groupes de groupes et types de compte.</div></div>
+        <div><div class="rt">Paramètres seulement</div><div class="rd">Groupes, personnes, types de compte, réglages et ajustements du budget, classement des catégories, filtres.</div></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:18px;">
         <button class="btn btn-ghost" style="flex:1;" id="esc-cancel">Annuler</button>
@@ -3465,6 +3878,9 @@ function renderMenuSheet(){
         <div class="rowline" id="menu-personmgr" style="cursor:pointer;">
           <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.list} Gérer les personnes</span>
         </div>
+        <div class="rowline" id="menu-catmgr" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.trend} Gérer les catégories</span>
+        </div>
         <div class="rowline" id="menu-accttype" style="cursor:pointer;">
           <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.wallet} Gérer les types de compte</span>
         </div>
@@ -3528,6 +3944,7 @@ function renderMenuSheet(){
   };
   document.getElementById("menu-groupmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_GROUPMGR.open(); };
   document.getElementById("menu-personmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_PERSONMGR.open(); };
+  document.getElementById("menu-catmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_CATMGR.open(); };
   document.getElementById("menu-accttype").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_ACCTTYPE.open(); };
   document.getElementById("menu-budgetset").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_BUDGET.open(); };
   document.getElementById("menu-reset").onclick = ()=>{
@@ -3559,10 +3976,12 @@ function createAliasManager(cfg){
   const APP = window.__SF_APP;
   const ICONS = U.ICONS;
 
-  let view = "list"; // "list" | "edit" | "all"
+  let view = "list"; // "list" | "edit" | "all" | "bulk"
   let editingBase = null;
   let searchTerm = "";
   let rowSeq = 0;
+  let selectMode = false;
+  let selected = new Set();
 
   function rules(){ return Store.settings[cfg.settingsKey] || []; }
   function rulesForBase(base){ return rules().filter(r=>r[cfg.baseField]===base); }
@@ -3586,9 +4005,29 @@ function createAliasManager(cfg){
   }
 
   function childRowHtml(b){
+    const isSel = selected.has(b.base);
+    if(selectMode){
+      return `<div class="check-item groupe-child-item ${isSel?'selected':''}" data-sel="${U.escHtml(b.base)}" style="cursor:pointer;">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+      </div>`;
+    }
     return `<div class="check-item groupe-child-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
       <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
+    </div>`;
+  }
+
+  function flatRowHtml(b){
+    const isSel = selected.has(b.base);
+    if(selectMode){
+      return `<div class="check-item ${isSel?'selected':''}" data-sel="${U.escHtml(b.base)}" style="cursor:pointer;">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+      </div>`;
+    }
+    return `<div class="check-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
+      <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
     </div>`;
   }
 
@@ -3619,24 +4058,107 @@ function createAliasManager(cfg){
       <div class="sheet-body">
         <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">${cfg.helpText}</div>
         ${viewToggleHtml()}
-        <input type="text" class="search-mini" id="am-search" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <input type="text" class="search-mini" id="am-search" style="margin-bottom:0;flex:1;" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
+          <button class="btn btn-ghost btn-sm" id="am-selectmode-btn" style="white-space:nowrap;">${selectMode ? "Terminer" : "Sélectionner"}</button>
+        </div>
         ${sectionsHtml ? `<div class="field-label" style="margin-top:4px;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}s</div>${sectionsHtml}` : ""}
         <div class="field-label" style="margin-top:4px;">${sectionsHtml ? "Non classés" : "Tous les "+cfg.itemLabelPlural}</div>
         <div class="check-list" style="max-height:none;">
-          ${flatFiltered.map(b=>`
-            <div class="check-item" data-base="${U.escHtml(b.base)}" style="cursor:pointer;">
-              <span class="lbl">${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
-            </div>
-          `).join("") || `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucun élément non classé</div>`}
+          ${flatFiltered.map(flatRowHtml).join("") || `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucun élément non classé</div>`}
         </div>
+        ${selectMode ? `<div style="height:70px;"></div>` : ""}
       </div>
+      ${selectMode && selected.size>0 ? `
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" id="am-clear-sel">${selected.size} sélectionné${selected.size>1?"s":""} · Effacer</button>
+        <button class="btn btn-primary" id="am-bulk-move">Déplacer vers…</button>
+      </div>` : ""}
     `;
     document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
     wireViewToggle();
     document.getElementById("am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
-    document.querySelectorAll("[data-base]").forEach(el=>{
-      el.onclick = ()=>{ editingBase = el.dataset.base; view="edit"; renderEdit(); };
-    });
+    document.getElementById("am-selectmode-btn").onclick = ()=>{
+      selectMode = !selectMode;
+      if(!selectMode) selected.clear();
+      renderList();
+    };
+    if(selectMode){
+      document.querySelectorAll("[data-sel]").forEach(el=>{
+        el.onclick = ()=>{
+          const base = el.dataset.sel;
+          if(selected.has(base)) selected.delete(base); else selected.add(base);
+          renderList();
+        };
+      });
+      const clearBtn = document.getElementById("am-clear-sel");
+      if(clearBtn) clearBtn.onclick = ()=>{ selected.clear(); renderList(); };
+      const moveBtn = document.getElementById("am-bulk-move");
+      if(moveBtn) moveBtn.onclick = ()=>{ view="bulk"; renderBulk(); };
+    } else {
+      document.querySelectorAll("[data-base]").forEach(el=>{
+        el.onclick = ()=>{ editingBase = el.dataset.base; view="edit"; renderEdit(); };
+      });
+    }
+  }
+
+  /* ---- Déplacement groupé : applique un même groupe de groupe / groupe de personnes à plusieurs éléments sélectionnés ---- */
+  function renderBulk(){
+    const sheet = document.getElementById(cfg.sheetId);
+    const items = Array.from(selected).sort((a,b)=>a.localeCompare(b,'fr'));
+    sheet.innerHTML = `
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <button class="icon-btn" id="am-back">${ICONS.arrowLeft}</button>
+        <h2 style="flex:1;text-align:center;">Déplacer ${items.length} élément${items.length>1?"s":""}</h2>
+        <button class="icon-btn" id="am-close">${ICONS.close}</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label" style="margin-top:0;">Éléments sélectionnés</div>
+        <div class="chiprow" style="margin-bottom:18px;">
+          ${items.map(b=>`<span class="chip-opt" style="cursor:default;">${U.escHtml(b)}</span>`).join("")}
+        </div>
+        <div class="field-label" style="margin-top:0;">Nom du ${cfg.superLabel}</div>
+        ${datalistsHtml()}
+        <input type="text" class="search-mini" id="am-bulk-super" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" ${cfg.hasDates?'style="margin-bottom:8px;"':''}>
+        ${cfg.hasDates ? `<div class="daterange">
+          <input type="date" id="am-bulk-from">
+          <input type="date" id="am-bulk-to">
+        </div>
+        <div style="font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Dates optionnelles : laissez vide pour une règle valable sur toute la période.</div>` : ""}
+        <div style="font-size:12px;color:var(--text-sub);margin-top:14px;line-height:1.4;">
+          Cette action remplace les règles existantes des éléments sélectionnés par cette nouvelle affectation.
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" id="am-bulk-cancel">Annuler</button>
+        <button class="btn btn-primary" id="am-bulk-apply">Appliquer</button>
+      </div>
+    `;
+    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
+    document.getElementById("am-bulk-cancel").onclick = ()=>{ view="list"; renderList(); };
+    document.getElementById("am-bulk-apply").onclick = ()=>{
+      const sg = document.getElementById("am-bulk-super").value.trim();
+      if(!sg){ APP.showToast("Merci d'indiquer un nom de "+cfg.superLabel); return; }
+      const dfEl = document.getElementById("am-bulk-from");
+      const dtEl = document.getElementById("am-bulk-to");
+      const df = dfEl ? (dfEl.value || null) : null;
+      const dt = dtEl ? (dtEl.value || null) : null;
+      const selectedSet = new Set(items);
+      const others = rules().filter(r=> !selectedSet.has(r[cfg.baseField]));
+      const newRules = items.map(base=>{
+        const entry = {[cfg.baseField]:base, [cfg.superField]:sg};
+        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
+        return entry;
+      });
+      Store.settings[cfg.settingsKey] = others.concat(newRules);
+      Store.saveSettings();
+      APP.showToast(items.length+" élément"+(items.length>1?"s déplacés":" déplacé")+" vers « "+sg+" »");
+      selected.clear();
+      selectMode = false;
+      view="list"; renderList();
+    };
   }
 
   function ruleRowHtml(rule, editableBase){
@@ -3813,11 +4335,12 @@ function createAliasManager(cfg){
   function render(){
     if(view==="all") renderAll();
     else if(view==="edit") renderEdit();
+    else if(view==="bulk") renderBulk();
     else renderList();
   }
 
   function open(){
-    view="list"; searchTerm="";
+    view="list"; searchTerm=""; selectMode=false; selected.clear();
     renderList();
     APP.openOverlay(cfg.overlayId);
   }
@@ -3922,6 +4445,108 @@ function openAcctType(){
   APP.openOverlay("overlay-accttype");
 }
 window.__SF_ACCTTYPE = {open: openAcctType};
+})();
+/* ================= GÉRER LES CATÉGORIES (classification Revenus / Dépenses) ================= */
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+let selectMode = false;
+let selected = new Set();
+
+function renderCatMgr(){
+  const sheet = document.getElementById("sheet-catmgr");
+  const items = AGG.distinctValuesCategorieSorted(Store.transactions); // [{value,count,kind}]
+  const overrides = Store.settings.categoryTypeOverride || {};
+
+  const rowHtml = it=>{
+    const isOverridden = !!overrides[it.value];
+    const isSel = selected.has(it.value);
+    if(selectMode){
+      return `<div class="check-item ${isSel?'selected':''}" data-sel="${U.escHtml(it.value)}" style="cursor:pointer;">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${U.escHtml(it.value)}${isOverridden?' <span style="color:var(--primary);font-weight:700;">·</span>':''}</span>
+        <span class="cnt">${it.count}</span>
+      </div>`;
+    }
+    return `<div class="check-item" data-base="${U.escHtml(it.value)}" style="cursor:default;">
+      <span class="lbl">${U.escHtml(it.value)}${isOverridden?' <span style="color:var(--primary);font-weight:700;font-size:11px;"> (manuel)</span>':''}</span>
+      <span class="cnt">${it.count}</span>
+    </div>`;
+  };
+  const inc = items.filter(i=>i.kind==="Income");
+  const exp = items.filter(i=>i.kind==="Expense");
+
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Gérer les catégories</h2><button class="icon-btn" id="cm-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+        Une catégorie est classée Revenus ou Dépenses automatiquement selon vos transactions. Sélectionnez-en plusieurs pour forcer manuellement leur classement (utile pour l'affichage groupé Revenus/Dépenses).
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;"></div>
+        <button class="btn btn-ghost btn-sm" id="cm-selectmode-btn">${selectMode ? "Terminer" : "Sélectionner"}</button>
+      </div>
+      <div class="field-label" style="margin-top:0;">Revenus</div>
+      <div class="check-list" style="max-height:none;">
+        ${inc.length ? inc.map(rowHtml).join("") : `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucune</div>`}
+      </div>
+      <div class="field-label">Dépenses</div>
+      <div class="check-list" style="max-height:none;">
+        ${exp.length ? exp.map(rowHtml).join("") : `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucune</div>`}
+      </div>
+      ${selectMode ? `<div style="height:70px;"></div>` : ""}
+    </div>
+    ${selectMode && selected.size>0 ? `
+    <div class="sheet-foot" style="flex-wrap:wrap;">
+      <button class="btn btn-ghost" id="cm-clear-sel" style="flex:1 1 100%;">${selected.size} sélectionnée${selected.size>1?"s":""} · Effacer</button>
+      <button class="btn btn-primary" id="cm-mark-income" style="flex:1;">Marquer Revenus</button>
+      <button class="btn btn-primary" id="cm-mark-expense" style="flex:1;">Marquer Dépenses</button>
+    </div>` : ""}
+  `;
+  document.getElementById("cm-close").onclick = ()=>APP.closeOverlay("overlay-catmgr");
+  document.getElementById("cm-selectmode-btn").onclick = ()=>{
+    selectMode = !selectMode;
+    if(!selectMode) selected.clear();
+    renderCatMgr();
+  };
+  if(selectMode){
+    document.querySelectorAll("#sheet-catmgr [data-sel]").forEach(el=>{
+      el.onclick = ()=>{
+        const v = el.dataset.sel;
+        if(selected.has(v)) selected.delete(v); else selected.add(v);
+        renderCatMgr();
+      };
+    });
+    const clearBtn = document.getElementById("cm-clear-sel");
+    if(clearBtn) clearBtn.onclick = ()=>{ selected.clear(); renderCatMgr(); };
+    const applyType = (type)=>{
+      Store.settings.categoryTypeOverride = Store.settings.categoryTypeOverride || {};
+      selected.forEach(v=>{ Store.settings.categoryTypeOverride[v] = type; });
+      Store.saveSettings();
+      APP.showToast(selected.size+" catégorie"+(selected.size>1?"s marquées":" marquée")+" "+(type==="Income"?"Revenus":"Dépenses"));
+      selected.clear();
+      selectMode = false;
+      renderCatMgr();
+      APP.refreshCurrentTab();
+    };
+    const incBtn = document.getElementById("cm-mark-income");
+    if(incBtn) incBtn.onclick = ()=> applyType("Income");
+    const expBtn = document.getElementById("cm-mark-expense");
+    if(expBtn) expBtn.onclick = ()=> applyType("Expense");
+  }
+}
+function openCatMgr(){
+  selectMode = false; selected.clear();
+  renderCatMgr();
+  APP.openOverlay("overlay-catmgr");
+}
+window.__SF_CATMGR = {open: openCatMgr};
 })();
 (function(){
 "use strict";
