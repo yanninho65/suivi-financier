@@ -677,6 +677,7 @@ const Store = {
     if(!Array.isArray(b.amortCategories)) b.amortCategories = [];
     if(b.amortPeriodMonths===undefined) b.amortPeriodMonths = null;
     if(!Array.isArray(b.adjustments)) b.adjustments = [];
+    if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
   },
   clearAll(){
     this.transactions=[];
@@ -2542,6 +2543,72 @@ function groupSelectionMatches(t, selectedName){
   return false;
 }
 
+/* Montant d'un ajustement manuel converti à l'échelle du scope actuellement affiché (Perso/Couple).
+   Chaque ajustement porte le scope dans lequel son montant a été saisi (montantScope) ; on le convertit
+   vers le scope courant (÷2 Couple→Perso, ×2 Perso→Couple) pour qu'il s'intègre correctement aux totaux
+   et à ceux des transactions réelles (elles-mêmes ×2 en Couple, cf. scopeMult). Ajustements anciens sans
+   montantScope : on suppose qu'ils correspondent déjà au scope courant (comportement historique, brut). */
+function adjustmentScopedAmount(adj){
+  const cfg = Store.settings.budget;
+  const raw = Number(adj.montant)||0;
+  const adjScope = adj.montantScope || cfg.scope;
+  if(adjScope === cfg.scope) return raw;
+  return adjScope === "couple" ? raw/2 : raw*2;
+}
+
+/* ---------------- Salaire : saisie manuelle Moi / Ma femme par mois ---------------- */
+/* La catégorie "Salaire" (nom normalisé, insensible à la casse/accents) peut être pilotée manuellement
+   mois par mois plutôt que déduite des transactions : utile si le salaire de la conjointe n'est pas
+   suivi dans les transactions, ou pour corriger une valeur ponctuelle. */
+function isSalaryCategory(catKey){
+  return U.normalize(catKey) === "salaire";
+}
+/* Montant réel (brut, non multiplié par le scope) des transactions de cette catégorie pour ce groupe,
+   sur un mois donné (date corrigée). Sert de valeur par défaut pour "Moi" quand rien n'est saisi. */
+function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
+  let total = 0;
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(!groupSelectionMatches(t, superGroupeName)) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    if(AGG.getGroupKind(base)==="voyage") return;
+    const cat = t.categorie || "(Non renseigné)";
+    if(cat !== catKey) return;
+    const tr = t.transform;
+    if(tr.mode==="yearsplit"){
+      const [my] = monthKey.split("-").map(Number);
+      if(String(tr.year)===String(my)) total += t.montant/12;
+      return;
+    }
+    const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+    if(effMonthKey === monthKey) total += t.montant;
+  });
+  return total;
+}
+/* Entrée manuelle Moi/Ma femme pour un mois donné ({moi:null, femme:null} si rien saisi ce mois-là). */
+function salaryEntryFor(monthKey){
+  const cfg = Store.settings.budget;
+  const e = (cfg.salaryEntries||{})[monthKey];
+  return {
+    moi: (e && e.moi!=null && e.moi!=="") ? Number(e.moi) : null,
+    femme: (e && e.femme!=null && e.femme!=="") ? Number(e.femme) : null
+  };
+}
+/* Montant total "utilisé" pour la catégorie Salaire sur un mois donné, selon le scope courant :
+   - Couple : salaire de ma femme (saisi, 0 par défaut si rien saisi) + le mien (saisi si renseigné, sinon montant des transactions).
+   - Perso : le mien (saisi si renseigné, sinon montant des transactions). Pas de multiplication ×2 : le
+     total couple additionne déjà les deux salaires réels. */
+function salaryMonthTotal(superGroupeName, catKey, monthKey){
+  const cfg = Store.settings.budget;
+  const entry = salaryEntryFor(monthKey);
+  const moi = entry.moi!=null ? entry.moi : salaryRealMonthAmount(superGroupeName, catKey, monthKey);
+  if(cfg.scope==="couple"){
+    const femme = entry.femme!=null ? entry.femme : 0;
+    return moi + femme;
+  }
+  return moi;
+}
+
 function computeGroupBudget(superGroupeName, months, opts){
   opts = opts || {};
   const cfg = Store.settings.budget;
@@ -2637,7 +2704,8 @@ function computeGroupBudget(superGroupeName, months, opts){
     }
   });
 
-  // Ajustements manuels (montant brut, non multiplié par la vue couple/perso).
+  // Ajustements manuels : montant converti à l'échelle du scope courant (§ adjustmentScopedAmount),
+  // selon le scope dans lequel chacun a été saisi (Perso/Couple).
   // Un ajustement "amorti" ajoute son montant tel quel sur son mois (pour, par ex., annuler une dépense
   // ponctuelle) ET amortit son opposé sur l'ensemble de la période d'amortissement (même mécanisme que
   // les catégories amorties ci-dessus).
@@ -2645,7 +2713,7 @@ function computeGroupBudget(superGroupeName, months, opts){
   if(isAmorti){
     (cfg.adjustments||[]).forEach(adj=>{
       if(adj.groupe !== superGroupeName) return;
-      const amt = Number(adj.montant)||0;
+      const amt = adjustmentScopedAmount(adj);
       if(!amt) return;
       if(monthSet.has(adj.month)){
         if(adj.categorie){
@@ -2690,6 +2758,19 @@ function computeGroupBudget(superGroupeName, months, opts){
       o.expense += perMonth.expense*months.length;
     }
   }
+
+  // Salaire : remplace le montant calculé (transactions + amortissement + ajustements) par le montant
+  // "utilisé" mois par mois — saisie manuelle Moi/Ma femme si renseignée, sinon transactions (cf.
+  // salaryMonthTotal). Ne concerne que la catégorie déjà présente pour ce groupe (au moins une transaction).
+  catTotals.forEach((o, cat)=>{
+    if(!isSalaryCategory(cat)) return;
+    let total = 0;
+    months.forEach(m=>{ total += salaryMonthTotal(superGroupeName, cat, m); });
+    o.income = total; o.expense = 0;
+    o.realIncome = total; o.realExpense = 0;
+    o.amortIncome = 0; o.amortExpense = 0;
+    o.adjIncome = 0; o.adjExpense = 0;
+  });
 
   const categories = Array.from(catTotals.values());
   const typeMap = new Map();
@@ -2813,14 +2894,17 @@ function adjustmentsInPeriod(){
   const cfg = Store.settings.budget;
   const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
-  return (cfg.adjustments||[]).map((a,i)=>Object.assign({__idx:i}, a)).filter(a=>monthSet.has(a.month));
+  // Un ajustement amorti ("Amortir ce montant sur toute la période") reste actif sur toute la période
+  // d'amortissement, pas seulement sur son mois d'origine : on le montre donc en plus de ceux dont le
+  // mois d'origine tombe dans la période affichée.
+  return (cfg.adjustments||[]).map((a,i)=>Object.assign({__idx:i}, a)).filter(a=>monthSet.has(a.month) || a.amorti);
 }
 function adjustmentsSectionHtml(){
   const inPeriod = adjustmentsInPeriod();
   if(inPeriod.length){
     return `
       <button type="button" class="btn btn-ghost btn-block" id="bg-adj-btn" style="margin:0 4px 14px;display:flex;justify-content:center;align-items:center;gap:8px;">
-        <span>${inPeriod.length} ajustement${inPeriod.length>1?"s":""} sur la période</span>
+        <span>${inPeriod.length} ajustement${inPeriod.length>1?"s":""}</span>
         <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--primary-soft);color:var(--primary);font-weight:900;font-size:14px;">+</span>
       </button>`;
   }
@@ -2846,15 +2930,15 @@ function openAdjustmentsListSheet(){
       <span style="font-weight:800;font-size:17px;">Ajustements</span>
       <button class="icon-btn" id="adjlist-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${items.length} élément${items.length>1?"s":""} sur la période</div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${items.length} élément${items.length>1?"s":""} (période affichée + amortis sur toute la période)</div>
     <div style="max-height:56vh;overflow-y:auto;">
       ${items.map(a=>`
         <div class="detail-row bg-adjlist-row" data-idx="${a.__idx}" style="align-items:center;cursor:pointer;">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(a.remarque||"Ajustement")}</span>
-            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""}</span>
+            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${(a.montantScope==="couple")?"Couple":"Perso"}</span>
           </span>
-          <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${a.montant<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(Number(a.montant)||0)}</span>
+          <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${adjustmentScopedAmount(a)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(adjustmentScopedAmount(a))}</span>
         </div>
       `).join("")}
     </div>
@@ -2879,7 +2963,8 @@ function openAdjustmentForm(adj, prefill){
   const groups = candidateSuperGroupes();
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
   const isEdit = !!(adj && adj.__idx!=null);
-  const data = adj || Object.assign({month: periodFrom||"", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false}, prefill||{});
+  const data = adj || Object.assign({month: periodFrom||"", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false, montantScope: cfg.scope}, prefill||{});
+  if(!data.montantScope) data.montantScope = cfg.scope;
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
@@ -2898,7 +2983,17 @@ function openAdjustmentForm(adj, prefill){
       ${cats.map(c=>`<option value="${U.escHtml(c)}" ${data.categorie===c?'selected':''}>${U.escHtml(c)}</option>`).join("")}
     </select>
     <input type="number" step="0.01" class="search-mini" style="margin-bottom:10px;" placeholder="Montant (négatif = dépense)" id="adjf-montant" value="${data.montant!=null?data.montant:''}">
-    <input type="text" class="search-mini" style="margin-bottom:14px;" placeholder="Remarque" id="adjf-remarque" value="${U.escHtml(data.remarque||'')}">
+    <input type="text" class="search-mini" style="margin-bottom:10px;" placeholder="Remarque" id="adjf-remarque" value="${U.escHtml(data.remarque||'')}">
+    <div style="margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--text-sub);margin-bottom:6px;">Ce montant est saisi en :</div>
+      <div style="display:flex;gap:8px;">
+        <div class="adjf-scope-opt" data-scope="perso" style="flex:1;text-align:center;padding:9px 0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700;border:2px solid var(--divider);">Perso (×1)</div>
+        <div class="adjf-scope-opt" data-scope="couple" style="flex:1;text-align:center;padding:9px 0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700;border:2px solid var(--divider);">Couple (×2)</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:6px;line-height:1.4;">
+        Le montant est automatiquement multiplié ou divisé par deux si la vue Perso/Couple du budget est changée par la suite.
+      </div>
+    </div>
     <div class="check-item ${data.amorti?'selected':''}" id="adjf-amorti-toggle" style="margin-bottom:8px;cursor:pointer;">
       <span class="cbox">${ICONS.check}</span><span class="lbl">Amortir ce montant sur toute la période</span>
     </div>
@@ -2912,6 +3007,22 @@ function openAdjustmentForm(adj, prefill){
   `;
   document.getElementById("adjf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.getElementById("adjf-amorti-toggle").onclick = (e)=> e.currentTarget.classList.toggle("selected");
+  let selectedScope = data.montantScope==='couple' ? 'couple' : 'perso';
+  function paintScopeOpts(){
+    document.querySelectorAll(".adjf-scope-opt").forEach(el=>{
+      const on = el.dataset.scope===selectedScope;
+      el.style.borderColor = on ? "var(--primary)" : "var(--divider)";
+      el.style.background = on ? "var(--primary-soft)" : "";
+      el.style.color = on ? "var(--primary)" : "";
+    });
+  }
+  paintScopeOpts();
+  document.querySelectorAll(".adjf-scope-opt").forEach(el=>{
+    el.onclick = ()=>{
+      selectedScope = el.dataset.scope;
+      paintScopeOpts();
+    };
+  });
   if(isEdit){
     document.getElementById("adjf-delete").onclick = ()=>{
       cfg.adjustments.splice(adj.__idx,1);
@@ -2929,7 +3040,7 @@ function openAdjustmentForm(adj, prefill){
     const remarque = document.getElementById("adjf-remarque").value.trim();
     const amorti = document.getElementById("adjf-amorti-toggle").classList.contains("selected");
     if(!month || !groupe || !montant){ APP.showToast("Mois, groupe et montant sont requis"); return; }
-    const entry = {month, groupe, categorie, montant, remarque, amorti};
+    const entry = {month, groupe, categorie, montant, remarque, amorti, montantScope: selectedScope};
     cfg.adjustments = cfg.adjustments || [];
     if(isEdit) cfg.adjustments[adj.__idx] = entry;
     else cfg.adjustments.push(entry);
@@ -3101,7 +3212,10 @@ function renderBudget(){
   wireAmortSettings();
   wireAdjustmentsSection();
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
-    el.onclick = ()=> openCategoryTxnSheet(el.dataset.supergroupe, el.dataset.cat);
+    el.onclick = ()=>{
+      if(isSalaryCategory(el.dataset.cat)) openSalaryEditor(el.dataset.supergroupe, el.dataset.cat);
+      else openCategoryTxnSheet(el.dataset.supergroupe, el.dataset.cat);
+    };
   });
   document.querySelectorAll(".budget-voy-row[data-voy]").forEach(el=>{
     el.onclick = ()=> openVoyageTxnSheet(el.dataset.supergroupe, el.dataset.voy);
@@ -3121,6 +3235,9 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const amortSet = new Set(cfg.amortCategories||[]);
   const isAmorti = cfg.mode==="amorti";
   const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+  // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
+  // computeGroupBudget) ; les ajustements manuels restent en montant brut, non multipliés (§5.3 doc).
+  const scopeMult = cfg.scope==="couple" ? 2 : 1;
 
   const items = [];
   Store.transactions.forEach(t=>{
@@ -3139,19 +3256,23 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     // Pour une dépense amortie, on affiche sa part mensuelle (montant / nombre de mois de la période
     // d'amortissement) plutôt que le montant total de la transaction d'origine. Pour une dépense
     // "lissée sur l'année" (remarque finissant par une année), on n'affiche que la part correspondant
-    // aux mois de la période sélectionnée (même principe).
+    // aux mois de la période sélectionnée (même principe). Le tout est ensuite mis à l'échelle du
+    // scope (Perso ×1 / Couple ×2) pour correspondre au montant réellement comptabilisé dans le budget.
     let displayAmount = t.montant;
     if(amortized) displayAmount = t.montant / periodMonths;
     else if(tr.mode==="yearsplit") displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet);
+    displayAmount *= scopeMult;
     items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit" && !amortized});
   });
 
-  // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée.
+  // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée. Montant converti
+  // à l'échelle du scope courant (Perso/Couple), comme pour les transactions réelles ci-dessus, afin que
+  // la somme des montants affichés corresponde bien au total de la carte.
   if(isAmorti){
     (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
       if(adj.groupe !== superGroupeName) return;
       if((adj.categorie||"") !== catKey) return;
-      const amt = Number(adj.montant)||0;
+      const amt = adjustmentScopedAmount(adj);
       if(monthSet.has(adj.month)){
         const [ay,am] = adj.month.split("-").map(Number);
         items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: adj.remarque||"Ajustement", displayAmount: amt});
@@ -3226,7 +3347,8 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
           categorie: catKey,
           montant: -Number(btn.dataset.amount),
           remarque: "Amortissement : "+catKey,
-          amorti: true
+          amorti: true,
+          montantScope: "perso"
         });
       };
     });
@@ -3247,11 +3369,96 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   APP.openOverlay("overlay-detail");
 }
 
-/* Détail des transactions d'un groupe voyage (ou des ajustements sans catégorie) affiché dans une carte Budget */
+/* ---------------- Salaire : édition manuelle Moi / Ma femme, mois par mois ---------------- */
+function openSalaryEditor(superGroupeName, catKey){
+  const cfg = Store.settings.budget;
+  const months = monthsInRange(periodFrom, periodTo);
+
+  function computeRow(m){
+    const entry = salaryEntryFor(m);
+    const fallback = salaryRealMonthAmount(superGroupeName, catKey, m);
+    const moiEff = entry.moi!=null ? entry.moi : fallback;
+    const femmeEff = entry.femme!=null ? entry.femme : 0;
+    const total = cfg.scope==="couple" ? moiEff+femmeEff : moiEff;
+    return {entry, fallback, total};
+  }
+
+  function periodTotal(){
+    return months.reduce((s,m)=> s+computeRow(m).total, 0);
+  }
+
+  function renderModal(){
+    const modal = document.getElementById("modal-detail");
+    const rowsHtml = months.map(m=>{
+      const r = computeRow(m);
+      const [y,mm] = m.split("-").map(Number);
+      const label = U.fmtMonthYear(y, mm-1);
+      return `
+        <div class="detail-row" style="align-items:center;gap:6px;flex-wrap:nowrap;padding:8px 0;">
+          <span style="flex:0 0 62px;font-size:12px;font-weight:600;">${U.escHtml(label)}</span>
+          <input type="number" step="0.01" inputmode="decimal" class="search-mini salf-moi" data-month="${m}" placeholder="${r.fallback?U.fmtMoney(r.fallback):'0,00 €'}" value="${r.entry.moi!=null?r.entry.moi:''}" style="flex:1;min-width:0;margin:0;">
+          <input type="number" step="0.01" inputmode="decimal" class="search-mini salf-femme" data-month="${m}" placeholder="0,00 €" value="${r.entry.femme!=null?r.entry.femme:''}" style="flex:1;min-width:0;margin:0;">
+          <span class="salf-total" data-month="${m}" style="flex:0 0 76px;text-align:right;font-weight:700;font-size:13px;color:${r.total<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(r.total)}</span>
+        </div>`;
+    }).join("");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
+        <button class="icon-btn" id="salf-close">${ICONS.close}</button>
+      </div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:10px;">${U.escHtml(superGroupeName)} · saisie manuelle · vue ${cfg.scope==="couple"?"Couple":"Perso"}</div>
+      <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">
+        Laisser "Moi" vide pour utiliser le montant des transactions du mois. En vue Couple, le total additionne mon salaire (saisi, sinon transactions) et celui de ma femme (0 € si non saisi). En vue Perso, seul mon salaire compte.
+      </div>
+      <div class="detail-row" style="align-items:center;gap:6px;padding:2px 0 6px;font-size:10.5px;color:var(--text-sub);font-weight:700;">
+        <span style="flex:0 0 62px;">Mois</span>
+        <span style="flex:1;">Moi</span>
+        <span style="flex:1;">Ma femme</span>
+        <span style="flex:0 0 76px;text-align:right;">Total</span>
+      </div>
+      <div style="max-height:48vh;overflow-y:auto;">${rowsHtml}</div>
+      <div class="detail-row" style="align-items:center;margin-top:6px;padding-top:10px;border-top:2px solid var(--divider);">
+        <span style="font-weight:800;font-size:13.5px;">Total période</span>
+        <span style="font-weight:800;font-size:15px;color:var(--income);" id="salf-period-total">${U.fmtMoneySigned(periodTotal())}</span>
+      </div>
+      <button class="btn btn-ghost btn-block" id="salf-realtxn" style="margin-top:14px;">Voir les transactions réelles</button>
+    `;
+    document.getElementById("salf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    document.getElementById("salf-realtxn").onclick = ()=> openCategoryTxnSheet(superGroupeName, catKey);
+    function saveField(month, field, val){
+      cfg.salaryEntries = cfg.salaryEntries || {};
+      const cur = Object.assign({}, cfg.salaryEntries[month]);
+      cur[field] = (val==null || val==="") ? null : Number(val);
+      cfg.salaryEntries[month] = cur;
+      Store.saveSettings();
+      const r = computeRow(month);
+      const totalEl = modal.querySelector(`.salf-total[data-month="${month}"]`);
+      if(totalEl){
+        totalEl.textContent = U.fmtMoneySigned(r.total);
+        totalEl.style.color = r.total<0 ? 'var(--expense)' : 'var(--income)';
+      }
+      const periodEl = document.getElementById("salf-period-total");
+      if(periodEl) periodEl.textContent = U.fmtMoneySigned(periodTotal());
+      renderBudget();
+    }
+    modal.querySelectorAll(".salf-moi").forEach(inp=>{
+      inp.onchange = (e)=> saveField(e.target.dataset.month, "moi", e.target.value);
+    });
+    modal.querySelectorAll(".salf-femme").forEach(inp=>{
+      inp.onchange = (e)=> saveField(e.target.dataset.month, "femme", e.target.value);
+    });
+  }
+
+  renderModal();
+  APP.openOverlay("overlay-detail");
+}
+
+
 function openVoyageTxnSheet(superGroupeName, voyKey){
   const cfg = Store.settings.budget;
   const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
+  const scopeMult = cfg.scope==="couple" ? 2 : 1;
 
   const items = [];
   if(voyKey === "__ajustement__"){
@@ -3259,7 +3466,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
       if(adj.groupe !== superGroupeName) return;
       if(adj.categorie) return;
       if(!monthSet.has(adj.month)) return;
-      const amt = Number(adj.montant)||0;
+      const amt = adjustmentScopedAmount(adj);
       const [ay,am] = adj.month.split("-").map(Number);
       items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
     });
@@ -3284,7 +3491,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
         inPeriod = monthSet.has(targetMonth);
       }
       if(!inPeriod) return;
-      const displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
+      const displayAmount = (tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant) * scopeMult;
       items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, yearsplit: tr.mode==="yearsplit"});
     });
   }
@@ -3337,6 +3544,8 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
 /* Transactions Revenus/Dépenses d'un groupe (utilisé pour les groupes additionnels, sans détail par catégorie) */
 function collectGroupTypeItems(superGroupeName, type, months){
   const monthSet = new Set(months);
+  const cfg = Store.settings.budget;
+  const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const items = [];
   Store.transactions.forEach(t=>{
     if(t.type!==type) return;
@@ -3363,7 +3572,7 @@ function collectGroupTypeItems(superGroupeName, type, months){
     }
     if(!inPeriod) return;
     const isYearsplit = tr.mode==="yearsplit" && !(kind==="voyage" && AGG.getGroupVoyageMonth(base));
-    const montant = isYearsplit ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
+    const montant = (isYearsplit ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant) * scopeMult;
     items.push({date: t.date, txnId: t.id, remarque: t.remarque || t.categorie || t.groupe || "—", sub: kind==="voyage" ? (t.groupe||"") : (t.categorie||""), montant, yearsplit: isYearsplit});
   });
   items.sort((a,b)=> b.date - a.date);
