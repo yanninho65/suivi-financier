@@ -368,6 +368,9 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <div class="app" id="app"></div>
 <div class="toast" id="toast"></div>
 <script>
+/* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
+   À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
+const APP_VERSION = "v 2026.08.08.21.52";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -3322,7 +3325,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
               <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
-              ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
+              ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
               <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
               <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.displayAmount)}</span>
             </span>
@@ -3346,7 +3349,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
           groupe: superGroupeName,
           categorie: catKey,
           montant: -Number(btn.dataset.amount),
-          remarque: "Amortissement : "+catKey,
+          remarque: "Amortissement : "+(btn.dataset.remarque||catKey),
           amorti: true,
           montantScope: "perso"
         });
@@ -4477,6 +4480,7 @@ function renderMenuSheet(){
         <div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="menu-retry-settings">Réessayer</button></div>
       </div>` : ""}
       <div class="import-summary" id="menu-storage-usage" style="margin-top:10px;">Calcul de l'espace de stockage utilisé…</div>
+      <div style="text-align:center;color:var(--text-faint);font-size:11px;margin-top:16px;">${APP_VERSION}</div>
     </div>
   `;
   document.getElementById("menu-close").onclick = ()=>APP.closeOverlay("overlay-menu");
