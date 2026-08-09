@@ -370,7 +370,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.08.21.52";
+const APP_VERSION = "v 2026.08.08.22.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -681,6 +681,7 @@ const Store = {
     if(b.amortPeriodMonths===undefined) b.amortPeriodMonths = null;
     if(!Array.isArray(b.adjustments)) b.adjustments = [];
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
+    if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
   },
   clearAll(){
     this.transactions=[];
@@ -2497,6 +2498,11 @@ const PICKER = window.__SF_PICKER;
 let periodFrom = null, periodTo = null; // "YYYY-MM"
 let amortSectionOpen = false;
 let amortCatsSectionOpen = false;
+/* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
+   clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
+   les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
+const groupSectionOpenState = new Map();
+function isGroupSectionOpen(key){ return groupSectionOpenState.has(key) ? groupSectionOpenState.get(key) : true; }
 function ensurePeriod(){
   if(periodFrom && periodTo) return;
   const saved = Store.settings.budget || {};
@@ -2530,6 +2536,25 @@ function yearsplitMonthsInPeriod(year, monthSet){
   let c=0;
   for(let m=1;m<=12;m++){ if(monthSet.has(year+"-"+U.pad2(m))) c++; }
   return c;
+}
+/* Ajoute n mois (peut être négatif) à une clé "AAAA-MM". */
+function addMonthsToKey(key, n){
+  let [y,m] = key.split("-").map(Number);
+  m += n;
+  while(m>12){ m-=12; y++; }
+  while(m<1){ m+=12; y--; }
+  return y+"-"+U.pad2(m);
+}
+/* Fenêtre calendaire de l'amortissement : [Mois de début, Mois de début + Période où on reste - 1].
+   L'amortissement d'une dépense (quelle que soit sa date d'origine, même antérieure de plusieurs années)
+   ne doit se répercuter QUE sur les mois de cette fenêtre — jamais avant ni après — même si la période
+   actuellement affichée déborde de cette fenêtre. Sans "Mois de début" configuré, aucune fenêtre n'est
+   définie : on retombe alors sur l'ancien comportement (toute la période affichée reçoit sa part). */
+function amortWindowMonths(months, periodMonths){
+  const cfg = Store.settings.budget;
+  if(!cfg.startMonth) return months;
+  const windowEnd = addMonthsToKey(cfg.startMonth, periodMonths-1);
+  return months.filter(m=> m>=cfg.startMonth && m<=windowEnd);
 }
 
 /* ---------------- Moteur de calcul du budget ---------------- */
@@ -2691,7 +2716,10 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(t.type==="Income"){ o.income += amt; o.realIncome += amt; } else { o.expense += amt; o.realExpense += amt; }
     }
     if(amortized){
-      // accumulation pour le pool d'amortissement (indépendant des mois affichés)
+      // Alimentation du pool d'amortissement : TOUTE transaction éligible (catégorie amortie, ou antérieure
+      // au mois de début quelle que soit sa catégorie), peu importe son ancienneté — une dépense de plusieurs
+      // années avant le mois de début reste amortissable (cf. §5.3bis). Seule la RÉPARTITION vers les mois
+      // affichés est bornée à la fenêtre d'amortissement (voir plus bas, amortWindowMonths).
       const prev = amortPoolAll.get(cat) || {income:0, expense:0};
       const amt = t.montant*scopeMult;
       if(t.type==="Income") prev.income += amt; else prev.expense += amt;
@@ -2741,15 +2769,17 @@ function computeGroupBudget(superGroupeName, months, opts){
     });
   }
 
-  // Amortissement : total (sur tout l'historique, catégorie par catégorie, + ajustements amortis) / nombre
-  // de mois de la période où on reste, réinjecté également sur chaque mois affiché. À défaut de période
-  // définie, on lisse sur la période affichée elle-même.
+  // Amortissement : total (sur tout l'historique, catégorie par catégorie, + ajustements amortis) / "période
+  // où on reste", réinjecté uniquement sur les mois affichés qui tombent DANS la fenêtre d'amortissement
+  // [Mois de début → Mois de début + période - 1]. Les mois affichés hors de cette fenêtre (avant ou après)
+  // reçoivent 0 — jamais une part de l'amortissement, même si la période affichée les inclut.
   if(isAmorti){
     const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+    const windowN = amortWindowMonths(months, periodMonths).length;
     amortPoolAll.forEach((tot, cat)=>{
       const perMonth = {income: tot.income/periodMonths, expense: tot.expense/periodMonths};
       const o = ensureCat(cat);
-      const addInc = perMonth.income*months.length, addExp = perMonth.expense*months.length;
+      const addInc = perMonth.income*windowN, addExp = perMonth.expense*windowN;
       o.income += addInc; o.expense += addExp;
       o.amortIncome += addInc; o.amortExpense += addExp;
     });
@@ -2757,8 +2787,8 @@ function computeGroupBudget(superGroupeName, months, opts){
       const perMonth = {income: amortPoolVoyAll.income/periodMonths, expense: amortPoolVoyAll.expense/periodMonths};
       const o = ensureVoy("__ajustement__");
       o.label = "Ajustements";
-      o.income += perMonth.income*months.length;
-      o.expense += perMonth.expense*months.length;
+      o.income += perMonth.income*windowN;
+      o.expense += perMonth.expense*windowN;
     }
   }
 
@@ -3055,30 +3085,66 @@ function openAdjustmentForm(adj, prefill){
   APP.openOverlay("overlay-detail");
 }
 
-function groupCardHtml(title, res, isMain){
+/* Sépare une liste (catégories ou voyages) en deux sous-listes Revenus (net ≥ 0) / Dépenses (net < 0). */
+function splitIncomeExpense(list){
+  const income = [], expense = [];
+  list.forEach(c=> (c.income+c.expense) < 0 ? expense.push(c) : income.push(c));
+  return {income, expense};
+}
+/* Bloc <details> Revenus ou Dépenses, repliable, pour une liste de lignes catégorie/voyage. */
+function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv){
+  if(!list.length) return "";
+  const total = dv(list.reduce((s,c)=>s+c.income+c.expense, 0));
+  const open = isGroupSectionOpen(sectionKey);
+  return `
+    <details class="bg-cv-section" data-section-key="${U.escHtml(sectionKey)}" style="margin-top:6px;" ${open?'open':''}>
+      <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+        <span style="font-size:12px;font-weight:700;color:${color};">${label} (${list.length})</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:12px;font-weight:700;color:${color};">${U.fmtMoneySigned(total)}</span>
+          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </summary>
+      ${rowsHtml(list)}
+    </details>
+  `;
+}
+function groupCardHtml(title, res, isMain, divisor){
+  divisor = divisor || 1;
+  const dv = n => n/divisor;
   const catRowsHtml = list=>list.map(c=>`
     <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
-      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
+      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(c.income+c.expense))}</span>
     </div>
   `).join("");
   const voyRowsHtml = list=>list.map(c=>`
     <div class="detail-row budget-voy-row" data-voy="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
-      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(c.income+c.expense)}</span>
+      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(c.income+c.expense))}</span>
     </div>
   `).join("");
+  const catSplit = splitIncomeExpense(res.categories);
+  const voySplit = splitIncomeExpense(res.voyages);
   return `
     <div class="card" style="margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;padding:0 0 4px;">
         <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
-        <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(res.net)}</span>
+        <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(res.net))}</span>
       </div>
-      <div class="detail-row ${!isMain?'bg-typetxn-row':''}" ${!isMain?`data-supergroupe="${U.escHtml(title)}" data-type="Income" style="cursor:pointer;"`:''}><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(res.income)}</span></div>
-      <div class="detail-row ${!isMain?'bg-typetxn-row':''}" ${!isMain?`data-supergroupe="${U.escHtml(title)}" data-type="Expense" style="cursor:pointer;"`:''}><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(res.expense))}</span></div>
+      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(dv(res.income))}</span></div>
+      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(dv(res.expense)))}</span></div>
       ${isMain ? `
-        ${res.categories.length ? `<div class="field-label">Catégories</div>${catRowsHtml(res.categories)}` : ""}
-        ${res.voyages.length ? `<div class="field-label">Voyages / ajustements</div>${voyRowsHtml(res.voyages)}` : ""}
+        ${res.categories.length ? `
+        <div class="field-label" style="margin-bottom:0;">Catégories</div>
+        ${collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv)}
+        ${collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv)}
+        ` : ""}
+        ${res.voyages.length ? `
+        <div class="field-label" style="margin-bottom:0;">Voyages / ajustements</div>
+        ${collapsibleRowsHtml(title+"::voy::income", "Revenus", "var(--income)", voySplit.income, voyRowsHtml, dv)}
+        ${collapsibleRowsHtml(title+"::voy::expense", "Dépenses", "var(--expense)", voySplit.expense, voyRowsHtml, dv)}
+        ` : ""}
       ` : ""}
     </div>
   `;
@@ -3117,6 +3183,12 @@ function renderBudget(){
   const grandExpense = mainRes.expense + extraResults.reduce((s,e)=>s+e.res.expense,0);
 
   const selectedExtra = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
+  const allGroupNames = [cfg.mainGroup].concat(selectedExtra);
+  // Moyenne = totaux divisés par le nombre de mois de la période affichée. N'affecte que les vues
+  // d'ensemble (cartes/lignes ci-dessous) ; les feuilles de détail (catégorie, voyage, transactions)
+  // continuent d'afficher le total réel de la période, jamais une moyenne.
+  const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
+  const dv = n => n/divisor;
 
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
@@ -3125,13 +3197,11 @@ function renderBudget(){
           <span class="pill-label">${U.escHtml(cfg.mainGroup)}</span>
           <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
-        <div id="bg-extra-chips" style="display:contents;">
-          ${selectedExtra.map(g=>`
-            <div class="chip-opt selected" data-extra="${U.escHtml(g)}" style="gap:8px;">
-              <span>${U.escHtml(g)}</span><span style="font-weight:900;opacity:.8;">×</span>
-            </div>
-          `).join("")}
-        </div>
+        ${selectedExtra.length ? `
+        <button type="button" class="oneui-pill" id="bg-extra-pill" style="background:var(--card-alt);">
+          <span class="pill-label">+${selectedExtra.length} groupe${selectedExtra.length>1?"s":""}</span>
+          <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>` : ""}
         <button type="button" class="oneui-pill" id="bg-add-extra-btn" style="padding:8px 12px;background:var(--primary-soft);color:var(--primary);" title="Ajouter un groupe additionnel">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
@@ -3147,20 +3217,26 @@ function renderBudget(){
           <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
         </div>
       </div>
+      <div style="display:flex;gap:8px;margin:0 4px 10px;">
+        <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
+          <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
+          <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
+        </div>
+      </div>
 
       ${periodPickerHtml()}
       ${amortSettingsHtml()}
       ${adjustmentsSectionHtml()}
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;padding:0 0 4px;">
           <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
-          <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(grandIncome+grandExpense)}</span>
+          <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandIncome+grandExpense))}</span>
         </div>
-        <div class="detail-row"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(grandIncome)}</span></div>
-        <div class="detail-row"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(grandExpense))}</span></div>
+        <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(dv(grandIncome))}</span></div>
+        <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(dv(grandExpense)))}</span></div>
       </div>
-      ${groupCardHtml(cfg.mainGroup, mainRes, true)}
-      ${extraResults.map(e=>groupCardHtml(e.name, e.res, false)).join("")}
+      ${groupCardHtml(cfg.mainGroup, mainRes, true, divisor)}
+      ${extraResults.map(e=>groupCardHtml(e.name, e.res, false, divisor)).join("")}
       <div style="height:10px;"></div>
     </div>
   `;
@@ -3179,6 +3255,13 @@ function renderBudget(){
       renderBudget();
     };
   });
+  document.querySelectorAll("#bg-display-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.displayMode = b.dataset.d;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
   document.getElementById("bg-main-pill").onclick = ()=> PICKER.openPicker({
     title:"Groupe principal", hierarchy: groupPickerHierarchy(new Set()), value: cfg.mainGroup,
     onSelect:(v)=>{
@@ -3188,14 +3271,9 @@ function renderBudget(){
       renderBudget();
     }
   });
-  document.querySelectorAll('#bg-extra-chips [data-extra]').forEach(el=>{
-    el.onclick = ()=>{
-      const g = el.dataset.extra;
-      cfg.extraGroups = (cfg.extraGroups||[]).filter(x=>x!==g);
-      Store.saveSettings();
-      renderBudget();
-    };
-  });
+  if(document.getElementById("bg-extra-pill")){
+    document.getElementById("bg-extra-pill").onclick = openExtraGroupsSheet;
+  }
   document.getElementById("bg-add-extra-btn").onclick = ()=>{
     const exclude = new Set([cfg.mainGroup].concat(selectedExtra));
     PICKER.openPicker({
@@ -3223,9 +3301,67 @@ function renderBudget(){
   document.querySelectorAll(".budget-voy-row[data-voy]").forEach(el=>{
     el.onclick = ()=> openVoyageTxnSheet(el.dataset.supergroupe, el.dataset.voy);
   });
-  document.querySelectorAll(".bg-typetxn-row[data-type]").forEach(el=>{
-    el.onclick = ()=> openGroupTypeTxnSheet(el.dataset.supergroupe, el.dataset.type);
+  document.querySelectorAll(".bg-typetxn-row[data-supergroupe]").forEach(el=>{
+    el.onclick = ()=> openGroupTypeTxnSheet(el.dataset.supergroupe, el.dataset.type || null);
   });
+  document.querySelectorAll(".bg-typetxn-all-row[data-type]").forEach(el=>{
+    el.onclick = ()=> openGroupTypeTxnSheet(allGroupNames, el.dataset.type || null);
+  });
+  document.querySelectorAll(".bg-cv-section[data-section-key]").forEach(el=>{
+    el.addEventListener("toggle", function(){ groupSectionOpenState.set(this.dataset.sectionKey, this.open); });
+  });
+}
+
+/* Feuille listant les groupes additionnels (sans les afficher en puces sur la page principale) : retrait
+   individuel + ajout, cf. bg-extra-pill "+N groupes". */
+function openExtraGroupsSheet(){
+  const cfg = Store.settings.budget;
+  function render(){
+    const selected = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
+    const modal = document.getElementById("modal-detail");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:800;font-size:17px;">Groupes additionnels</span>
+        <button class="icon-btn" id="exg-close">${ICONS.close}</button>
+      </div>
+      <div style="max-height:56vh;overflow-y:auto;">
+        ${selected.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun groupe additionnel.</div>` :
+        selected.map(g=>`
+          <div class="detail-row" style="align-items:center;">
+            <span style="font-weight:600;font-size:13.5px;">${U.escHtml(g)}</span>
+            <button type="button" class="icon-btn exg-remove" data-g="${U.escHtml(g)}" title="Retirer">${ICONS.close}</button>
+          </div>
+        `).join("")}
+      </div>
+      <button class="btn btn-ghost btn-block" id="exg-add" style="margin-top:14px;">${ICONS.plus} Ajouter un groupe</button>
+    `;
+    document.getElementById("exg-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    document.querySelectorAll(".exg-remove[data-g]").forEach(btn=>{
+      btn.onclick = ()=>{
+        cfg.extraGroups = (cfg.extraGroups||[]).filter(x=>x!==btn.dataset.g);
+        Store.saveSettings();
+        render();
+        renderBudget();
+      };
+    });
+    document.getElementById("exg-add").onclick = ()=>{
+      const exclude = new Set([cfg.mainGroup].concat(cfg.extraGroups||[]));
+      PICKER.openPicker({
+        title:"Ajouter un groupe", hierarchy: groupPickerHierarchy(exclude), value: null,
+        onSelect:(v)=>{
+          if(!v) return;
+          const set = new Set(cfg.extraGroups||[]);
+          set.add(v);
+          cfg.extraGroups = Array.from(set);
+          Store.saveSettings();
+          render();
+          renderBudget();
+        }
+      });
+    };
+  }
+  render();
+  APP.openOverlay("overlay-detail");
 }
 
 /* ---------------- Détail des transactions d'une catégorie (Amorti / Réel) ---------------- */
@@ -3238,6 +3374,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const amortSet = new Set(cfg.amortCategories||[]);
   const isAmorti = cfg.mode==="amorti";
   const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+  const windowN = amortWindowMonths(months, periodMonths).length;
   // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
   // computeGroupBudget) ; les ajustements manuels restent en montant brut, non multipliés (§5.3 doc).
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
@@ -3254,18 +3391,21 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
     const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
     const amortized = isAmorti && (amortSet.has(cat) || beforeStart);
-    const inPeriod = amortized || monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
+    if(amortized){
+      // Toute transaction éligible (même très ancienne) alimente l'amortissement, mais sa contribution
+      // affichée est nulle si la période actuellement affichée ne recoupe pas la fenêtre d'amortissement
+      // [Mois de début → + période - 1] — jamais avant ni après cette fenêtre (cf. computeGroupBudget).
+      if(windowN<=0) return;
+      const displayAmount = (t.montant/periodMonths)*windowN*scopeMult;
+      items.push({kind:"amorti", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit:false});
+      return;
+    }
+    // Dépense non amortie : prise en compte seulement si son mois (corrigé) tombe dans la période affichée.
+    const inPeriod = monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
     if(!inPeriod) return;
-    // Pour une dépense amortie, on affiche sa part mensuelle (montant / nombre de mois de la période
-    // d'amortissement) plutôt que le montant total de la transaction d'origine. Pour une dépense
-    // "lissée sur l'année" (remarque finissant par une année), on n'affiche que la part correspondant
-    // aux mois de la période sélectionnée (même principe). Le tout est ensuite mis à l'échelle du
-    // scope (Perso ×1 / Couple ×2) pour correspondre au montant réellement comptabilisé dans le budget.
-    let displayAmount = t.montant;
-    if(amortized) displayAmount = t.montant / periodMonths;
-    else if(tr.mode==="yearsplit") displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet);
+    let displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
     displayAmount *= scopeMult;
-    items.push({kind: amortized?"amorti":"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit" && !amortized});
+    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit"});
   });
 
   // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée. Montant converti
@@ -3280,9 +3420,9 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
         const [ay,am] = adj.month.split("-").map(Number);
         items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: adj.remarque||"Ajustement", displayAmount: amt});
       }
-      if(adj.amorti && amt){
+      if(adj.amorti && amt && windowN>0){
         const [ay,am] = adj.month.split("-").map(Number);
-        items.push({kind:"amorti", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), displayAmount: -amt/periodMonths});
+        items.push({kind:"amorti", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), displayAmount: -amt/periodMonths*windowN});
       }
     });
   }
@@ -3322,7 +3462,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
           <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
             <span style="display:flex;flex-direction:column;min-width:0;">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · part mensuelle (/ "+periodMonths+" mois)":""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · amorti sur "+windowN+"/"+periodMonths+" mois de la fenêtre":""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
               ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
@@ -3545,14 +3685,17 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
 }
 
 /* Transactions Revenus/Dépenses d'un groupe (utilisé pour les groupes additionnels, sans détail par catégorie) */
-function collectGroupTypeItems(superGroupeName, type, months){
+function collectGroupTypeItems(superGroupeNames, type, months){
+  const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
   const monthSet = new Set(months);
   const cfg = Store.settings.budget;
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const items = [];
   Store.transactions.forEach(t=>{
-    if(t.type!==type) return;
-    if(!groupSelectionMatches(t, superGroupeName)) return;
+    if(t.type==="Transfer") return;
+    if(type && t.type!==type) return;
+    const matchedGroup = names.find(n=>groupSelectionMatches(t, n));
+    if(!matchedGroup) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(base);
     const tr = t.transform;
@@ -3576,18 +3719,23 @@ function collectGroupTypeItems(superGroupeName, type, months){
     if(!inPeriod) return;
     const isYearsplit = tr.mode==="yearsplit" && !(kind==="voyage" && AGG.getGroupVoyageMonth(base));
     const montant = (isYearsplit ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant) * scopeMult;
-    items.push({date: t.date, txnId: t.id, remarque: t.remarque || t.categorie || t.groupe || "—", sub: kind==="voyage" ? (t.groupe||"") : (t.categorie||""), montant, yearsplit: isYearsplit});
+    const subBase = kind==="voyage" ? (t.groupe||"") : (t.categorie||"");
+    const sub = names.length>1 ? [subBase, matchedGroup].filter(Boolean).join(" · ") : subBase;
+    items.push({date: t.date, txnId: t.id, remarque: t.remarque || t.categorie || t.groupe || "—", sub, montant, yearsplit: isYearsplit});
   });
   items.sort((a,b)=> b.date - a.date);
   return items;
 }
-function openGroupTypeTxnSheet(superGroupeName, type){
+function openGroupTypeTxnSheet(superGroupeNames, type){
+  const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
   const months = monthsInRange(periodFrom, periodTo);
-  const items = collectGroupTypeItems(superGroupeName, type, months);
+  const items = collectGroupTypeItems(names, type, months);
   const total = items.reduce((s,x)=>s+x.montant,0);
-  const label = type==="Income" ? "Revenus" : "Dépenses";
-  const color = type==="Income" ? "var(--income)" : "var(--expense)";
-  const bg = type==="Income" ? "var(--income-soft)" : "var(--expense-soft)";
+  const label = type==="Income" ? "Revenus" : type==="Expense" ? "Dépenses" : "Total";
+  const color = type==="Income" ? "var(--income)" : type==="Expense" ? "var(--expense)" : (total<0?"var(--expense)":"var(--income)");
+  const bg = type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)";
+  const subtitle = names.length>1 ? "Tous les groupes" : names[0];
+  const cfgMode = Store.settings.budget.mode;
 
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
@@ -3595,7 +3743,8 @@ function openGroupTypeTxnSheet(superGroupeName, type){
       <span style="font-weight:800;font-size:17px;">${label}</span>
       <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${items.length} élément${items.length>1?"s":""}</div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${items.length} élément${items.length>1?"s":""}</div>
+    ${cfgMode==="amorti" ? `<div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Cette liste montre les transactions réelles (Brut), sans lissage ni ajustement — le total peut donc différer de celui affiché sur la carte en mode "Amort. + ajouts".</div>` : ""}
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${U.fmtMoneySigned(total)}</span>
     </div>
