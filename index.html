@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.19.11";
+const APP_VERSION = "v 2026.08.10.19.26";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4764,54 +4764,86 @@ function computeStatus(){
   return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
 }
 
-/* Sauvegarde vers le Gist. Si aucun ID de Gist n'est encore enregistré, en crée un nouveau
-   (secret) et mémorise son ID retourné par l'API — plutôt que de forcer une création manuelle
-   préalable sur github.com. L'ID utilisé est toujours celui déjà persisté dans Store.settings.sync
-   (jamais relu depuis un champ texte non enregistré), donc aucun risque de créer un Gist en double
-   par un ID vide non intentionnel. */
+/* Récupère et parse le contenu JSON stocké dans le Gist distant. */
+async function fetchRemotePayload(c){
+  const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+    headers: {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"}
+  });
+  if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
+  const data = await res.json();
+  const fname = c.filename || "suivi_financier_sync.json";
+  const files = data.files || {};
+  const file = files[fname] || Object.values(files)[0];
+  if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
+  let content = file.content;
+  if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
+  return JSON.parse(content);
+}
+
+/* Envoie un payload donné vers le Gist (création si aucun gistId encore connu, sinon mise à jour).
+   Met à jour Store.settings.sync (gistId/lastSyncedAt/lastSyncedHash) sur succès. Ne gère ni
+   `syncing` ni les toasts — laissé aux appelants (pushToGist, smartSync, résolution de conflit). */
+async function pushPayloadToGist(c, payload, hash){
+  const filename = c.filename || "suivi_financier_sync.json";
+  const creating = !c.gistId;
+  const res = creating
+    ? await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: {
+          "Authorization": "token "+c.token,
+          "Accept": "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          description: "Suivi financier — sauvegarde synchronisée",
+          public: false,
+          files: {[filename]: {content: JSON.stringify(payload)}}
+        })
+      })
+    : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+        method: "PATCH",
+        headers: {
+          "Authorization": "token "+c.token,
+          "Accept": "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
+      });
+  if(!res.ok){
+    const txt = await res.text().catch(()=>"");
+    throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
+  }
+  const data = await res.json();
+  Store.settings.sync = Object.assign({}, Store.settings.sync, {
+    gistId: creating ? data.id : c.gistId,
+    lastSyncedAt: new Date().toISOString(),
+    lastSyncedHash: hash
+  });
+  Store.saveSettings();
+  return creating;
+}
+
+/* Remplace les transactions/paramètres locaux par ceux d'un payload distant déjà récupéré.
+   Ne gère ni la sauvegarde IndexedDB (Store.saveTransactions), ni lastSyncedHash/At, ni le
+   rafraîchissement d'écran — laissé aux appelants. */
+function applyRemotePayloadLocally(payload){
+  const txns = (payload.transactions||[]).map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
+  window.__SF_DATA.importTxns(txns, "replace");
+  if(payload.params) window.__SF_IMPORT.applyParamsImport(payload.params, "replace");
+  Store.normalizeSettings();
+}
+
+/* Sauvegarde FORCÉE vers le Gist (écrase le contenu distant avec l'état local actuel, quel que
+   soit ce qu'il contenait). Utilisée par le bouton "Forcer la sauvegarde" et en résolution de
+   conflit ; crée le Gist si aucun gistId n'est encore connu. */
 async function pushToGist(){
   const c = getConfig();
   if(!c.token){ openSyncSheet(); return; }
   syncing = true; lastError = null; updateIndicator();
-  const filename = c.filename || "suivi_financier_sync.json";
-  const creating = !c.gistId;
   try{
     const payload = buildSyncPayload();
     const hash = hashPayload(payload);
-    const res = creating
-      ? await fetch("https://api.github.com/gists", {
-          method: "POST",
-          headers: {
-            "Authorization": "token "+c.token,
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            description: "Suivi financier — sauvegarde synchronisée",
-            public: false,
-            files: {[filename]: {content: JSON.stringify(payload)}}
-          })
-        })
-      : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-          method: "PATCH",
-          headers: {
-            "Authorization": "token "+c.token,
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
-        });
-    if(!res.ok){
-      const txt = await res.text().catch(()=>"");
-      throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
-    }
-    const data = await res.json();
-    Store.settings.sync = Object.assign({}, Store.settings.sync, {
-      gistId: creating ? data.id : c.gistId,
-      lastSyncedAt: new Date().toISOString(),
-      lastSyncedHash: hash
-    });
-    Store.saveSettings();
+    const creating = await pushPayloadToGist(c, payload, hash);
     APP.showToast(creating ? "Gist créé et sauvegardé" : "Sauvegardé sur GitHub Gist");
   }catch(e){
     lastError = (e && e.message) ? e.message : String(e);
@@ -4822,27 +4854,15 @@ async function pushToGist(){
   }
 }
 
+/* Récupération FORCÉE depuis le Gist (écrase les données locales, quelles qu'elles soient).
+   Utilisée par le bouton "Forcer la récupération" (après confirmation) et en résolution de conflit. */
 async function pullFromGist(){
   const c = getConfig();
   if(!c.token || !c.gistId){ openSyncSheet(); return; }
   syncing = true; lastError = null; updateIndicator();
   try{
-    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-      headers: {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"}
-    });
-    if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
-    const data = await res.json();
-    const fname = c.filename || "suivi_financier_sync.json";
-    const files = data.files || {};
-    const file = files[fname] || Object.values(files)[0];
-    if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
-    let content = file.content;
-    if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
-    const payload = JSON.parse(content);
-    const txns = (payload.transactions||[]).map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
-    window.__SF_DATA.importTxns(txns, "replace");
-    if(payload.params) window.__SF_IMPORT.applyParamsImport(payload.params, "replace");
-    Store.normalizeSettings();
+    const payload = await fetchRemotePayload(c);
+    applyRemotePayloadLocally(payload);
     const newHash = hashPayload(buildSyncPayload());
     Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
     Store.saveSettings();
@@ -4858,11 +4878,114 @@ async function pullFromGist(){
   }
 }
 
+/* Synchronisation dans les deux sens (action de l'indicateur en haut et bouton principal de
+   la feuille Synchronisation). Compare le hash local actuel, le hash distant, et le hash mémorisé
+   lors de la dernière synchronisation réussie (`lastSyncedHash`) pour déterminer sans ambiguïté
+   quel côté a changé :
+   - seul le distant a changé depuis la dernière synchro → récupère automatiquement (le local n'a
+     rien à perdre, rien n'a été modifié ici) ;
+   - seul le local a changé → sauvegarde automatiquement (le distant n'a rien à perdre) ;
+   - les deux ont changé indépendamment (ou identiques) → pas de fusion automatique possible avec
+     un simple hash global : demande explicitement à l'utilisateur lequel garder. */
+async function smartSync(){
+  const c = getConfig();
+  if(!c.token){ openSyncSheet(); return; }
+  if(!c.gistId){ await pushToGist(); return; }
+  syncing = true; lastError = null; updateIndicator();
+  try{
+    const localPayload = buildSyncPayload();
+    const localHash = hashPayload(localPayload);
+    const remotePayload = await fetchRemotePayload(c);
+    const remoteHash = hashPayload(remotePayload);
+    const lastHash = c.lastSyncedHash;
+
+    if(remoteHash === localHash){
+      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: localHash});
+      Store.saveSettings();
+      APP.showToast("Déjà à jour");
+      return;
+    }
+    const localChanged = localHash !== lastHash;
+    const remoteChanged = remoteHash !== lastHash;
+    if(remoteChanged && !localChanged){
+      applyRemotePayloadLocally(remotePayload);
+      const newHash = hashPayload(buildSyncPayload());
+      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
+      Store.saveSettings();
+      await Store.saveTransactions();
+      APP.refreshCurrentTab();
+      APP.showToast("Données récupérées depuis GitHub Gist");
+      return;
+    }
+    if(localChanged && !remoteChanged){
+      await pushPayloadToGist(c, localPayload, localHash);
+      APP.showToast("Sauvegardé sur GitHub Gist");
+      return;
+    }
+    // Modifications des deux côtés (ou état de référence inconnu) : demander à l'utilisateur.
+    showConflictModal(c, localPayload, localHash, remotePayload);
+  }catch(e){
+    lastError = (e && e.message) ? e.message : String(e);
+    APP.showToast("Échec de la synchronisation : " + lastError);
+  }finally{
+    syncing = false;
+    updateIndicator();
+  }
+}
+
+function showConflictModal(c, localPayload, localHash, remotePayload){
+  const modal = document.getElementById("modal-confirm");
+  const rd = remotePayload.exportedAt ? new Date(remotePayload.exportedAt) : null;
+  const remoteTxt = rd ? (U.fmtDateShort(rd)+" à "+U.pad2(rd.getHours())+":"+U.pad2(rd.getMinutes())) : "date inconnue";
+  modal.innerHTML = `
+    <h3 style="margin:0 0 8px;font-size:18px;">Modifications des deux côtés</h3>
+    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Cet appareil et le Gist ont chacun des changements depuis la dernière synchronisation (dernière écriture du Gist : ${remoteTxt}). Choisissez lequel garder — l'autre sera écrasé.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button class="btn btn-primary btn-block" id="conflict-keep-local">Garder cet appareil</button>
+      <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser le Gist</button>
+      <button class="btn btn-ghost btn-block" id="conflict-cancel">Annuler</button>
+    </div>
+  `;
+  document.getElementById("conflict-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("conflict-keep-local").onclick = async ()=>{
+    APP.closeOverlay("overlay-confirm");
+    syncing = true; lastError = null; updateIndicator();
+    try{
+      await pushPayloadToGist(c, localPayload, localHash);
+      APP.showToast("Sauvegardé sur GitHub Gist (a écrasé le Gist)");
+    }catch(e){
+      lastError = (e && e.message) ? e.message : String(e);
+      APP.showToast("Échec de la sauvegarde : " + lastError);
+    }finally{
+      syncing = false; updateIndicator();
+    }
+  };
+  document.getElementById("conflict-keep-remote").onclick = async ()=>{
+    APP.closeOverlay("overlay-confirm");
+    syncing = true; lastError = null; updateIndicator();
+    try{
+      applyRemotePayloadLocally(remotePayload);
+      const newHash = hashPayload(buildSyncPayload());
+      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
+      Store.saveSettings();
+      await Store.saveTransactions();
+      APP.refreshCurrentTab();
+      APP.showToast("Données récupérées depuis GitHub Gist (a écrasé cet appareil)");
+    }catch(e){
+      lastError = (e && e.message) ? e.message : String(e);
+      APP.showToast("Échec de la récupération : " + lastError);
+    }finally{
+      syncing = false; updateIndicator();
+    }
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
 function confirmPull(){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 style="margin:0 0 8px;font-size:18px;">Récupérer depuis GitHub Gist ?</h3>
-    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist. Si vous avez des modifications non sauvegardées ici, sauvegardez-les d'abord.</p>
+    <h3 style="margin:0 0 8px;font-size:18px;">Forcer la récupération depuis GitHub Gist ?</h3>
+    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt le bouton "Synchroniser" ci-dessus, qui gère les deux sens automatiquement.</p>
     <div style="display:flex;gap:10px;">
       <button class="btn btn-ghost" style="flex:1;" id="syncpull-cancel">Annuler</button>
       <button class="btn btn-primary" style="flex:1;" id="syncpull-confirm">Récupérer</button>
@@ -4883,7 +5006,7 @@ function statusMeta(){
     syncing: {label:"Synchronisation en cours…", color:"var(--text-sub)"},
     error: {label:"Échec de la dernière synchronisation", color:"var(--expense)"},
     synced: {label:"Synchronisé", color:"var(--income)"},
-    unsynced: {label:"Modifications non sauvegardées", color:"var(--expense)"}
+    unsynced: {label:"Modifications non synchronisées", color:"var(--expense)"}
   }[st];
 }
 
@@ -4911,18 +5034,20 @@ function renderSyncSheet(){
         <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${lastTxt}
         ${lastError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError)}</span>` : ""}
       </div>
-      <div style="display:flex;gap:10px;margin-top:16px;">
-        <button class="btn btn-ghost" style="flex:1;" id="sync-pull" ${c.gistId ? "" : "disabled"}>${ICONS.download} Récupérer</button>
-        <button class="btn btn-primary" style="flex:1;" id="sync-push">${ICONS.upload} Sauvegarder</button>
-      </div>
-      ${!c.gistId ? `<div class="import-summary" style="margin-top:10px;">Aucun Gist enregistré pour l'instant : "Sauvegarder" en créera un nouveau (secret) et mémorisera son ID automatiquement.</div>` : ""}` : ""}
+      <button class="btn btn-primary btn-block" id="sync-smart" style="margin-top:16px;">${ICONS.refreshCw} Synchroniser</button>
+      ${!c.gistId ? `<div class="import-summary" style="margin-top:10px;">Aucun Gist enregistré pour l'instant : "Synchroniser" en créera un nouveau (secret) et mémorisera son ID automatiquement.</div>` : `
+      <div class="field-label" style="margin-top:18px;">Actions manuelles (forcent un sens sans vérifier l'autre)</div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-ghost" style="flex:1;" id="sync-pull">${ICONS.download} Forcer récupération</button>
+        <button class="btn btn-ghost" style="flex:1;" id="sync-push">${ICONS.upload} Forcer sauvegarde</button>
+      </div>`}` : ""}
       <div class="field-label" style="margin-top:20px;">${configured ? "Modifier la configuration" : "Configuration"}</div>
       <div class="card" style="padding:14px;">
         <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
         <input type="password" id="sync-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(c.token||"")}">
         <div class="field-label">ID du Gist</div>
         <input type="text" id="sync-gistid" class="search-mini" style="margin:0;" placeholder="Laisser vide pour créer un nouveau Gist" autocomplete="off" value="${U.escHtml(c.gistId||"")}">
-        <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Laisse ce champ vide sur le premier appareil : le prochain "Sauvegarder" crée le Gist et remplit l'ID ici. Sur un deuxième appareil, colle l'ID affiché sur le premier (visible ci-dessus une fois configuré, ou dans l'URL du Gist sur github.com).</div>
+        <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Laisse ce champ vide sur le premier appareil : le prochain "Synchroniser" crée le Gist et remplit l'ID ici. Sur un deuxième appareil, colle l'ID affiché sur le premier (visible ci-dessus une fois configuré, ou dans l'URL du Gist sur github.com).</div>
         <button class="btn btn-primary btn-block" id="sync-save-config" style="margin-top:14px;">Enregistrer la configuration</button>
       </div>
     </div>
@@ -4939,8 +5064,11 @@ function renderSyncSheet(){
     updateIndicator();
   };
   if(configured){
-    document.getElementById("sync-push").onclick = ()=>{ pushToGist().then(()=>renderSyncSheet()); };
-    if(c.gistId) document.getElementById("sync-pull").onclick = confirmPull;
+    document.getElementById("sync-smart").onclick = ()=>{ smartSync().then(()=>renderSyncSheet()); };
+    if(c.gistId){
+      document.getElementById("sync-push").onclick = ()=>{ pushToGist().then(()=>renderSyncSheet()); };
+      document.getElementById("sync-pull").onclick = confirmPull;
+    }
   }
 }
 
@@ -4957,9 +5085,9 @@ function updateIndicator(){
   let icon, color, title;
   if(st==="syncing"){ icon=ICONS.refreshCw; color="var(--text-sub)"; title="Synchronisation en cours…"; }
   else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation"; }
-  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé — appuyez pour sauvegarder à nouveau"; }
+  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé — appuyez pour vérifier les mises à jour"; }
   else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec — appuyez pour réessayer"; }
-  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Modifications non sauvegardées — appuyez pour synchroniser"; }
+  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Non synchronisé — appuyez pour synchroniser"; }
   btn.innerHTML = icon;
   btn.style.color = color;
   btn.classList.toggle("sync-spin", st==="syncing");
@@ -4967,11 +5095,11 @@ function updateIndicator(){
   btn.onclick = ()=>{
     if(st==="syncing") return;
     if(!configured){ openSyncSheet(); return; }
-    pushToGist();
+    smartSync();
   };
 }
 
-window.__SF_SYNC = {open: openSyncSheet, updateIndicator, pushToGist, pullFromGist};
+window.__SF_SYNC = {open: openSyncSheet, updateIndicator, pushToGist, pullFromGist, smartSync};
 })();
 
 /* ================= Générateur générique : gestion des alias (groupes / personnes) ================= */
