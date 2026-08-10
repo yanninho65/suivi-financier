@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.18.24";
+const APP_VERSION = "v 2026.08.10.19.11";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4728,10 +4728,12 @@ let syncing = false;
 let lastError = null;
 
 function getConfig(){ return Store.settings.sync || {}; }
-function isConfigured(){ const c = getConfig(); return !!(c.token && c.gistId); }
+/* "Configuré" = jeton présent. L'ID du Gist est optionnel : s'il manque, le premier
+   "Sauvegarder" crée automatiquement un nouveau Gist secret et mémorise son ID. */
+function isConfigured(){ return !!(getConfig().token); }
 
 function saveConfig(token, gistId){
-  Store.settings.sync = Object.assign({}, Store.settings.sync, {token: token.trim(), gistId: gistId.trim()});
+  Store.settings.sync = Object.assign({}, Store.settings.sync, {token: token.trim(), gistId: (gistId||"").trim()});
   Store.saveSettings();
 }
 
@@ -4756,35 +4758,61 @@ function hashPayload(payload){
 function computeStatus(){
   if(syncing) return "syncing";
   const c = getConfig();
-  if(!c.token || !c.gistId) return "unconfigured";
+  if(!c.token) return "unconfigured";
   if(lastError) return "error";
-  if(!c.lastSyncedHash) return "unsynced";
+  if(!c.gistId || !c.lastSyncedHash) return "unsynced";
   return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
 }
 
+/* Sauvegarde vers le Gist. Si aucun ID de Gist n'est encore enregistré, en crée un nouveau
+   (secret) et mémorise son ID retourné par l'API — plutôt que de forcer une création manuelle
+   préalable sur github.com. L'ID utilisé est toujours celui déjà persisté dans Store.settings.sync
+   (jamais relu depuis un champ texte non enregistré), donc aucun risque de créer un Gist en double
+   par un ID vide non intentionnel. */
 async function pushToGist(){
   const c = getConfig();
-  if(!c.token || !c.gistId){ openSyncSheet(); return; }
+  if(!c.token){ openSyncSheet(); return; }
   syncing = true; lastError = null; updateIndicator();
+  const filename = c.filename || "suivi_financier_sync.json";
+  const creating = !c.gistId;
   try{
     const payload = buildSyncPayload();
     const hash = hashPayload(payload);
-    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-      method: "PATCH",
-      headers: {
-        "Authorization": "token "+c.token,
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({files: {[c.filename||"suivi_financier_sync.json"]: {content: JSON.stringify(payload)}}})
-    });
+    const res = creating
+      ? await fetch("https://api.github.com/gists", {
+          method: "POST",
+          headers: {
+            "Authorization": "token "+c.token,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            description: "Suivi financier — sauvegarde synchronisée",
+            public: false,
+            files: {[filename]: {content: JSON.stringify(payload)}}
+          })
+        })
+      : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+          method: "PATCH",
+          headers: {
+            "Authorization": "token "+c.token,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
+        });
     if(!res.ok){
       const txt = await res.text().catch(()=>"");
       throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
     }
-    Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: hash});
+    const data = await res.json();
+    Store.settings.sync = Object.assign({}, Store.settings.sync, {
+      gistId: creating ? data.id : c.gistId,
+      lastSyncedAt: new Date().toISOString(),
+      lastSyncedHash: hash
+    });
     Store.saveSettings();
-    APP.showToast("Sauvegardé sur GitHub Gist");
+    APP.showToast(creating ? "Gist créé et sauvegardé" : "Sauvegardé sur GitHub Gist");
   }catch(e){
     lastError = (e && e.message) ? e.message : String(e);
     APP.showToast("Échec de la sauvegarde : " + lastError);
@@ -4851,7 +4879,7 @@ function confirmPull(){
 function statusMeta(){
   const st = computeStatus();
   return {
-    unconfigured: {label:"Non configuré", color:"var(--text-faint)"},
+    unconfigured: {label:"Jeton non configuré", color:"var(--text-faint)"},
     syncing: {label:"Synchronisation en cours…", color:"var(--text-sub)"},
     error: {label:"Échec de la dernière synchronisation", color:"var(--expense)"},
     synced: {label:"Synchronisé", color:"var(--income)"},
@@ -4884,15 +4912,17 @@ function renderSyncSheet(){
         ${lastError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError)}</span>` : ""}
       </div>
       <div style="display:flex;gap:10px;margin-top:16px;">
-        <button class="btn btn-ghost" style="flex:1;" id="sync-pull">${ICONS.download} Récupérer</button>
+        <button class="btn btn-ghost" style="flex:1;" id="sync-pull" ${c.gistId ? "" : "disabled"}>${ICONS.download} Récupérer</button>
         <button class="btn btn-primary" style="flex:1;" id="sync-push">${ICONS.upload} Sauvegarder</button>
-      </div>` : ""}
+      </div>
+      ${!c.gistId ? `<div class="import-summary" style="margin-top:10px;">Aucun Gist enregistré pour l'instant : "Sauvegarder" en créera un nouveau (secret) et mémorisera son ID automatiquement.</div>` : ""}` : ""}
       <div class="field-label" style="margin-top:20px;">${configured ? "Modifier la configuration" : "Configuration"}</div>
       <div class="card" style="padding:14px;">
         <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
         <input type="password" id="sync-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(c.token||"")}">
         <div class="field-label">ID du Gist</div>
-        <input type="text" id="sync-gistid" class="search-mini" style="margin:0;" placeholder="ex : 8f3a2b1c9e0d…" autocomplete="off" value="${U.escHtml(c.gistId||"")}">
+        <input type="text" id="sync-gistid" class="search-mini" style="margin:0;" placeholder="Laisser vide pour créer un nouveau Gist" autocomplete="off" value="${U.escHtml(c.gistId||"")}">
+        <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Laisse ce champ vide sur le premier appareil : le prochain "Sauvegarder" crée le Gist et remplit l'ID ici. Sur un deuxième appareil, colle l'ID affiché sur le premier (visible ci-dessus une fois configuré, ou dans l'URL du Gist sur github.com).</div>
         <button class="btn btn-primary btn-block" id="sync-save-config" style="margin-top:14px;">Enregistrer la configuration</button>
       </div>
     </div>
@@ -4901,7 +4931,7 @@ function renderSyncSheet(){
   document.getElementById("sync-save-config").onclick = ()=>{
     const token = document.getElementById("sync-token").value.trim();
     const gistId = document.getElementById("sync-gistid").value.trim();
-    if(!token || !gistId){ APP.showToast("Renseignez le jeton et l'ID du Gist"); return; }
+    if(!token){ APP.showToast("Renseignez le jeton d'accès"); return; }
     lastError = null;
     saveConfig(token, gistId);
     APP.showToast("Configuration enregistrée");
@@ -4910,7 +4940,7 @@ function renderSyncSheet(){
   };
   if(configured){
     document.getElementById("sync-push").onclick = ()=>{ pushToGist().then(()=>renderSyncSheet()); };
-    document.getElementById("sync-pull").onclick = confirmPull;
+    if(c.gistId) document.getElementById("sync-pull").onclick = confirmPull;
   }
 }
 
