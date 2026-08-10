@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.19.49";
+const APP_VERSION = "v 2026.08.10.21.45";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -415,14 +415,23 @@ function normalize(s){
 function escHtml(s){
   return String(s==null?"":s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function moneyDecimals(){
+  try{
+    const s = window.__SF_STORE && window.__SF_STORE.settings;
+    const d = s && s.decimals;
+    return d===2 ? 2 : 0;
+  }catch(e){ return 0; }
+}
 function fmtMoney(n){
   if(n==null || isNaN(n)) n=0;
+  const dec = moneyDecimals();
   const sign = n<0 ? "-" : "";
   const abs = Math.abs(n);
-  return sign + abs.toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}) + " €";
+  return sign + abs.toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + " €";
 }
 function fmtMoneySigned(n){
-  return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{maximumFractionDigits:2}) + " €";
+  const dec = moneyDecimals();
+  return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + " €";
 }
 const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 const MONTHS_FR_SHORT = ["jan.","fév.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
@@ -578,10 +587,10 @@ function idbDelete(key){
 /* ---------------- Store ---------------- */
 const Store = {
   transactions: [], // array of txn objects
-  settings: {theme:"auto", dateBasis:"indiquee", groupAliasRules:[], accountTypes:{}, personAliasRules:[],
+  settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
-      amortCategories:[], amortPeriodMonths:null, adjustments:[]}},
+      amortCategories:[], amortPeriodMonths:null, adjustments:[], excludedAccounts:[], incomeExpenseGrouping:"split"}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
 
   /* Charge les données au démarrage. Doit être attendu (await) avant d'afficher l'appli. */
@@ -673,13 +682,14 @@ const Store = {
   /* Comble les champs manquants (settings anciens/partiels) pour éviter les erreurs sur les nouvelles fonctionnalités */
   normalizeSettings(){
     const s = this.settings;
+    if(s.decimals!==2) s.decimals = 0;
     if(!s.groupKind) s.groupKind = {};
     if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
     if(!s.groupDateRange) s.groupDateRange = {};
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
-    if(b.mode!=="amorti" && b.mode!=="brut") b.mode = "amorti";
+    if(b.mode!=="amorti" && b.mode!=="brut" && b.mode!=="brut_ajout") b.mode = "amorti";
     if(b.startMonth===undefined) b.startMonth = null;
     if(b.mainGroup===undefined) b.mainGroup = null;
     if(!Array.isArray(b.extraGroups)) b.extraGroups = [];
@@ -688,6 +698,8 @@ const Store = {
     if(!Array.isArray(b.adjustments)) b.adjustments = [];
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
     if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
+    if(!Array.isArray(b.excludedAccounts)) b.excludedAccounts = [];
+    if(b.incomeExpenseGrouping!=="grouped" && b.incomeExpenseGrouping!=="split") b.incomeExpenseGrouping = "split";
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -2513,6 +2525,14 @@ const PICKER = window.__SF_PICKER;
 let periodFrom = null, periodTo = null; // "YYYY-MM"
 let amortSectionOpen = false;
 let amortCatsSectionOpen = false;
+let acctExcludeSectionOpen = false;
+/* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
+   amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
+function isAccountExcluded(compte){
+  const excl = Store.settings.budget.excludedAccounts;
+  if(!excl || !excl.length) return false;
+  return excl.indexOf(compte||"") !== -1;
+}
 /* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
    clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
    les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
@@ -2613,6 +2633,7 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
     if(!groupSelectionMatches(t, superGroupeName)) return;
+    if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     if(AGG.getGroupKind(base)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
@@ -2658,7 +2679,10 @@ function computeGroupBudget(superGroupeName, months, opts){
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
+  // "amorti" (lissage catégories + ajustements) / "brut_ajout" (pas de lissage, mais ajustements manuels non-amortis
+  // pris en compte) / "brut" (transactions réelles seules). Les groupes additionnels restent toujours forcés en brut.
   const isAmorti = !opts.forceBrut && cfg.mode==="amorti";
+  const applyAdjustments = !opts.forceBrut && (cfg.mode==="amorti" || cfg.mode==="brut_ajout");
 
   // catégorie -> {income, expense}
   const catTotals = new Map();
@@ -2684,6 +2708,7 @@ function computeGroupBudget(superGroupeName, months, opts){
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
     if(!matchesSelection(t)) return;
+    if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(base);
 
@@ -2756,9 +2781,13 @@ function computeGroupBudget(superGroupeName, months, opts){
   // ponctuelle) ET amortit son opposé sur l'ensemble de la période d'amortissement (même mécanisme que
   // les catégories amorties ci-dessus).
   const amortPoolVoyAll = {income:0, expense:0};
-  if(isAmorti){
+  if(applyAdjustments){
     (cfg.adjustments||[]).forEach(adj=>{
       if(adj.groupe !== superGroupeName) return;
+      // Mode "Sans amort, avec ajout" : les ajustements créés via la case "Amortir ce montant sur toute la
+      // période" restent exclus (ni leur entrée immédiate, ni leur lissage) — seuls les ajustements simples
+      // (non amortis) sont pris en compte dans ce mode intermédiaire.
+      if(!isAmorti && adj.amorti) return;
       const amt = adjustmentScopedAmount(adj);
       if(!amt) return;
       if(monthSet.has(adj.month)){
@@ -2771,7 +2800,7 @@ function computeGroupBudget(superGroupeName, months, opts){
           if(amt>=0) o.income += amt; else o.expense += amt;
         }
       }
-      if(adj.amorti){
+      if(adj.amorti && isAmorti){
         const oppAmt = -amt;
         if(adj.categorie){
           const prev = amortPoolAll.get(adj.categorie) || {income:0, expense:0};
@@ -2830,9 +2859,17 @@ function computeGroupBudget(superGroupeName, months, opts){
   });
   const voyages = Array.from(voyTotals.values()).sort((a,b)=>(a.label||a.key).localeCompare(b.label||b.key,'fr'));
 
-  const income = categories.reduce((s,c)=>s+c.income,0) + voyages.reduce((s,c)=>s+c.income,0);
-  const expense = categories.reduce((s,c)=>s+c.expense,0) + voyages.reduce((s,c)=>s+c.expense,0);
-  return {categories, voyages, income, expense, net: income+expense};
+  // Revenus/Dépenses (bucket "quotidien", catégories) et Voyages sont désormais présentés comme trois
+  // ensembles distincts (au lieu de fusionner voyages dans revenus/dépenses) : catIncome/catExpense pour
+  // les catégories, voyIncome/voyExpense/voyNet pour les voyages (et ajustements sans catégorie).
+  const catIncome = categories.reduce((s,c)=>s+c.income,0);
+  const catExpense = categories.reduce((s,c)=>s+c.expense,0);
+  const voyIncome = voyages.reduce((s,c)=>s+c.income,0);
+  const voyExpense = voyages.reduce((s,c)=>s+c.expense,0);
+  const income = catIncome + voyIncome;
+  const expense = catExpense + voyExpense;
+  return {categories, voyages, income, expense, net: income+expense,
+    catIncome, catExpense, voyIncome, voyExpense, voyNet: voyIncome+voyExpense};
 }
 
 /* ---------------- Rendu ---------------- */
@@ -2931,6 +2968,57 @@ function wireAmortSettings(){
       const winScroll = window.scrollY;
       renderBudget();
       const newList = document.querySelector("#bg-amortcats-details .check-list");
+      if(newList) newList.scrollTop = listScroll;
+      window.scrollTo(0, winScroll);
+    };
+  });
+}
+
+/* ---------------- Comptes exclus : ignorés par tous les calculs du Budget ---------------- */
+function accountExcludeHtml(){
+  const cfg = Store.settings.budget;
+  const accounts = AGG.distinctValues(Store.transactions, "compte").map(a=>a.value).sort((a,b)=>a.localeCompare(b,'fr'));
+  if(!accounts.length) return "";
+  const excluded = new Set(cfg.excludedAccounts||[]);
+  return `
+    <details id="bg-acctexcl-details" class="card" style="margin:0 4px 14px;padding:0;" ${acctExcludeSectionOpen?'open':''}>
+      <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:14px;font-weight:800;">Comptes exclus</span>
+        <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
+          ${excluded.size ? excluded.size+" exclu"+(excluded.size>1?"s":"") : "Aucun"}
+          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </summary>
+      <div style="padding:0 14px 14px;">
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Les transactions des comptes cochés sont totalement ignorées dans le Budget (cartes, catégories, voyages, amortissement, salaire).</div>
+        <div class="check-list" style="max-height:34vh;">
+          ${accounts.map(a=>`
+            <div class="check-item bg-acctexcl-item ${excluded.has(a)?'selected':''}" data-a="${U.escHtml(a)}">
+              <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(a)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </details>
+  `;
+}
+function wireAccountExclude(){
+  const outer = document.getElementById("bg-acctexcl-details");
+  if(outer) outer.addEventListener("toggle", function(){ acctExcludeSectionOpen = this.open; });
+  const cfg = Store.settings.budget;
+  document.querySelectorAll(".bg-acctexcl-item[data-a]").forEach(el=>{
+    el.onclick = ()=>{
+      acctExcludeSectionOpen = true;
+      const a = el.dataset.a;
+      const set = new Set(cfg.excludedAccounts||[]);
+      if(set.has(a)) set.delete(a); else set.add(a);
+      cfg.excludedAccounts = Array.from(set);
+      Store.saveSettings();
+      const listEl = document.querySelector("#bg-acctexcl-details .check-list");
+      const listScroll = listEl ? listEl.scrollTop : 0;
+      const winScroll = window.scrollY;
+      renderBudget();
+      const newList = document.querySelector("#bg-acctexcl-details .check-list");
       if(newList) newList.scrollTop = listScroll;
       window.scrollTo(0, winScroll);
     };
@@ -3107,16 +3195,17 @@ function splitIncomeExpense(list){
   return {income, expense};
 }
 /* Bloc <details> Revenus ou Dépenses, repliable, pour une liste de lignes catégorie/voyage. */
-function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv){
+function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv, clickAttrs){
   if(!list.length) return "";
   const total = dv(list.reduce((s,c)=>s+c.income+c.expense, 0));
   const open = isGroupSectionOpen(sectionKey);
+  const totalAttrs = clickAttrs ? `class="bg-section-total" data-supergroupe="${U.escHtml(clickAttrs.supergroupe)}" data-type="${U.escHtml(clickAttrs.type||"")}" style="font-size:12px;font-weight:700;color:${color};cursor:pointer;"` : `style="font-size:12px;font-weight:700;color:${color};"`;
   return `
     <details class="bg-cv-section" data-section-key="${U.escHtml(sectionKey)}" style="margin-top:6px;" ${open?'open':''}>
       <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
         <span style="font-size:12px;font-weight:700;color:${color};">${label} (${list.length})</span>
         <span style="display:flex;align-items:center;gap:6px;">
-          <span style="font-size:12px;font-weight:700;color:${color};">${U.fmtMoneySigned(total)}</span>
+          <span ${totalAttrs}>${U.fmtMoneySigned(total)}</span>
           <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
         </span>
       </summary>
@@ -3140,27 +3229,21 @@ function groupCardHtml(title, res, isMain, divisor){
     </div>
   `).join("");
   const catSplit = splitIncomeExpense(res.categories);
-  const voySplit = splitIncomeExpense(res.voyages);
+  const grouped = Store.settings.budget.incomeExpenseGrouping==="grouped";
   return `
     <div class="card" style="margin-bottom:12px;">
       <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;padding:0 0 4px;">
         <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
-        <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(res.net))}</span>
+        <span style="display:flex;align-items:baseline;gap:6px;">
+          <span style="font-size:9.5px;font-weight:700;color:var(--text-sub);text-transform:uppercase;letter-spacing:.3px;">Total</span>
+          <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(res.net))}</span>
+        </span>
       </div>
-      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(dv(res.income))}</span></div>
-      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(dv(res.expense)))}</span></div>
-      ${isMain ? `
-        ${res.categories.length ? `
-        <div class="field-label" style="margin-bottom:0;">Catégories</div>
-        ${collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv)}
-        ${collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv)}
-        ` : ""}
-        ${res.voyages.length ? `
-        <div class="field-label" style="margin-bottom:0;">Voyages / ajustements</div>
-        ${collapsibleRowsHtml(title+"::voy::income", "Revenus", "var(--income)", voySplit.income, voyRowsHtml, dv)}
-        ${collapsibleRowsHtml(title+"::voy::expense", "Dépenses", "var(--expense)", voySplit.expense, voyRowsHtml, dv)}
-        ` : ""}
-      ` : ""}
+      ${grouped ? "" : `
+        ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}) : ""}
+        ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}) : ""}
+        ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : ""}
+      `}
     </div>
   `;
 }
@@ -3194,8 +3277,12 @@ function renderBudget(){
 
   const mainRes = computeGroupBudget(cfg.mainGroup, months);
   const extraResults = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup).map(g=>({name:g, res:computeGroupBudget(g, months, {forceBrut:true})}));
-  const grandIncome = mainRes.income + extraResults.reduce((s,e)=>s+e.res.income,0);
-  const grandExpense = mainRes.expense + extraResults.reduce((s,e)=>s+e.res.expense,0);
+  const grandCatIncome = mainRes.catIncome + extraResults.reduce((s,e)=>s+e.res.catIncome,0);
+  const grandCatExpense = mainRes.catExpense + extraResults.reduce((s,e)=>s+e.res.catExpense,0);
+  const grandVoyIncome = mainRes.voyIncome + extraResults.reduce((s,e)=>s+e.res.voyIncome,0);
+  const grandVoyExpense = mainRes.voyExpense + extraResults.reduce((s,e)=>s+e.res.voyExpense,0);
+  const grandVoyNet = grandVoyIncome + grandVoyExpense;
+  const grandNet = grandCatIncome + grandCatExpense + grandVoyNet;
 
   const selectedExtra = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
   const allGroupNames = [cfg.mainGroup].concat(selectedExtra);
@@ -3204,6 +3291,7 @@ function renderBudget(){
   // continuent d'afficher le total réel de la période, jamais une moyenne.
   const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
   const dv = n => n/divisor;
+  const grouped = cfg.incomeExpenseGrouping==="grouped";
 
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
@@ -3223,32 +3311,50 @@ function renderBudget(){
       </div>
 
       <div style="display:flex;gap:8px;margin:0 4px 10px;">
-        <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.3;">
+        <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.7;">
           <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
+          <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Sans amort, avec ajout</button>
           <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
         </div>
+      </div>
+      <div style="display:flex;gap:8px;margin:0 4px 10px;">
         <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
           <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
           <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
         </div>
-      </div>
-      <div style="display:flex;gap:8px;margin:0 4px 10px;">
         <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
           <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
           <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
         </div>
       </div>
+      <div style="display:flex;gap:8px;margin:0 4px 10px;">
+        <div class="seg seg-sm" id="bg-rdgroup-seg" style="flex:1;">
+          <button data-g="split" class="${cfg.incomeExpenseGrouping!=='grouped'?'active':''}">Revenus/Dépenses séparés</button>
+          <button data-g="grouped" class="${cfg.incomeExpenseGrouping==='grouped'?'active':''}">Groupés</button>
+        </div>
+        <div class="seg seg-sm" id="bg-decimals-seg" style="flex:0 0 auto;">
+          <button data-dec="0" class="${Store.settings.decimals===2?'':'active'}">0,-</button>
+          <button data-dec="2" class="${Store.settings.decimals===2?'active':''}">0,00</button>
+        </div>
+      </div>
 
       ${periodPickerHtml()}
-      ${amortSettingsHtml()}
+      ${accountExcludeHtml()}
+      ${cfg.mode==="amorti" ? amortSettingsHtml() : ""}
       ${adjustmentsSectionHtml()}
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;padding:0 0 4px;">
           <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
-          <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandIncome+grandExpense))}</span>
+          <span style="display:flex;align-items:baseline;gap:6px;">
+            <span style="font-size:9.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.3px;opacity:.7;">Total</span>
+            <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandNet))}</span>
+          </span>
         </div>
-        <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoney(dv(grandIncome))}</span></div>
-        <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoney(Math.abs(dv(grandExpense)))}</span></div>
+        ${grouped ? "" : `
+        <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoneySigned(dv(grandCatIncome))}</span></div>
+        <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoneySigned(dv(grandCatExpense))}</span></div>
+        <div class="detail-row bg-typetxn-all-row" data-type="Voyage" style="cursor:pointer;"><span>Voyages</span><span style="color:${grandVoyNet<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(grandVoyNet))}</span></div>
+        `}
       </div>
       ${groupCardHtml(cfg.mainGroup, mainRes, true, divisor)}
       ${extraResults.map(e=>groupCardHtml(e.name, e.res, false, divisor)).join("")}
@@ -3273,6 +3379,20 @@ function renderBudget(){
   document.querySelectorAll("#bg-display-seg button").forEach(b=>{
     b.onclick = ()=>{
       cfg.displayMode = b.dataset.d;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  document.querySelectorAll("#bg-rdgroup-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.incomeExpenseGrouping = b.dataset.g;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  document.querySelectorAll("#bg-decimals-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      Store.settings.decimals = Number(b.dataset.dec) || 0;
       Store.saveSettings();
       renderBudget();
     };
@@ -3305,7 +3425,8 @@ function renderBudget(){
   };
   document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
   document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
-  wireAmortSettings();
+  wireAccountExclude();
+  if(cfg.mode==="amorti") wireAmortSettings();
   wireAdjustmentsSection();
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
     el.onclick = ()=>{
@@ -3321,6 +3442,13 @@ function renderBudget(){
   });
   document.querySelectorAll(".bg-typetxn-all-row[data-type]").forEach(el=>{
     el.onclick = ()=> openGroupTypeTxnSheet(allGroupNames, el.dataset.type || null);
+  });
+  document.querySelectorAll(".bg-section-total[data-supergroupe]").forEach(el=>{
+    el.onclick = (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      openGroupTypeTxnSheet(el.dataset.supergroupe, el.dataset.type || null);
+    };
   });
   document.querySelectorAll(".bg-cv-section[data-section-key]").forEach(el=>{
     el.addEventListener("toggle", function(){ groupSectionOpenState.set(this.dataset.sectionKey, this.open); });
@@ -3387,7 +3515,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
-  const isAmorti = cfg.mode==="amorti";
+  const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
   const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
   const windowN = amortWindowMonths(months, periodMonths).length;
   // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
@@ -3398,6 +3526,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
     if(!groupSelectionMatches(t, superGroupeName)) return;
+    if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     if(AGG.getGroupKind(base)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
@@ -3425,17 +3554,21 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
 
   // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée. Montant converti
   // à l'échelle du scope courant (Perso/Couple), comme pour les transactions réelles ci-dessus, afin que
-  // la somme des montants affichés corresponde bien au total de la carte.
-  if(isAmorti){
+  // la somme des montants affichés corresponde bien au total de la carte. En mode "Sans amort, avec ajout",
+  // les ajustements amortis (case "Amortir ce montant...") sont exclus (ni entrée immédiate, ni lissage) —
+  // seuls les ajustements simples restent pris en compte.
+  const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
+  if(applyAdjustments){
     (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
       if(adj.groupe !== superGroupeName) return;
       if((adj.categorie||"") !== catKey) return;
+      if(!isAmorti && adj.amorti) return;
       const amt = adjustmentScopedAmount(adj);
       if(monthSet.has(adj.month)){
         const [ay,am] = adj.month.split("-").map(Number);
         items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: adj.remarque||"Ajustement", displayAmount: amt});
       }
-      if(adj.amorti && amt && windowN>0){
+      if(adj.amorti && isAmorti && amt && windowN>0){
         const [ay,am] = adj.month.split("-").map(Number);
         items.push({kind:"amorti", date: new Date(ay, (am||1)-1, 1), txnId:null, adjIdx, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), displayAmount: -amt/periodMonths*windowN});
       }
@@ -3445,7 +3578,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   items.sort((a,b)=> b.date - a.date);
 
   // Totaux cohérents avec ceux affichés sur la carte du groupe (calcul identique à computeGroupBudget).
-  const budgetRes = computeGroupBudget(superGroupeName, months);
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
   const catEntry = budgetRes.categories.find(c=>c.key===catKey);
   const realTotal = catEntry ? (catEntry.realIncome||0)+(catEntry.realExpense||0) : 0;
   const amortTotal = catEntry ? (catEntry.amortIncome||0)+(catEntry.amortExpense||0) : 0;
@@ -3620,18 +3753,31 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
 
   const items = [];
   if(voyKey === "__ajustement__"){
-    (cfg.adjustments||[]).forEach(adj=>{
-      if(adj.groupe !== superGroupeName) return;
-      if(adj.categorie) return;
-      if(!monthSet.has(adj.month)) return;
-      const amt = adjustmentScopedAmount(adj);
-      const [ay,am] = adj.month.split("-").map(Number);
-      items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
-    });
+    const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
+    const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
+    const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+    const windowN = amortWindowMonths(months, periodMonths).length;
+    if(applyAdjustments){
+      (cfg.adjustments||[]).forEach(adj=>{
+        if(adj.groupe !== superGroupeName) return;
+        if(adj.categorie) return;
+        if(!isAmorti && adj.amorti) return;
+        const amt = adjustmentScopedAmount(adj);
+        if(monthSet.has(adj.month)){
+          const [ay,am] = adj.month.split("-").map(Number);
+          items.push({kind:"ajout", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: adj.remarque||"Ajustement", displayAmount: amt});
+        }
+        if(adj.amorti && isAmorti && amt && windowN>0){
+          const [ay,am] = adj.month.split("-").map(Number);
+          items.push({kind:"amorti", date: new Date(ay, (am||1)-1, 1), txnId:null, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), displayAmount: -amt/periodMonths*windowN});
+        }
+      });
+    }
   } else {
     Store.transactions.forEach(t=>{
       if(t.type==="Transfer") return;
       if(!groupSelectionMatches(t, superGroupeName)) return;
+      if(isAccountExcluded(t.compte)) return;
       const base = t.groupeBase || U.baseGroupe(t.groupe);
       if(AGG.getGroupKind(base)!=="voyage") return;
       if(t.groupe !== voyKey) return;
@@ -3656,13 +3802,14 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
 
   items.sort((a,b)=> b.date - a.date);
 
-  const budgetRes = computeGroupBudget(superGroupeName, months);
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
   const voyEntry = budgetRes.voyages.find(v=>v.key===voyKey);
   const total = voyEntry ? (voyEntry.income||0)+(voyEntry.expense||0) : 0;
   const label = voyEntry ? (voyEntry.label||voyEntry.key) : voyKey;
 
   const KIND_STYLE = {
     reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
+    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
     ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
   };
 
@@ -3682,7 +3829,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
         <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.kind==="amorti" ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
           </span>
           <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
             <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
@@ -3699,87 +3846,203 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
   APP.openOverlay("overlay-detail");
 }
 
-/* Transactions Revenus/Dépenses d'un groupe (utilisé pour les groupes additionnels, sans détail par catégorie) */
-function collectGroupTypeItems(superGroupeNames, type, months){
+/* Détail Réel/Amorti/Ajout des transactions menant aux totaux Revenus/Dépenses/Voyages/Total affichés pour
+   un ou plusieurs groupes — cohérent avec computeGroupBudget (amortissement + ajustements pris en compte
+   pour le groupe principal selon le mode budget ; les groupes additionnels restent toujours en brut).
+   typeFilter : null (tout, catégories+voyages) | "Income" | "Expense" (catégories/quotidien uniquement) |
+   "Voyage" (voyages + ajustements sans catégorie uniquement, quel que soit le signe). */
+function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
   const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
-  const monthSet = new Set(months);
   const cfg = Store.settings.budget;
+  const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
+  const amortSet = new Set(cfg.amortCategories||[]);
+  const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+  const windowN = amortWindowMonths(months, periodMonths).length;
+  const multiName = names.length>1;
   const items = [];
+
+  function isAmortForName(name){ return cfg.mode==="amorti" && name===cfg.mainGroup; }
+  function adjustForName(name){ return (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && name===cfg.mainGroup; }
+
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
-    if(type && t.type!==type) return;
-    const matchedGroup = names.find(n=>groupSelectionMatches(t, n));
-    if(!matchedGroup) return;
+    if(isAccountExcluded(t.compte)) return;
+    const matchedName = names.find(n=>groupSelectionMatches(t, n));
+    if(!matchedName) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(base);
-    const tr = t.transform;
-    let inPeriod = false;
-    if(kind==="voyage"){
+    const isVoyage = kind==="voyage";
+    if(typeFilter==="Voyage" && !isVoyage) return;
+    if((typeFilter==="Income" || typeFilter==="Expense") && isVoyage) return;
+    const subLabel = isVoyage ? (t.groupe||"") : (t.categorie||"(Non renseigné)");
+    const sub = multiName ? [subLabel, matchedName].filter(Boolean).join(" · ") : subLabel;
+
+    if(isVoyage){
       const forced = AGG.getGroupVoyageMonth(base);
+      const tr = t.transform;
       if(tr.mode==="yearsplit" && !forced){
-        inPeriod = String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4);
-      } else {
-        let targetMonth = forced;
-        if(!targetMonth){
-          if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
-          else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
-        }
-        inPeriod = monthSet.has(targetMonth);
+        const inYear = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
+        if(!inYear) return;
+        const displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) * scopeMult;
+        items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:true});
+        return;
       }
-    } else {
-      const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
-      inPeriod = monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
+      let targetMonth = forced;
+      if(!targetMonth){
+        if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
+        else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
+      }
+      if(!monthSet.has(targetMonth)) return;
+      const displayAmount = t.montant*scopeMult;
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:false});
+      return;
     }
+
+    // "quotidien"
+    if((typeFilter==="Income" || typeFilter==="Expense") && t.type!==typeFilter) return;
+    const cat = t.categorie || "(Non renseigné)";
+    const tr = t.transform;
+    const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+    const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
+    const amortized = isAmortForName(matchedName) && (amortSet.has(cat) || beforeStart);
+    if(amortized){
+      if(windowN<=0) return;
+      const displayAmount = (t.montant/periodMonths)*windowN*scopeMult;
+      items.push({kind:"amorti", date: t.date, txnId: t.id, remarque: t.remarque||cat||"—", sub, displayAmount, yearsplit:false, catKey:cat, matchedName, effMonthKey, rawAmount:t.montant});
+      return;
+    }
+    const inPeriod = monthSet.has(effMonthKey) || (tr.mode==="yearsplit" && String(tr.year)>=months[0].slice(0,4) && String(tr.year)<=months[months.length-1].slice(0,4));
     if(!inPeriod) return;
-    const isYearsplit = tr.mode==="yearsplit" && !(kind==="voyage" && AGG.getGroupVoyageMonth(base));
-    const montant = (isYearsplit ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant) * scopeMult;
-    const subBase = kind==="voyage" ? (t.groupe||"") : (t.categorie||"");
-    const sub = names.length>1 ? [subBase, matchedGroup].filter(Boolean).join(" · ") : subBase;
-    items.push({date: t.date, txnId: t.id, remarque: t.remarque || t.categorie || t.groupe || "—", sub, montant, yearsplit: isYearsplit});
+    let displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
+    displayAmount *= scopeMult;
+    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||cat||"—", sub, displayAmount, yearsplit: tr.mode==="yearsplit", catKey:cat, matchedName, effMonthKey, rawAmount:t.montant});
   });
+
+  // Ajustements manuels : uniquement pour le groupe principal, en mode "Amort. + ajouts" ou "Sans amort,
+  // avec ajout" (les groupes additionnels restent toujours en brut, cf. computeGroupBudget/forceBrut).
+  names.forEach(name=>{
+    if(!adjustForName(name)) return;
+    const amortiOk = isAmortForName(name);
+    (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
+      if(adj.groupe !== name) return;
+      if(!amortiOk && adj.amorti) return; // "Sans amort, avec ajout" : exclut les ajustements amortis
+      const isVoyAdj = !adj.categorie;
+      if(typeFilter==="Voyage" && !isVoyAdj) return;
+      if((typeFilter==="Income" || typeFilter==="Expense") && isVoyAdj) return;
+      const amt = adjustmentScopedAmount(adj);
+      const adjType = amt>=0 ? "Income" : "Expense";
+      const sub = multiName ? [adj.categorie||"Ajustements", name].filter(Boolean).join(" · ") : (adj.categorie||"Ajustements");
+      if(monthSet.has(adj.month) && amt){
+        if(!typeFilter || typeFilter==="Voyage" || adjType===typeFilter){
+          const [ay,am] = adj.month.split("-").map(Number);
+          items.push({kind:"ajout", date: new Date(ay,(am||1)-1,1), txnId:null, adjIdx, remarque: adj.remarque||"Ajustement", sub, displayAmount: amt});
+        }
+      }
+      if(adj.amorti && amortiOk && amt && windowN>0){
+        const oppAmount = -amt/periodMonths*windowN;
+        const oppType = oppAmount>=0 ? "Income" : "Expense";
+        if(!typeFilter || typeFilter==="Voyage" || oppType===typeFilter){
+          const [ay,am] = adj.month.split("-").map(Number);
+          items.push({kind:"amorti", date: new Date(ay,(am||1)-1,1), txnId:null, adjIdx, remarque: "Amortissement : "+(adj.remarque||"Ajustement"), sub, displayAmount: oppAmount});
+        }
+      }
+    });
+  });
+
   items.sort((a,b)=> b.date - a.date);
   return items;
 }
 function openGroupTypeTxnSheet(superGroupeNames, type){
   const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
   const months = monthsInRange(periodFrom, periodTo);
-  const items = collectGroupTypeItems(names, type, months);
-  const total = items.reduce((s,x)=>s+x.montant,0);
-  const label = type==="Income" ? "Revenus" : type==="Expense" ? "Dépenses" : "Total";
-  const color = type==="Income" ? "var(--income)" : type==="Expense" ? "var(--expense)" : (total<0?"var(--expense)":"var(--income)");
-  const bg = type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)";
-  const subtitle = names.length>1 ? "Tous les groupes" : names[0];
-  const cfgMode = Store.settings.budget.mode;
+  const items = collectGroupTypeItemsDetailed(names, type, months);
+  let filterKind = null; // null | "reel" | "amorti" | "ajout"
 
-  const modal = document.getElementById("modal-detail");
-  modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <span style="font-weight:800;font-size:17px;">${label}</span>
-      <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
-    </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${items.length} élément${items.length>1?"s":""}</div>
-    ${cfgMode==="amorti" ? `<div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Cette liste montre les transactions réelles (Brut), sans lissage ni ajustement — le total peut donc différer de celui affiché sur la carte en mode "Amort. + ajouts".</div>` : ""}
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${U.fmtMoneySigned(total)}</span>
-    </div>
-    <div style="max-height:56vh;overflow-y:auto;">
-      ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction sur la période affichée.</div>` :
-      items.map(x=>`
-        <div class="detail-row cattxn-row" data-txnid="${U.escHtml(x.txnId)}" style="align-items:center;cursor:pointer;">
-          <span style="display:flex;flex-direction:column;min-width:0;">
-            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(x.remarque)}</span>
-            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
-          </span>
-          <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${x.montant<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.montant)}</span>
-        </div>
-      `).join("")}
-    </div>
-  `;
-  document.getElementById("grptxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-  document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
-    el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-  });
+  const label = type==="Income" ? "Revenus" : type==="Expense" ? "Dépenses" : type==="Voyage" ? "Voyages" : "Total";
+  const subtitle = names.length>1 ? "Tous les groupes" : names[0];
+  const mainGroup = Store.settings.budget.mainGroup;
+
+  const KIND_STYLE = {
+    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
+    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
+    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
+  };
+
+  function renderModal(){
+    const shown = filterKind ? items.filter(x=>x.kind===filterKind) : items;
+    const realTotal = items.filter(x=>x.kind==="reel").reduce((s,x)=>s+x.displayAmount,0);
+    const amortTotal = items.filter(x=>x.kind==="amorti").reduce((s,x)=>s+x.displayAmount,0);
+    const adjTotal = items.filter(x=>x.kind==="ajout").reduce((s,x)=>s+x.displayAmount,0);
+    const total = realTotal+amortTotal+adjTotal;
+    const color = type==="Income" ? "var(--income)" : type==="Expense" ? "var(--expense)" : (total<0?"var(--expense)":"var(--income)");
+    const bg = type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)";
+    const modal = document.getElementById("modal-detail");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:800;font-size:17px;">${label}</span>
+        <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
+      </div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <span class="grptxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&filterKind!=='reel'?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${U.fmtMoneySigned(realTotal)}</span>
+        ${amortTotal!==0 ? `<span class="grptxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&filterKind!=='amorti'?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${U.fmtMoneySigned(amortTotal)}</span>` : ""}
+        ${adjTotal!==0 ? `<span class="grptxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&filterKind!=='ajout'?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${U.fmtMoneySigned(adjTotal)}</span>` : ""}
+        <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${U.fmtMoneySigned(total)}</span>
+      </div>
+      <div style="max-height:56vh;overflow-y:auto;">
+        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
+        shown.map(x=>`
+          <div class="detail-row grptxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
+            <span style="display:flex;flex-direction:column;min-width:0;">
+              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
+              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? U.fmtMonthYear(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+              ${(x.kind==="reel" && x.catKey && x.matchedName===mainGroup) ? `<button type="button" class="btn btn-ghost btn-sm grptxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-groupe="${U.escHtml(x.matchedName)}" data-cat="${U.escHtml(x.catKey)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
+              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
+              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(x.displayAmount)}</span>
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    document.getElementById("grptxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    document.querySelectorAll(".grptxn-badge[data-kind]").forEach(el=>{
+      el.onclick = ()=>{
+        const k = el.dataset.kind;
+        filterKind = (filterKind===k) ? null : k;
+        renderModal();
+      };
+    });
+    document.querySelectorAll(".grptxn-amortize[data-txnid]").forEach(btn=>{
+      btn.onclick = (e)=>{
+        e.stopPropagation();
+        openAdjustmentForm(null, {
+          month: btn.dataset.month,
+          groupe: btn.dataset.groupe,
+          categorie: btn.dataset.cat,
+          montant: -Number(btn.dataset.amount),
+          remarque: "Amortissement : "+(btn.dataset.remarque||btn.dataset.cat),
+          amorti: true,
+          montantScope: "perso"
+        });
+      };
+    });
+    document.querySelectorAll(".grptxn-row[data-txnid]").forEach(el=>{
+      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+    });
+    document.querySelectorAll(".grptxn-row[data-adjidx]").forEach(el=>{
+      if(el.dataset.txnid) return;
+      el.onclick = ()=>{
+        const idx = Number(el.dataset.adjidx);
+        const a = Object.assign({__idx:idx}, (Store.settings.budget.adjustments||[])[idx]);
+        openAdjustmentForm(a);
+      };
+    });
+  }
+
+  renderModal();
   APP.openOverlay("overlay-detail");
 }
 
@@ -5214,7 +5477,7 @@ function createAliasManager(cfg){
         ${viewToggleHtml()}
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <input type="text" class="search-mini" id="am-search" style="margin-bottom:0;flex:1;" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
-          <button class="btn btn-ghost btn-sm" id="am-selectmode-btn" style="white-space:nowrap;">${selectMode ? "Terminer" : "Sélectionner"}</button>
+          ${cfg.hasDates ? "" : `<button class="btn btn-ghost btn-sm" id="am-selectmode-btn" style="white-space:nowrap;">${selectMode ? "Terminer" : "Sélectionner"}</button>`}
         </div>
         ${sectionsHtml ? `<div class="field-label" style="margin-top:4px;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}s</div>${sectionsHtml}` : ""}
         <div class="field-label" style="margin-top:4px;">${sectionsHtml ? "Non classés" : "Tous les "+cfg.itemLabelPlural}</div>
@@ -5232,12 +5495,13 @@ function createAliasManager(cfg){
     document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
     wireViewToggle();
     document.getElementById("am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
-    document.getElementById("am-selectmode-btn").onclick = ()=>{
+    const selModeBtn = document.getElementById("am-selectmode-btn");
+    if(selModeBtn) selModeBtn.onclick = ()=>{
       selectMode = !selectMode;
       if(!selectMode) selected.clear();
       renderList();
     };
-    if(selectMode){
+    if(selectMode && !cfg.hasDates){
       document.querySelectorAll("[data-sel]").forEach(el=>{
         el.onclick = ()=>{
           const base = el.dataset.sel;
@@ -5479,10 +5743,6 @@ function createAliasManager(cfg){
         ${datalistsHtml()}
         <input type="text" class="search-mini" id="am-super-input" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
         ${currentRule && isDatedOccurrence && currentIsGlobal ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} ». Enregistrer ici crée une règle spécifique à cette période uniquement, sans toucher aux autres.</div>` : ""}
-        ${isDatedOccurrence ? `
-        <div class="check-item" id="am-allperiods-toggle" style="margin-bottom:16px;cursor:pointer;">
-          <span class="cbox">${ICONS.check}</span><span class="lbl">Appliquer à toutes les périodes de « ${U.escHtml(editingBase)} », pas seulement celle-ci</span>
-        </div>` : ""}
         ${dateRangeSectionHtml()}
       </div>
       <div class="sheet-foot">
@@ -5495,11 +5755,12 @@ function createAliasManager(cfg){
     document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
     wireKindSection();
     wireDateRangeSection();
-    const allPeriodsToggle = document.getElementById("am-allperiods-toggle");
-    if(allPeriodsToggle) allPeriodsToggle.onclick = ()=> allPeriodsToggle.classList.toggle("selected");
     document.getElementById("am-save").onclick = ()=>{
       const sg = document.getElementById("am-super-input").value.trim();
-      const allPeriods = !isDatedOccurrence || (allPeriodsToggle && allPeriodsToggle.classList.contains("selected"));
+      // Chaque occurrence datée est toujours rattachée à sa propre plage de dates exacte (jamais à une
+      // règle globale sans dates) — évite qu'assigner une occurrence précise n'entraîne avec elle toutes
+      // les autres occurrences du même nom de base.
+      const allPeriods = !isDatedOccurrence;
       const all = rules();
       const keepOthers = all.filter(r=>{
         if(r[cfg.baseField] !== editingBase) return true;
