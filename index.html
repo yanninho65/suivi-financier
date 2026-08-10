@@ -87,6 +87,8 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 }
 .icon-btn:active{background:var(--card-alt);}
 .icon-btn svg{width:20px;height:20px;}
+.sync-spin svg{animation:sf-spin 1s linear infinite;}
+@keyframes sf-spin{to{transform:rotate(360deg);}}
 .balance-hero{margin-top:18px;}
 .balance-hero .label{font-size:14px;color:var(--text-sub);font-weight:500;}
 .balance-hero .amount{font-size:40px;font-weight:900;letter-spacing:-1px;margin-top:2px;}
@@ -370,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.08.22.40";
+const APP_VERSION = "v 2026.08.10.18.24";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -400,6 +402,10 @@ const ICONS = {
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
   plane:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1 0-1.3.4l-.7.9c-.4.4-.2 1.1.3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.6 6.4c.3.5.9.7 1.3.3l.9-.7c.4-.3.5-.8.4-1.3z"/></svg>',
+  cloud:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>',
+  cloudCheck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h.79a4.5 4.5 0 1 1 0 9z"/><path d="M9.5 13.5l1.8 1.8 3.2-3.6"/></svg>',
+  refreshCw:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  alertTriangle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
 };
 
 /* ---------------- Utils ---------------- */
@@ -682,6 +688,12 @@ const Store = {
     if(!Array.isArray(b.adjustments)) b.adjustments = [];
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
     if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
+    if(!s.sync || typeof s.sync!=="object") s.sync = {};
+    if(typeof s.sync.token!=="string") s.sync.token = "";
+    if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
+    if(!s.sync.filename) s.sync.filename = "suivi_financier_sync.json";
+    if(s.sync.lastSyncedAt===undefined) s.sync.lastSyncedAt = null;
+    if(s.sync.lastSyncedHash===undefined) s.sync.lastSyncedHash = null;
   },
   clearAll(){
     this.transactions=[];
@@ -1534,6 +1546,7 @@ function buildShell(){
       <div class="topbar-row">
         <h1 class="app-title">Suivi financier</h1>
         <div class="topbar-actions">
+          <button class="icon-btn" id="btn-sync" title="Synchronisation"></button>
           <button class="icon-btn" id="btn-theme" title="Thème">${ICONS.moon}</button>
           <button class="icon-btn" id="btn-menu" title="Menu">${ICONS.settings}</button>
         </div>
@@ -1563,6 +1576,7 @@ function buildShell(){
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
     <div class="overlay" id="overlay-import"><div class="sheet" id="sheet-import"></div></div>
     <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
+    <div class="overlay" id="overlay-sync"><div class="sheet" id="sheet-sync"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-detail"><div class="modal-center" id="modal-detail"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
     <div class="overlay overlay-large" id="overlay-groupmgr"><div class="sheet sheet-large" id="sheet-groupmgr"></div></div>
@@ -1589,6 +1603,7 @@ function buildShell(){
   document.getElementById("overlay-filter").onclick = (e)=>{ if(e.target.id==="overlay-filter") closeOverlay("overlay-filter"); };
   document.getElementById("overlay-import").onclick = (e)=>{ if(e.target.id==="overlay-import") closeOverlay("overlay-import"); };
   document.getElementById("overlay-menu").onclick = (e)=>{ if(e.target.id==="overlay-menu") closeOverlay("overlay-menu"); };
+  document.getElementById("overlay-sync").onclick = (e)=>{ if(e.target.id==="overlay-sync") closeOverlay("overlay-sync"); };
   document.getElementById("overlay-detail").onclick = (e)=>{ if(e.target.id==="overlay-detail") closeOverlay("overlay-detail"); };
   document.getElementById("overlay-confirm").onclick = (e)=>{ if(e.target.id==="overlay-confirm") closeOverlay("overlay-confirm"); };
   document.getElementById("overlay-groupmgr").onclick = (e)=>{ if(e.target.id==="overlay-groupmgr") closeOverlay("overlay-groupmgr"); };
@@ -1645,6 +1660,7 @@ function switchTab(tab){
 function refreshCurrentTab(){
   renderHero();
   updateFilterBadge();
+  if(window.__SF_SYNC) window.__SF_SYNC.updateIndicator();
   const V = window.__SF_VIEWS;
   if(!V) return;
   if(currentTab==="dashboard") V.renderDashboard();
@@ -4384,7 +4400,7 @@ function openImportModal(){
   APP.openOverlay("overlay-import");
 }
 
-window.__SF_IMPORT = {open: openImportModal};
+window.__SF_IMPORT = {open: openImportModal, applyParamsImport};
 
 /* ================= MENU / SETTINGS SHEET ================= */
 function buildParamsPayload(){
@@ -4594,6 +4610,12 @@ function renderMenuSheet(){
           <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.download} Exporter une sauvegarde (.json)</span>
         </div>
       </div>
+      <div class="field-label" style="margin-top:18px;">Synchronisation</div>
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="menu-sync" style="cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.cloud} Sauvegarde GitHub Gist</span>
+        </div>
+      </div>
       <div class="field-label" style="margin-top:18px;">Paramètres</div>
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-groupmgr" style="cursor:pointer;">
@@ -4664,6 +4686,7 @@ function renderMenuSheet(){
     APP.closeOverlay("overlay-menu");
     openExportScopeChoice("Exporter une sauvegarde", (scope)=>exportBackup(scope));
   };
+  document.getElementById("menu-sync").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_SYNC.open(); };
   document.getElementById("menu-groupmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_GROUPMGR.open(); };
   document.getElementById("menu-personmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_PERSONMGR.open(); };
   document.getElementById("menu-catmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_CATMGR.open(); };
@@ -4686,7 +4709,239 @@ function openMenuSheet(){
   APP.openOverlay("overlay-menu");
 }
 
-window.__SF_MENU = {open: openMenuSheet};
+window.__SF_MENU = {open: openMenuSheet, buildParamsPayload};
+})();
+
+/* ================= SYNCHRONISATION (GitHub Gist) =================
+   Sauvegarde/récupération manuelle des données (transactions + paramètres) via un Gist GitHub privé,
+   comme mécanisme de transfert entre appareils (alternative à l'export/import de fichier).
+   Le jeton d'accès (scope "gist" uniquement recommandé) et l'ID du Gist sont stockés dans
+   Store.settings.sync, en localStorage sur cet appareil — jamais transmis ailleurs qu'à l'API GitHub. */
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+let syncing = false;
+let lastError = null;
+
+function getConfig(){ return Store.settings.sync || {}; }
+function isConfigured(){ const c = getConfig(); return !!(c.token && c.gistId); }
+
+function saveConfig(token, gistId){
+  Store.settings.sync = Object.assign({}, Store.settings.sync, {token: token.trim(), gistId: gistId.trim()});
+  Store.saveSettings();
+}
+
+/* Construit le même payload que la sauvegarde .json (§ exportBackup), sans le champ exportedAt
+   dans le calcul de hash (il change à chaque appel et ne reflète pas un changement de données). */
+function buildSyncPayload(){
+  return {
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    transactions: Store.transactions.map(t=>({...t, date:t.date.toISOString()})),
+    params: window.__SF_MENU.buildParamsPayload()
+  };
+}
+function hashPayload(payload){
+  const str = JSON.stringify(payload.transactions) + "|" + JSON.stringify(payload.params);
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = (Math.imul(31,h) + str.charCodeAt(i))|0; }
+  return String(h);
+}
+
+/* "unconfigured" | "syncing" | "error" | "synced" | "unsynced" */
+function computeStatus(){
+  if(syncing) return "syncing";
+  const c = getConfig();
+  if(!c.token || !c.gistId) return "unconfigured";
+  if(lastError) return "error";
+  if(!c.lastSyncedHash) return "unsynced";
+  return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
+}
+
+async function pushToGist(){
+  const c = getConfig();
+  if(!c.token || !c.gistId){ openSyncSheet(); return; }
+  syncing = true; lastError = null; updateIndicator();
+  try{
+    const payload = buildSyncPayload();
+    const hash = hashPayload(payload);
+    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+      method: "PATCH",
+      headers: {
+        "Authorization": "token "+c.token,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({files: {[c.filename||"suivi_financier_sync.json"]: {content: JSON.stringify(payload)}}})
+    });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>"");
+      throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
+    }
+    Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: hash});
+    Store.saveSettings();
+    APP.showToast("Sauvegardé sur GitHub Gist");
+  }catch(e){
+    lastError = (e && e.message) ? e.message : String(e);
+    APP.showToast("Échec de la sauvegarde : " + lastError);
+  }finally{
+    syncing = false;
+    updateIndicator();
+  }
+}
+
+async function pullFromGist(){
+  const c = getConfig();
+  if(!c.token || !c.gistId){ openSyncSheet(); return; }
+  syncing = true; lastError = null; updateIndicator();
+  try{
+    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+      headers: {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"}
+    });
+    if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
+    const data = await res.json();
+    const fname = c.filename || "suivi_financier_sync.json";
+    const files = data.files || {};
+    const file = files[fname] || Object.values(files)[0];
+    if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
+    let content = file.content;
+    if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
+    const payload = JSON.parse(content);
+    const txns = (payload.transactions||[]).map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
+    window.__SF_DATA.importTxns(txns, "replace");
+    if(payload.params) window.__SF_IMPORT.applyParamsImport(payload.params, "replace");
+    Store.normalizeSettings();
+    const newHash = hashPayload(buildSyncPayload());
+    Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
+    Store.saveSettings();
+    await Store.saveTransactions();
+    APP.refreshCurrentTab();
+    APP.showToast("Données récupérées depuis GitHub Gist");
+  }catch(e){
+    lastError = (e && e.message) ? e.message : String(e);
+    APP.showToast("Échec de la récupération : " + lastError);
+  }finally{
+    syncing = false;
+    updateIndicator();
+  }
+}
+
+function confirmPull(){
+  const modal = document.getElementById("modal-confirm");
+  modal.innerHTML = `
+    <h3 style="margin:0 0 8px;font-size:18px;">Récupérer depuis GitHub Gist ?</h3>
+    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist. Si vous avez des modifications non sauvegardées ici, sauvegardez-les d'abord.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" style="flex:1;" id="syncpull-cancel">Annuler</button>
+      <button class="btn btn-primary" style="flex:1;" id="syncpull-confirm">Récupérer</button>
+    </div>
+  `;
+  document.getElementById("syncpull-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("syncpull-confirm").onclick = ()=>{
+    APP.closeOverlay("overlay-confirm");
+    pullFromGist().then(()=>renderSyncSheet());
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
+function statusMeta(){
+  const st = computeStatus();
+  return {
+    unconfigured: {label:"Non configuré", color:"var(--text-faint)"},
+    syncing: {label:"Synchronisation en cours…", color:"var(--text-sub)"},
+    error: {label:"Échec de la dernière synchronisation", color:"var(--expense)"},
+    synced: {label:"Synchronisé", color:"var(--income)"},
+    unsynced: {label:"Modifications non sauvegardées", color:"var(--expense)"}
+  }[st];
+}
+
+function maskToken(t){
+  if(!t) return "";
+  return t.length<=6 ? "••••••" : t.slice(0,4) + "•".repeat(Math.max(4,t.length-8)) + t.slice(-4);
+}
+
+function renderSyncSheet(){
+  const sheet = document.getElementById("sheet-sync");
+  if(!sheet) return;
+  const c = getConfig();
+  const configured = isConfigured();
+  const meta = statusMeta();
+  const lastTxt = c.lastSyncedAt ? (()=>{ const d=new Date(c.lastSyncedAt); return U.fmtDateShort(d)+" à "+U.pad2(d.getHours())+":"+U.pad2(d.getMinutes()); })() : "jamais";
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Synchronisation</h2><button class="icon-btn" id="sync-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="import-summary">
+        Sauvegardez vos données (transactions et paramètres) sur un Gist GitHub privé pour les récupérer sur un autre appareil. Créez un jeton d'accès personnel avec uniquement le scope <b>gist</b> — il reste stocké localement sur cet appareil et n'est envoyé qu'à l'API GitHub.
+      </div>
+      ${configured ? `
+      <div class="import-summary" style="margin-top:10px;border:1.5px solid ${meta.color};">
+        <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${lastTxt}
+        ${lastError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError)}</span>` : ""}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button class="btn btn-ghost" style="flex:1;" id="sync-pull">${ICONS.download} Récupérer</button>
+        <button class="btn btn-primary" style="flex:1;" id="sync-push">${ICONS.upload} Sauvegarder</button>
+      </div>` : ""}
+      <div class="field-label" style="margin-top:20px;">${configured ? "Modifier la configuration" : "Configuration"}</div>
+      <div class="card" style="padding:14px;">
+        <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
+        <input type="password" id="sync-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(c.token||"")}">
+        <div class="field-label">ID du Gist</div>
+        <input type="text" id="sync-gistid" class="search-mini" style="margin:0;" placeholder="ex : 8f3a2b1c9e0d…" autocomplete="off" value="${U.escHtml(c.gistId||"")}">
+        <button class="btn btn-primary btn-block" id="sync-save-config" style="margin-top:14px;">Enregistrer la configuration</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("sync-close").onclick = ()=>APP.closeOverlay("overlay-sync");
+  document.getElementById("sync-save-config").onclick = ()=>{
+    const token = document.getElementById("sync-token").value.trim();
+    const gistId = document.getElementById("sync-gistid").value.trim();
+    if(!token || !gistId){ APP.showToast("Renseignez le jeton et l'ID du Gist"); return; }
+    lastError = null;
+    saveConfig(token, gistId);
+    APP.showToast("Configuration enregistrée");
+    renderSyncSheet();
+    updateIndicator();
+  };
+  if(configured){
+    document.getElementById("sync-push").onclick = ()=>{ pushToGist().then(()=>renderSyncSheet()); };
+    document.getElementById("sync-pull").onclick = confirmPull;
+  }
+}
+
+function openSyncSheet(){
+  renderSyncSheet();
+  APP.openOverlay("overlay-sync");
+}
+
+function updateIndicator(){
+  const btn = document.getElementById("btn-sync");
+  if(!btn) return;
+  const st = computeStatus();
+  const configured = isConfigured();
+  let icon, color, title;
+  if(st==="syncing"){ icon=ICONS.refreshCw; color="var(--text-sub)"; title="Synchronisation en cours…"; }
+  else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation"; }
+  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé — appuyez pour sauvegarder à nouveau"; }
+  else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec — appuyez pour réessayer"; }
+  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Modifications non sauvegardées — appuyez pour synchroniser"; }
+  btn.innerHTML = icon;
+  btn.style.color = color;
+  btn.classList.toggle("sync-spin", st==="syncing");
+  btn.title = title;
+  btn.onclick = ()=>{
+    if(st==="syncing") return;
+    if(!configured){ openSyncSheet(); return; }
+    pushToGist();
+  };
+}
+
+window.__SF_SYNC = {open: openSyncSheet, updateIndicator, pushToGist, pullFromGist};
 })();
 
 /* ================= Générateur générique : gestion des alias (groupes / personnes) ================= */
