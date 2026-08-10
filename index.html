@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.19.26";
+const APP_VERSION = "v 2026.08.10.19.38";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -858,11 +858,15 @@ function parseParametresSheet(wb){
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
       const month = norm["mois"], groupe = norm["groupe"], montant = norm["montant"];
       if(month && groupe && montant!=null){
+        const amortiRaw = U.normalize(norm["amorti"]||"");
+        const scopeRaw = U.normalize(norm["vue"]||norm["scope"]||"");
         budgetAdjustments.push({
           month: String(month).trim(), groupe: String(groupe).trim(),
           categorie: norm["categorie"]?String(norm["categorie"]).trim():"",
           montant: Number(String(montant).replace(",",".")) || 0,
-          remarque: norm["remarque"]?String(norm["remarque"]).trim():""
+          remarque: norm["remarque"]?String(norm["remarque"]).trim():"",
+          amorti: amortiRaw==="oui" || amortiRaw==="yes" || amortiRaw==="true" || amortiRaw==="1",
+          montantScope: scopeRaw==="couple" ? "couple" : "perso"
         });
       }
     });
@@ -889,30 +893,8 @@ function parseParametresSheet(wb){
       periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
     };
   }
-  const filtresSheetName = wb.SheetNames.find(n=>U.normalize(n)==="filtres");
-  let filters = null;
-  if(filtresSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[filtresSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{
-      if(!row || row.length<2) return;
-      const key = U.normalize(String(row[0]||""));
-      map[key] = row[1];
-    });
-    const splitList = v=> v ? String(v).split("|").map(s=>s.trim()).filter(Boolean) : [];
-    filters = {
-      search: map["recherche texte"] ? String(map["recherche texte"]).trim() : "",
-      dateFrom: map["date debut"] ? String(map["date debut"]).trim() : null,
-      dateTo: map["date fin"] ? String(map["date fin"]).trim() : null,
-      types: splitList(map["types"]),
-      categories: splitList(map["categories"]),
-      personnes: splitList(map["personnes"]),
-      comptes: splitList(map["comptes"]),
-      groupes: splitList(map["groupes"]),
-    };
-  }
-  if(!sheetName && !budgetSheetName && !bsSheetName && !filtresSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, filters};
+  if(!sheetName && !budgetSheetName && !bsSheetName) return null;
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings};
 }
 
 function parseFile(file){
@@ -4191,7 +4173,6 @@ function applyParamsImport(params, mode){
   const categoryTypeOverride = params.categoryTypeOverride || {};
   const budgetAdjustments = params.budgetAdjustments || [];
   const budgetSettings = params.budgetSettings || null;
-  const filters = params.filters || null;
   Store.settings.budget = Store.settings.budget || {};
   if(mode==="replace"){
     Store.settings.groupAliasRules = groupRules.slice();
@@ -4215,7 +4196,6 @@ function applyParamsImport(params, mode){
         periodTo: budgetSettings.periodTo,
       });
     }
-    if(filters) Store.settings.filters = Object.assign({}, filters);
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
@@ -4263,8 +4243,7 @@ function renderImportSummary(){
   const hasTxns = r.txns.length>0;
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
     Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length || Object.keys(r.params.categoryTypeOverride||{}).length ||
-    (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || (r.params.filters && (r.params.filters.search || r.params.filters.dateFrom || r.params.filters.dateTo ||
-      (r.params.filters.types||[]).length || (r.params.filters.categories||[]).length || (r.params.filters.personnes||[]).length || (r.params.filters.comptes||[]).length || (r.params.filters.groupes||[]).length))));
+    (r.params.budgetSettings && r.params.budgetSettings.mainGroup)));
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
@@ -4325,7 +4304,7 @@ function renderImportSummary(){
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
         ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
-        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${r.params.filters ? " · filtres inclus" : ""}
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
@@ -4424,8 +4403,7 @@ function buildParamsPayload(){
       amortPeriodMonths: budget.amortPeriodMonths || null,
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
-    },
-    filters: Object.assign({}, Store.settings.filters || {})
+    }
   };
 }
 
@@ -4493,8 +4471,8 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
-    const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque"];
-    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||""]));
+    const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque","Amorti","Vue"];
+    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||"", a.amorti?"Oui":"Non", a.montantScope==="couple"?"Couple":"Perso"]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
 
     const b = Store.settings.budget || {};
@@ -4511,20 +4489,6 @@ function exportExcel(scope){
       ["Période affichée - à", b.periodTo||""],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bsData), "Budget_Reglages");
-
-    const f = Store.settings.filters || {};
-    const fData = [
-      ["Réglage","Valeur"],
-      ["Recherche texte", f.search||""],
-      ["Date début", f.dateFrom||""],
-      ["Date fin", f.dateTo||""],
-      ["Types", (f.types||[]).join(" | ")],
-      ["Catégories", (f.categories||[]).join(" | ")],
-      ["Personnes", (f.personnes||[]).join(" | ")],
-      ["Comptes", (f.comptes||[]).join(" | ")],
-      ["Groupes", (f.groupes||[]).join(" | ")],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fData), "Filtres");
   }
 
   const stamp = U.toISO(new Date());
@@ -4551,7 +4515,7 @@ function openExportScopeChoice(title, onConfirm){
       </div>
       <div class="radio-opt ${scope==='params'?'selected':''}" data-scope="params">
         <span class="rc"></span>
-        <div><div class="rt">Paramètres seulement</div><div class="rd">Groupes, personnes, types de compte, réglages et ajustements du budget, classement des catégories, filtres.</div></div>
+        <div><div class="rt">Paramètres seulement</div><div class="rd">Groupes, personnes, types de compte, réglages et ajustements du budget, classement des catégories.</div></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:18px;">
         <button class="btn btn-ghost" style="flex:1;" id="esc-cancel">Annuler</button>
