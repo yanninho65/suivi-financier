@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.19.38";
+const APP_VERSION = "v 2026.08.10.19.49";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -893,8 +893,25 @@ function parseParametresSheet(wb){
       periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
     };
   }
-  if(!sheetName && !budgetSheetName && !bsSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings};
+  const salSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_salaires");
+  let salaryEntries = null;
+  if(salSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[salSheetName], {defval:null, raw:false});
+    salaryEntries = {};
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const month = norm["mois"];
+      if(!month) return;
+      const moiRaw = norm["moi"];
+      const femmeRaw = norm["ma femme"];
+      const moi = (moiRaw==null || moiRaw==="") ? null : (Number(String(moiRaw).replace(",",".")) || 0);
+      const femme = (femmeRaw==null || femmeRaw==="") ? null : (Number(String(femmeRaw).replace(",",".")) || 0);
+      salaryEntries[String(month).trim()] = {moi, femme};
+    });
+  }
+  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName) return null;
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries};
 }
 
 function parseFile(file){
@@ -4173,6 +4190,7 @@ function applyParamsImport(params, mode){
   const categoryTypeOverride = params.categoryTypeOverride || {};
   const budgetAdjustments = params.budgetAdjustments || [];
   const budgetSettings = params.budgetSettings || null;
+  const salaryEntries = params.salaryEntries || null;
   Store.settings.budget = Store.settings.budget || {};
   if(mode==="replace"){
     Store.settings.groupAliasRules = groupRules.slice();
@@ -4196,6 +4214,7 @@ function applyParamsImport(params, mode){
         periodTo: budgetSettings.periodTo,
       });
     }
+    if(salaryEntries) Store.settings.budget.salaryEntries = Object.assign({}, salaryEntries);
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
@@ -4230,6 +4249,15 @@ function applyParamsImport(params, mode){
     if((!b.amortCategories || !b.amortCategories.length) && (budgetSettings.amortCategories||[]).length) b.amortCategories = budgetSettings.amortCategories.slice();
     if(!b.amortPeriodMonths && budgetSettings.amortPeriodMonths) b.amortPeriodMonths = budgetSettings.amortPeriodMonths;
   }
+  // Salaires saisis manuellement : par mois, on ne remplit que les mois pas encore renseignés localement
+  // (ne remplace jamais une saisie existante avec une valeur importée).
+  if(salaryEntries){
+    Store.settings.budget.salaryEntries = Store.settings.budget.salaryEntries || {};
+    const localSal = Store.settings.budget.salaryEntries;
+    Object.keys(salaryEntries).forEach(month=>{
+      if(!localSal[month]) localSal[month] = salaryEntries[month];
+    });
+  }
 
   return {rulesAdded, personRulesAdded, acctAdded};
 }
@@ -4243,7 +4271,7 @@ function renderImportSummary(){
   const hasTxns = r.txns.length>0;
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
     Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length || Object.keys(r.params.categoryTypeOverride||{}).length ||
-    (r.params.budgetSettings && r.params.budgetSettings.mainGroup)));
+    (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || Object.keys(r.params.salaryEntries||{}).length));
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
@@ -4304,7 +4332,7 @@ function renderImportSummary(){
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
         ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
-        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
@@ -4403,7 +4431,8 @@ function buildParamsPayload(){
       amortPeriodMonths: budget.amortPeriodMonths || null,
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
-    }
+    },
+    salaryEntries: Object.assign({}, budget.salaryEntries || {})
   };
 }
 
@@ -4489,6 +4518,11 @@ function exportExcel(scope){
       ["Période affichée - à", b.periodTo||""],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bsData), "Budget_Reglages");
+
+    const salEntries = Object.entries(b.salaryEntries || {}).sort((x,y)=>x[0].localeCompare(y[0]));
+    const salHeader = ["Mois","Moi","Ma femme"];
+    const salData = [salHeader].concat(salEntries.map(([month, e])=>[month, e.moi==null?"":e.moi, e.femme==null?"":e.femme]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salData), "Budget_Salaires");
   }
 
   const stamp = U.toISO(new Date());
