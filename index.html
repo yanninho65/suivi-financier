@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.21.45";
+const APP_VERSION = "v 2026.08.10.22.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -590,7 +590,7 @@ const Store = {
   settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
-      amortCategories:[], amortPeriodMonths:null, adjustments:[], excludedAccounts:[], incomeExpenseGrouping:"split"}},
+      amortCategories:[], amortPeriodMonths:null, adjustments:[], excludedAccounts:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
 
   /* Charge les données au démarrage. Doit être attendu (await) avant d'afficher l'appli. */
@@ -699,7 +699,6 @@ const Store = {
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
     if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
     if(!Array.isArray(b.excludedAccounts)) b.excludedAccounts = [];
-    if(b.incomeExpenseGrouping!=="grouped" && b.incomeExpenseGrouping!=="split") b.incomeExpenseGrouping = "split";
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -1114,10 +1113,21 @@ const Filters = {
 window.__SF_FILTERS = Filters;
 
 /* ---------------- Groupe merging (rules: groupe -> groupe de groupe, with optional date range) ---------------- */
-function findGroupAliasRule(base, date){
+/* Une règle peut être : (1) scopée à une occurrence datée précise via `full` (libellé littéral complet,
+   ex. "France (26-06-07)") — comparaison stricte par égalité, jamais d'ambiguïté possible avec une autre
+   occurrence du même nom de base, même si leurs transactions ont des dates qui se chevauchent ; ou (2) une
+   règle "base" classique (`groupe` = nom de base, dateFrom/dateTo optionnels) qui ne sert plus qu'en repli
+   pour les groupes sans suffixe de date ou pour d'anciennes règles importées avant l'introduction de `full`.
+   Une règle `full` est toujours prioritaire sur toute règle base+date pour la même occurrence. */
+function findGroupAliasRule(base, date, full){
   const rules = Store.settings.groupAliasRules || [];
+  if(full){
+    const exact = rules.find(r=> r.full === full);
+    if(exact) return exact;
+  }
   let best = null;
   for(const r of rules){
+    if(r.full) continue; // règle scopée à une autre occurrence précise : jamais utilisée en repli
     if(r.groupe !== base) continue;
     if(r.dateFrom && date < new Date(r.dateFrom)) continue;
     if(r.dateTo && date > new Date(r.dateTo+"T23:59:59")) continue;
@@ -1128,15 +1138,16 @@ function findGroupAliasRule(base, date){
 function getGroupeDisplay(t){
   if(!t.groupe) return "(Non renseigné)";
   const base = t.groupeBase || U.baseGroupe(t.groupe);
-  const rule = findGroupAliasRule(base, t.date);
+  const rule = findGroupAliasRule(base, t.date, t.groupe);
   // Si aucune règle de groupe de groupe ne s'applique, on conserve le libellé complet
   // (avec la date entre parenthèses) plutôt que de le remplacer par le nom de base seul.
   return rule ? rule.superGroupe : t.groupe;
 }
-/* Effective super-groupe for a base name shown in management UI (ignoring date, first rule found) */
+/* Effective super-groupe(s) for a base name shown in management UI (ignoring date, all matching rules —
+   règles "base" classiques ET règles `full` dont l'occurrence partage ce nom de base). */
 function getSuperGroupeForBase(base){
   const rules = Store.settings.groupAliasRules || [];
-  const found = rules.filter(r=>r.groupe===base);
+  const found = rules.filter(r=> r.groupe===base);
   return found;
 }
 function distinctValuesGroupeDisplay(transactions){
@@ -2526,6 +2537,7 @@ let periodFrom = null, periodTo = null; // "YYYY-MM"
 let amortSectionOpen = false;
 let amortCatsSectionOpen = false;
 let acctExcludeSectionOpen = false;
+let filtersSectionOpen = true;
 /* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
    amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
 function isAccountExcluded(compte){
@@ -3229,7 +3241,6 @@ function groupCardHtml(title, res, isMain, divisor){
     </div>
   `).join("");
   const catSplit = splitIncomeExpense(res.categories);
-  const grouped = Store.settings.budget.incomeExpenseGrouping==="grouped";
   return `
     <div class="card" style="margin-bottom:12px;">
       <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;padding:0 0 4px;">
@@ -3239,11 +3250,9 @@ function groupCardHtml(title, res, isMain, divisor){
           <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(res.net))}</span>
         </span>
       </div>
-      ${grouped ? "" : `
-        ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}) : ""}
-        ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}) : ""}
-        ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : ""}
-      `}
+      ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}) : ""}
+      ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}) : ""}
+      ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : ""}
     </div>
   `;
 }
@@ -3291,57 +3300,60 @@ function renderBudget(){
   // continuent d'afficher le total réel de la période, jamais une moyenne.
   const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
   const dv = n => n/divisor;
-  const grouped = cfg.incomeExpenseGrouping==="grouped";
 
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
-      <div style="display:flex;align-items:center;gap:8px;margin:0 4px 10px;flex-wrap:wrap;">
-        <button type="button" class="oneui-pill" id="bg-main-pill">
-          <span class="pill-label">${U.escHtml(cfg.mainGroup)}</span>
-          <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        ${selectedExtra.length ? `
-        <button type="button" class="oneui-pill" id="bg-extra-pill" style="background:var(--card-alt);">
-          <span class="pill-label">+${selectedExtra.length} groupe${selectedExtra.length>1?"s":""}</span>
-          <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-        </button>` : ""}
-        <button type="button" class="oneui-pill" id="bg-add-extra-btn" style="padding:8px 12px;background:var(--primary-soft);color:var(--primary);" title="Ajouter un groupe additionnel">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        </button>
-      </div>
+      <details id="bg-filters-details" class="card" style="margin:0 4px 14px;padding:0;" ${filtersSectionOpen?'open':''}>
+        <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:14px;font-weight:800;">Filtres et critères</span>
+          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div style="padding:0 10px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap;">
+            <button type="button" class="oneui-pill" id="bg-main-pill">
+              <span class="pill-label">${U.escHtml(cfg.mainGroup)}</span>
+              <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            ${selectedExtra.length ? `
+            <button type="button" class="oneui-pill" id="bg-extra-pill" style="background:var(--card-alt);">
+              <span class="pill-label">+${selectedExtra.length} groupe${selectedExtra.length>1?"s":""}</span>
+              <svg class="pill-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>` : ""}
+            <button type="button" class="oneui-pill" id="bg-add-extra-btn" style="padding:8px 12px;background:var(--primary-soft);color:var(--primary);" title="Ajouter un groupe additionnel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+          </div>
 
-      <div style="display:flex;gap:8px;margin:0 4px 10px;">
-        <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.7;">
-          <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
-          <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Sans amort, avec ajout</button>
-          <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin:0 4px 10px;">
-        <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
-          <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
-          <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
-        </div>
-        <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
-          <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
-          <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin:0 4px 10px;">
-        <div class="seg seg-sm" id="bg-rdgroup-seg" style="flex:1;">
-          <button data-g="split" class="${cfg.incomeExpenseGrouping!=='grouped'?'active':''}">Revenus/Dépenses séparés</button>
-          <button data-g="grouped" class="${cfg.incomeExpenseGrouping==='grouped'?'active':''}">Groupés</button>
-        </div>
-        <div class="seg seg-sm" id="bg-decimals-seg" style="flex:0 0 auto;">
-          <button data-dec="0" class="${Store.settings.decimals===2?'':'active'}">0,-</button>
-          <button data-dec="2" class="${Store.settings.decimals===2?'active':''}">0,00</button>
-        </div>
-      </div>
+          <div style="display:flex;gap:8px;margin:0 0 10px;">
+            <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.7;">
+              <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
+              <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Sans amort, avec ajout</button>
+              <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin:0 0 10px;">
+            <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
+              <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
+              <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
+            </div>
+            <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
+              <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
+              <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin:0 0 10px;">
+            <div class="seg seg-sm" id="bg-decimals-seg" style="flex:0 0 auto;">
+              <button data-dec="0" class="${Store.settings.decimals===2?'':'active'}">0,-</button>
+              <button data-dec="2" class="${Store.settings.decimals===2?'active':''}">0,00</button>
+            </div>
+          </div>
 
-      ${periodPickerHtml()}
-      ${accountExcludeHtml()}
-      ${cfg.mode==="amorti" ? amortSettingsHtml() : ""}
-      ${adjustmentsSectionHtml()}
+          ${periodPickerHtml()}
+          ${accountExcludeHtml()}
+          ${cfg.mode==="amorti" ? amortSettingsHtml() : ""}
+          ${adjustmentsSectionHtml()}
+        </div>
+      </details>
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;padding:0 0 4px;">
           <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
@@ -3350,11 +3362,9 @@ function renderBudget(){
             <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandNet))}</span>
           </span>
         </div>
-        ${grouped ? "" : `
         <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoneySigned(dv(grandCatIncome))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoneySigned(dv(grandCatExpense))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Voyage" style="cursor:pointer;"><span>Voyages</span><span style="color:${grandVoyNet<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(grandVoyNet))}</span></div>
-        `}
       </div>
       ${groupCardHtml(cfg.mainGroup, mainRes, true, divisor)}
       ${extraResults.map(e=>groupCardHtml(e.name, e.res, false, divisor)).join("")}
@@ -3379,13 +3389,6 @@ function renderBudget(){
   document.querySelectorAll("#bg-display-seg button").forEach(b=>{
     b.onclick = ()=>{
       cfg.displayMode = b.dataset.d;
-      Store.saveSettings();
-      renderBudget();
-    };
-  });
-  document.querySelectorAll("#bg-rdgroup-seg button").forEach(b=>{
-    b.onclick = ()=>{
-      cfg.incomeExpenseGrouping = b.dataset.g;
       Store.saveSettings();
       renderBudget();
     };
@@ -3425,6 +3428,8 @@ function renderBudget(){
   };
   document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
   document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
+  const filtersDetails = document.getElementById("bg-filters-details");
+  if(filtersDetails) filtersDetails.addEventListener("toggle", function(){ filtersSectionOpen = this.open; });
   wireAccountExclude();
   if(cfg.mode==="amorti") wireAmortSettings();
   wireAdjustmentsSection();
@@ -5725,9 +5730,9 @@ function createAliasManager(cfg){
       }
     }
     const repDate = range ? range.sampleDate : new Date();
-    const currentRule = cfg.hasDates ? AGG.findGroupAliasRule(editingBase, repDate) : (rulesForBase(editingBase)[0]||null);
+    const currentRule = cfg.hasDates ? AGG.findGroupAliasRule(editingBase, repDate, editingFull) : (rulesForBase(editingBase)[0]||null);
     const currentValue = currentRule ? (currentRule[cfg.superField]||"") : "";
-    const currentIsGlobal = currentRule ? (!currentRule.dateFrom && !currentRule.dateTo) : false;
+    const currentIsGlobalOther = currentRule ? (isDatedOccurrence && !currentRule.full) : false;
 
     sheet.innerHTML = `
       <div class="sheet-handle"></div>
@@ -5742,7 +5747,7 @@ function createAliasManager(cfg){
         <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}</div>
         ${datalistsHtml()}
         <input type="text" class="search-mini" id="am-super-input" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
-        ${currentRule && isDatedOccurrence && currentIsGlobal ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} ». Enregistrer ici crée une règle spécifique à cette période uniquement, sans toucher aux autres.</div>` : ""}
+        ${currentRule && currentIsGlobalOther ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une ancienne règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} » (importée avant cette version). Enregistrer ici crée une règle spécifique à cette occurrence uniquement, sans toucher à l'ancienne règle ni aux autres occurrences.</div>` : ""}
         ${dateRangeSectionHtml()}
       </div>
       <div class="sheet-foot">
@@ -5757,22 +5762,24 @@ function createAliasManager(cfg){
     wireDateRangeSection();
     document.getElementById("am-save").onclick = ()=>{
       const sg = document.getElementById("am-super-input").value.trim();
-      // Chaque occurrence datée est toujours rattachée à sa propre plage de dates exacte (jamais à une
-      // règle globale sans dates) — évite qu'assigner une occurrence précise n'entraîne avec elle toutes
-      // les autres occurrences du même nom de base.
-      const allPeriods = !isDatedOccurrence;
       const all = rules();
       const keepOthers = all.filter(r=>{
-        if(r[cfg.baseField] !== editingBase) return true;
-        if(!cfg.hasDates) return false;
-        if(allPeriods) return !(!r.dateFrom && !r.dateTo);
-        return !(range && r.dateFrom===range.from && r.dateTo===range.to);
+        if(!cfg.hasDates) return r[cfg.baseField] !== editingBase;
+        if(isDatedOccurrence){
+          // Occurrence datée : on ne retire que l'éventuelle règle EXACTE déjà existante pour cette
+          // occurrence précise (comparaison stricte sur le libellé complet) — jamais une règle base+date,
+          // même si sa fenêtre de dates recoupe celle de cette occurrence, pour ne jamais affecter une
+          // autre occurrence du même nom de base.
+          return r.full !== editingFull;
+        }
+        // Occurrence sans suffixe de date : règle globale classique par nom de base (comportement inchangé).
+        return !(r[cfg.baseField]===editingBase && !r.full);
       });
       if(sg){
         const entry = {[cfg.baseField]: editingBase, [cfg.superField]: sg};
         if(cfg.hasDates){
-          if(allPeriods){ entry.dateFrom=null; entry.dateTo=null; }
-          else { entry.dateFrom = range?range.from:null; entry.dateTo = range?range.to:null; }
+          entry.dateFrom = null; entry.dateTo = null;
+          if(isDatedOccurrence) entry.full = editingFull;
         }
         keepOthers.push(entry);
       }
@@ -5788,13 +5795,15 @@ function createAliasManager(cfg){
   /* "Toutes les règles" : édition libre de toutes les règles à la fois (réorganisation manuelle complète) */
   function renderAll(){
     const sheet = document.getElementById(cfg.sheetId);
-    const rls = rules().map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    const rls = rules().filter(r=>!r.full).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    const occurrenceRulesCount = rules().filter(r=>r.full).length;
     sheet.innerHTML = `
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
       <div class="sheet-body">
         <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
           Toutes les règles enregistrées. Modifiez ou supprimez librement, ou ajoutez-en de nouvelles, puis enregistrez.
+          ${occurrenceRulesCount ? ` ${occurrenceRulesCount} règle${occurrenceRulesCount>1?"s":""} propre${occurrenceRulesCount>1?"s":""} à une occurrence datée précise ${occurrenceRulesCount>1?"ne sont":"n'est"} pas modifiable${occurrenceRulesCount>1?"s":""} ici (pour ne jamais risquer de la transformer en règle globale) — utilisez « Par ${cfg.superLabel} » pour ces occurrences.` : ""}
         </div>
         ${viewToggleHtml()}
         ${datalistsHtml()}
@@ -5829,7 +5838,10 @@ function createAliasManager(cfg){
         if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
         if(bs && sg) newRules.push(entry);
       });
-      Store.settings[cfg.settingsKey] = newRules;
+      // Les règles propres à une occurrence datée précise (`full`) ne passent jamais par ce tableau brut :
+      // on les préserve telles quelles pour ne jamais les rétrograder silencieusement en règle globale.
+      const preserved = rules().filter(r=>r.full);
+      Store.settings[cfg.settingsKey] = newRules.concat(preserved);
       Store.saveSettings();
       APP.showToast("Règles enregistrées ("+newRules.length+")");
       renderAll();
