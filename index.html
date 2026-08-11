@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.22.30";
+const APP_VERSION = "v 2026.08.10.23.05";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1144,11 +1144,26 @@ function getGroupeDisplay(t){
   return rule ? rule.superGroupe : t.groupe;
 }
 /* Effective super-groupe(s) for a base name shown in management UI (ignoring date, all matching rules —
-   règles "base" classiques ET règles `full` dont l'occurrence partage ce nom de base). */
+   règles "base" classiques ET règles `full` dont l'occurrence partage ce nom de base). Utilisé pour la
+   vue base-only groupeHierarchy() ci-dessous ; NE PAS utiliser pour classer une occurrence précise
+   (voir resolvedSuperGroupeForOccurrence) car ceci ignore volontairement le champ `full`. */
 function getSuperGroupeForBase(base){
   const rules = Store.settings.groupAliasRules || [];
   const found = rules.filter(r=> r.groupe===base);
   return found;
+}
+/* Détermine le groupe de groupe d'UNE occurrence précise (libellé littéral complet), en respectant
+   strictement le scope des règles `full` — jamais de repli sur une règle `full` appartenant à une
+   AUTRE occurrence du même nom de base, contrairement à getSuperGroupeForBase(). C'est le pendant de
+   findGroupAliasRule() mais pour la construction de la hiérarchie affichée (Gérer les groupes, filtre
+   Groupe, sélecteur de groupe du Budget), qui doit lister chaque occurrence sous UN SEUL groupe de
+   groupe, exactement celui qui s'applique réellement à elle. */
+function resolvedSuperGroupeForOccurrence(fullLabel, base){
+  const rules = Store.settings.groupAliasRules || [];
+  const exact = rules.find(r=> r.full === fullLabel);
+  if(exact) return exact.superGroupe;
+  const globalRule = rules.find(r=> r.groupe===base && !r.full);
+  return globalRule ? globalRule.superGroupe : null;
 }
 function distinctValuesGroupeDisplay(transactions){
   const map = new Map();
@@ -1207,13 +1222,10 @@ function groupeHierarchyFull(transactions){
   const flat = [];
   fulls.forEach(({full,count})=>{
     const base = U.baseGroupe(full);
-    const rules = getSuperGroupeForBase(base);
-    if(rules.length){
-      const supers = Array.from(new Set(rules.map(r=>r.superGroupe)));
-      supers.forEach(sup=>{
-        if(!sections.has(sup)) sections.set(sup, []);
-        sections.get(sup).push({base:full, count});
-      });
+    const sup = resolvedSuperGroupeForOccurrence(full, base);
+    if(sup){
+      if(!sections.has(sup)) sections.set(sup, []);
+      sections.get(sup).push({base:full, count});
     } else {
       flat.push({base:full, count});
     }
