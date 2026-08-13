@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.10.23.05";
+const APP_VERSION = "v 2026.08.12.20.29";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -699,6 +699,12 @@ const Store = {
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
     if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
     if(!Array.isArray(b.excludedAccounts)) b.excludedAccounts = [];
+    if(!b.compare || typeof b.compare!=="object") b.compare = {};
+    if(b.compare.enabled!==true) b.compare.enabled = false;
+    if(b.compare.mode!=="period" && b.compare.mode!=="predefined") b.compare.mode = "period";
+    if(b.compare.periodFrom===undefined) b.compare.periodFrom = null;
+    if(b.compare.periodTo===undefined) b.compare.periodTo = null;
+    if(!b.compare.predefined || typeof b.compare.predefined!=="object") b.compare.predefined = {};
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -921,8 +927,46 @@ function parseParametresSheet(wb){
       salaryEntries[String(month).trim()] = {moi, femme};
     });
   }
-  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries};
+  const cmpSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_comparaison");
+  let compareSettings = null;
+  if(cmpSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[cmpSheetName], {defval:null, raw:false, header:1});
+    const map = {};
+    rows.forEach(row=>{
+      if(!row || row.length<2) return;
+      map[U.normalize(String(row[0]||""))] = row[1];
+    });
+    const activeRaw = U.normalize(String(map["activee"]||""));
+    const modeRaw = U.normalize(String(map["mode"]||""));
+    compareSettings = {
+      enabled: activeRaw==="oui" || activeRaw==="yes" || activeRaw==="true" || activeRaw==="1",
+      mode: modeRaw.startsWith("budget") ? "predefined" : "period",
+      periodFrom: map["periode comparee - de"] ? String(map["periode comparee - de"]).trim() : null,
+      periodTo: map["periode comparee - a"] ? String(map["periode comparee - a"]).trim() : null,
+    };
+  }
+  const predefSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_predefini");
+  let comparePredefined = null;
+  if(predefSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[predefSheetName], {defval:null, raw:false});
+    comparePredefined = {};
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const montant = norm["montant mensuel"];
+      if(montant==null || montant==="") return;
+      let key = norm["cle"] ? String(norm["cle"]).trim() : "";
+      if(!key){
+        const groupe = norm["groupe"] ? String(norm["groupe"]).trim() : "";
+        const cat = norm["categorie"] ? String(norm["categorie"]).trim() : "";
+        if(!groupe) return;
+        key = cat ? (groupe+"::cat::"+cat) : groupe;
+      }
+      comparePredefined[key] = Number(String(montant).replace(",",".")) || 0;
+    });
+  }
+  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !cmpSheetName && !predefSheetName) return null;
+  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined};
 }
 
 function parseFile(file){
@@ -2549,6 +2593,7 @@ let periodFrom = null, periodTo = null; // "YYYY-MM"
 let amortSectionOpen = false;
 let amortCatsSectionOpen = false;
 let acctExcludeSectionOpen = false;
+let compareSectionOpen = false;
 let filtersSectionOpen = true;
 /* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
    amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
@@ -2896,6 +2941,87 @@ function computeGroupBudget(superGroupeName, months, opts){
     catIncome, catExpense, voyIncome, voyExpense, voyNet: voyIncome+voyExpense};
 }
 
+/* ---------------- Comparaison (autre période / budget prédéfini) ---------------- */
+/* Liste des catégories (hors voyages) qui apparaissent au moins une fois pour ce groupe, toutes périodes
+   confondues — sert à proposer les lignes du budget prédéfini même pour des mois hors de la période affichée. */
+function categoriesForGroup(groupName){
+  const set = new Set();
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(!groupSelectionMatches(t, groupName)) return;
+    if(isAccountExcluded(t.compte)) return;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    if(AGG.getGroupKind(base)==="voyage") return;
+    set.add(t.categorie || "(Non renseigné)");
+  });
+  return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
+}
+function predefinedCatKey(groupName, catKey){ return groupName+"::cat::"+catKey; }
+
+/* Construit le contexte de comparaison pour l'ensemble des groupes affichés (principal + additionnels).
+   Le scénario "autre période" applique EXACTEMENT les mêmes réglages (mode, vue, amortissement, comptes
+   exclus, ajustements) que le scénario principal — seule la période change, librement choisie. Le scénario
+   "budget prédéfini" est un montant mensuel saisi à la main par groupe/catégorie, multiplié par le nombre
+   de mois du scénario principal en vue Total (utilisé tel quel, sans multiplication, en vue Moyenne/mois). */
+function computeCompareContext(mainMonths){
+  const cfg = Store.settings.budget;
+  const cmp = cfg.compare;
+  if(!cmp || !cmp.enabled) return null;
+  if(cmp.mode==="predefined"){
+    return {type:"predefined", predefined: cmp.predefined||{}, mult: cfg.displayMode==="moyenne" ? 1 : (mainMonths.length||1)};
+  }
+  if(!cmp.periodFrom || !cmp.periodTo) return null;
+  const cMonths = monthsInRange(cmp.periodFrom, cmp.periodTo);
+  if(!cMonths.length) return null;
+  const divisor = cfg.displayMode==="moyenne" ? cMonths.length : 1;
+  return {type:"period", months: cMonths, divisor, cache: new Map()};
+}
+function compareGroupResult(ctx, groupName){
+  if(ctx.type!=="period") return null;
+  if(!ctx.cache.has(groupName)){
+    const forceBrut = groupName!==Store.settings.budget.mainGroup;
+    ctx.cache.set(groupName, computeGroupBudget(groupName, ctx.months, {forceBrut}));
+  }
+  return ctx.cache.get(groupName);
+}
+/* Valeur comparée pour le total d'un groupe (carte principale ou additionnelle). */
+function compareGroupTotal(ctx, groupName){
+  if(!ctx) return null;
+  if(ctx.type==="predefined"){
+    const raw = Number((ctx.predefined||{})[groupName]);
+    return (isNaN(raw)?0:raw) * ctx.mult;
+  }
+  const r = compareGroupResult(ctx, groupName);
+  return r ? r.net/ctx.divisor : 0;
+}
+/* Valeur comparée pour une ligne catégorie précise d'un groupe. */
+function compareCategoryTotal(ctx, groupName, catKey){
+  if(!ctx) return null;
+  if(ctx.type==="predefined"){
+    const raw = Number((ctx.predefined||{})[predefinedCatKey(groupName, catKey)]);
+    return (isNaN(raw)?0:raw) * ctx.mult;
+  }
+  const r = compareGroupResult(ctx, groupName);
+  if(!r) return 0;
+  const c = r.categories.find(x=>x.key===catKey);
+  return c ? (c.income+c.expense)/ctx.divisor : 0;
+}
+/* Ligne d'info compacte affichée sous une ligne principale quand la comparaison est active : montant
+   comparé, variation en valeur (Résultat - Comparé) et en %. Couleur : vert si la variation va dans le
+   sens d'un solde plus favorable (peu importe qu'il s'agisse d'un revenu ou d'une dépense), rouge sinon. */
+function compareSubRowHtml(resultVal, compareVal){
+  const diff = resultVal - compareVal;
+  const pct = compareVal!==0 ? (diff/Math.abs(compareVal))*100 : (diff===0 ? 0 : null);
+  const pctTxt = pct===null ? "—" : (pct>=0?"+":"")+pct.toLocaleString('fr-FR',{maximumFractionDigits:1,minimumFractionDigits:0})+"%";
+  const color = diff>0 ? "var(--income)" : diff<0 ? "var(--expense)" : "var(--text-sub)";
+  return `
+    <div class="bg-compare-sub" style="display:flex;justify-content:flex-end;align-items:baseline;gap:7px;font-size:10.5px;color:var(--text-sub);padding:0 0 5px;">
+      <span>vs ${U.fmtMoney(compareVal)}</span>
+      <span style="color:${color};font-weight:800;">${U.fmtMoneySigned(diff)} · ${pctTxt}</span>
+    </div>
+  `;
+}
+
 /* ---------------- Rendu ---------------- */
 function candidateSuperGroupes(){
   return AGG.distinctValuesGroupeDisplay(Store.transactions).map(v=>v.value).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -2925,6 +3051,142 @@ function periodPickerHtml(){
       <input type="month" id="bg-to" value="${periodTo}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
     </div>
   `;
+}
+
+/* ---------------- Réglages de comparaison : autre période ou budget prédéfini ---------------- */
+function compareSettingsHtml(){
+  const cfg = Store.settings.budget;
+  const cmp = cfg.compare;
+  return `
+    <details id="bg-compare-details" class="card" style="margin:0 4px 14px;padding:0;" ${compareSectionOpen?'open':''}>
+      <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:14px;font-weight:800;">Comparaison</span>
+        <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
+          ${cmp.enabled ? (cmp.mode==="predefined" ? "Budget prédéfini" : "Autre période") : "Désactivée"}
+          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </summary>
+      <div style="padding:0 14px 14px;">
+        <div class="seg seg-sm" id="bg-cmp-toggle-seg" style="margin-bottom:${cmp.enabled?'10px':'0'};">
+          <button data-v="off" class="${!cmp.enabled?'active':''}">Désactivée</button>
+          <button data-v="on" class="${cmp.enabled?'active':''}">Activée</button>
+        </div>
+        ${cmp.enabled ? `
+        <div class="seg seg-sm" id="bg-cmp-mode-seg" style="margin-bottom:10px;">
+          <button data-v="period" class="${cmp.mode==='period'?'active':''}">Autre période</button>
+          <button data-v="predefined" class="${cmp.mode==='predefined'?'active':''}">Budget prédéfini</button>
+        </div>
+        ${cmp.mode==="period" ? `
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Même groupe(s), même mode, même vue et mêmes réglages d'amortissement que le scénario principal — seule la période ci-dessous change librement. ${cfg.displayMode==='moyenne'?'Vue Moyenne/mois : les deux périodes sont comparées en moyenne mensuelle.':'Vue Total : les deux périodes sont comparées en totaux.'}</div>
+          <div style="display:flex;align-items:center;gap:6px;background:var(--card-alt);border-radius:100px;padding:7px 8px 7px 16px;">
+            <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période comparée</span>
+            <input type="month" id="bg-cmp-from" value="${cmp.periodFrom||''}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+            <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
+            <input type="month" id="bg-cmp-to" value="${cmp.periodTo||''}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+          </div>
+        ` : `
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Montants mensuels saisis à la main, par groupe et par catégorie. ${cfg.displayMode==='moyenne'?'Vue Moyenne/mois : utilisés tels quels.':'Vue Total : multipliés par le nombre de mois de la période affichée ('+monthsInRange(periodFrom,periodTo).length+').'}</div>
+          <button type="button" class="btn btn-ghost btn-block" id="bg-cmp-edit-predefined">${ICONS.edit||''} Éditer le budget prédéfini</button>
+        `}
+        ` : ""}
+      </div>
+    </details>
+  `;
+}
+function wireCompareSettings(){
+  const outer = document.getElementById("bg-compare-details");
+  if(outer) outer.addEventListener("toggle", function(){ compareSectionOpen = this.open; });
+  const cfg = Store.settings.budget;
+  const cmp = cfg.compare;
+  document.querySelectorAll("#bg-cmp-toggle-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      compareSectionOpen = true;
+      cmp.enabled = b.dataset.v==="on";
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  const modeSeg = document.getElementById("bg-cmp-mode-seg");
+  if(modeSeg) modeSeg.querySelectorAll("button").forEach(b=>{
+    b.onclick = ()=>{
+      compareSectionOpen = true;
+      cmp.mode = b.dataset.v;
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
+  const fromEl = document.getElementById("bg-cmp-from");
+  if(fromEl) fromEl.onchange = (e)=>{
+    compareSectionOpen = true;
+    cmp.periodFrom = e.target.value || null;
+    if(cmp.periodFrom && cmp.periodTo && cmp.periodFrom>cmp.periodTo) cmp.periodTo = cmp.periodFrom;
+    Store.saveSettings();
+    renderBudget();
+  };
+  const toEl = document.getElementById("bg-cmp-to");
+  if(toEl) toEl.onchange = (e)=>{
+    compareSectionOpen = true;
+    cmp.periodTo = e.target.value || null;
+    if(cmp.periodFrom && cmp.periodTo && cmp.periodTo<cmp.periodFrom) cmp.periodFrom = cmp.periodTo;
+    Store.saveSettings();
+    renderBudget();
+  };
+  const editBtn = document.getElementById("bg-cmp-edit-predefined");
+  if(editBtn) editBtn.onclick = ()=>{ compareSectionOpen = true; openPredefinedBudgetSheet(); };
+}
+
+/* Feuille d'édition du budget prédéfini : un montant mensuel par groupe (principal + additionnels) et,
+   sous chacun, un montant mensuel par catégorie de ce groupe. Champ vide = 0 (aucun budget défini pour
+   cette ligne). Sauvegarde en direct à chaque changement de champ. */
+function openPredefinedBudgetSheet(){
+  const cfg = Store.settings.budget;
+  const cmp = cfg.compare;
+  const groups = [cfg.mainGroup].concat((cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup)).filter(Boolean);
+
+  function fieldHtml(key, label, indent){
+    const v = cmp.predefined[key];
+    return `
+      <div class="detail-row" style="align-items:center;gap:8px;padding:6px 0;padding-left:${indent?18:0}px;">
+        <span style="font-size:${indent?12.5:13.5}px;font-weight:${indent?600:800};flex:1;min-width:0;">${U.escHtml(label)}</span>
+        <input type="number" step="0.01" inputmode="decimal" class="search-mini pbf-input" data-key="${U.escHtml(key)}" placeholder="0,00 €" value="${v!=null&&v!==''?v:''}" style="flex:0 0 120px;margin:0;text-align:right;">
+      </div>`;
+  }
+
+  function render(){
+    const modal = document.getElementById("modal-detail");
+    const groupsHtml = groups.map(g=>{
+      const cats = categoriesForGroup(g);
+      return `
+        <div style="margin-bottom:14px;">
+          ${fieldHtml(g, g, false)}
+          ${cats.map(c=>fieldHtml(predefinedCatKey(g,c), c, true)).join("")}
+        </div>`;
+    }).join("");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:800;font-size:17px;">Budget prédéfini</span>
+        <button class="icon-btn" id="pbf-close">${ICONS.close}</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
+        Montant mensuel par groupe et, en dessous, par catégorie de ce groupe (informatif — ne s'additionne pas automatiquement au montant du groupe). Laisser vide pour ne pas comparer cette ligne (0 €).
+      </div>
+      <div style="max-height:60vh;overflow-y:auto;">
+        ${groupsHtml || `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Choisissez d'abord un groupe principal.</div>`}
+      </div>
+    `;
+    document.getElementById("pbf-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
+    modal.querySelectorAll(".pbf-input").forEach(inp=>{
+      inp.onchange = (e)=>{
+        const key = e.target.dataset.key;
+        const val = e.target.value;
+        if(val===null || val===""){ delete cmp.predefined[key]; }
+        else cmp.predefined[key] = Number(val) || 0;
+        Store.saveSettings();
+      };
+    });
+  }
+  render();
+  APP.openOverlay("overlay-detail");
 }
 
 /* ---------------- Réglages d'amortissement : mois de début, période, catégories amorties ---------------- */
@@ -3237,15 +3499,19 @@ function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv, click
     </details>
   `;
 }
-function groupCardHtml(title, res, isMain, divisor){
+function groupCardHtml(title, res, isMain, divisor, compareCtx){
   divisor = divisor || 1;
   const dv = n => n/divisor;
-  const catRowsHtml = list=>list.map(c=>`
+  const catRowsHtml = list=>list.map(c=>{
+    const val = dv(c.income+c.expense);
+    const cmpHtml = compareCtx ? compareSubRowHtml(val, compareCategoryTotal(compareCtx, title, c.key)) : "";
+    return `
     <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
-      <span style="color:${(c.income+c.expense)<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(c.income+c.expense))}</span>
+      <span style="color:${val<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(val)}</span>
     </div>
-  `).join("");
+    ${cmpHtml}
+  `;}).join("");
   const voyRowsHtml = list=>list.map(c=>`
     <div class="detail-row budget-voy-row" data-voy="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
@@ -3253,15 +3519,18 @@ function groupCardHtml(title, res, isMain, divisor){
     </div>
   `).join("");
   const catSplit = splitIncomeExpense(res.categories);
+  const cardNet = dv(res.net);
+  const cardCmpHtml = compareCtx ? compareSubRowHtml(cardNet, compareGroupTotal(compareCtx, title)) : "";
   return `
     <div class="card" style="margin-bottom:12px;">
       <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;padding:0 0 4px;">
         <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
         <span style="display:flex;align-items:baseline;gap:6px;">
           <span style="font-size:9.5px;font-weight:700;color:var(--text-sub);text-transform:uppercase;letter-spacing:.3px;">Total</span>
-          <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(res.net))}</span>
+          <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(cardNet)}</span>
         </span>
       </div>
+      ${cardCmpHtml}
       ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}) : ""}
       ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}) : ""}
       ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : ""}
@@ -3312,6 +3581,8 @@ function renderBudget(){
   // continuent d'afficher le total réel de la période, jamais une moyenne.
   const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
   const dv = n => n/divisor;
+  const compareCtx = computeCompareContext(months);
+  const grandCmpHtml = compareCtx ? compareSubRowHtml(dv(grandNet), allGroupNames.reduce((s,g)=>s+compareGroupTotal(compareCtx,g),0)) : "";
 
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
@@ -3364,6 +3635,7 @@ function renderBudget(){
           ${accountExcludeHtml()}
           ${cfg.mode==="amorti" ? amortSettingsHtml() : ""}
           ${adjustmentsSectionHtml()}
+          ${compareSettingsHtml()}
         </div>
       </details>
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
@@ -3374,12 +3646,13 @@ function renderBudget(){
             <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandNet))}</span>
           </span>
         </div>
+        ${grandCmpHtml}
         <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoneySigned(dv(grandCatIncome))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoneySigned(dv(grandCatExpense))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Voyage" style="cursor:pointer;"><span>Voyages</span><span style="color:${grandVoyNet<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(grandVoyNet))}</span></div>
       </div>
-      ${groupCardHtml(cfg.mainGroup, mainRes, true, divisor)}
-      ${extraResults.map(e=>groupCardHtml(e.name, e.res, false, divisor)).join("")}
+      ${groupCardHtml(cfg.mainGroup, mainRes, true, divisor, compareCtx)}
+      ${extraResults.map(e=>groupCardHtml(e.name, e.res, false, divisor, compareCtx)).join("")}
       <div style="height:10px;"></div>
     </div>
   `;
@@ -3445,6 +3718,7 @@ function renderBudget(){
   wireAccountExclude();
   if(cfg.mode==="amorti") wireAmortSettings();
   wireAdjustmentsSection();
+  wireCompareSettings();
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
     el.onclick = ()=>{
       if(isSalaryCategory(el.dataset.cat)) openSalaryEditor(el.dataset.supergroupe, el.dataset.cat);
@@ -4471,7 +4745,10 @@ function applyParamsImport(params, mode){
   const budgetAdjustments = params.budgetAdjustments || [];
   const budgetSettings = params.budgetSettings || null;
   const salaryEntries = params.salaryEntries || null;
+  const compareSettings = params.compareSettings || null;
+  const comparePredefined = params.comparePredefined || null;
   Store.settings.budget = Store.settings.budget || {};
+  Store.settings.budget.compare = Store.settings.budget.compare || {enabled:false, mode:"period", periodFrom:null, periodTo:null, predefined:{}};
   if(mode==="replace"){
     Store.settings.groupAliasRules = groupRules.slice();
     Store.settings.personAliasRules = personRules.slice();
@@ -4495,6 +4772,17 @@ function applyParamsImport(params, mode){
       });
     }
     if(salaryEntries) Store.settings.budget.salaryEntries = Object.assign({}, salaryEntries);
+    if(compareSettings){
+      Store.settings.budget.compare = {
+        enabled: !!compareSettings.enabled,
+        mode: compareSettings.mode==="predefined" ? "predefined" : "period",
+        periodFrom: compareSettings.periodFrom || null,
+        periodTo: compareSettings.periodTo || null,
+        predefined: Object.assign({}, comparePredefined || {})
+      };
+    } else if(comparePredefined){
+      Store.settings.budget.compare.predefined = Object.assign({}, comparePredefined);
+    }
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
@@ -4538,6 +4826,22 @@ function applyParamsImport(params, mode){
       if(!localSal[month]) localSal[month] = salaryEntries[month];
     });
   }
+  // Comparaison : réglages (activé/mode/période comparée) uniquement s'ils ne sont pas déjà configurés
+  // localement ; budget prédéfini fusionné clé par clé, sans écraser une valeur déjà saisie localement.
+  if(compareSettings && compareSettings.enabled && !Store.settings.budget.compare.periodFrom && !Store.settings.budget.compare.enabled){
+    const c = Store.settings.budget.compare;
+    c.enabled = true;
+    c.mode = compareSettings.mode==="predefined" ? "predefined" : "period";
+    c.periodFrom = compareSettings.periodFrom || null;
+    c.periodTo = compareSettings.periodTo || null;
+  }
+  if(comparePredefined){
+    const localPredef = Store.settings.budget.compare.predefined || {};
+    Object.keys(comparePredefined).forEach(key=>{
+      if(localPredef[key]==null) localPredef[key] = comparePredefined[key];
+    });
+    Store.settings.budget.compare.predefined = localPredef;
+  }
 
   return {rulesAdded, personRulesAdded, acctAdded};
 }
@@ -4551,7 +4855,8 @@ function renderImportSummary(){
   const hasTxns = r.txns.length>0;
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
     Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length || Object.keys(r.params.categoryTypeOverride||{}).length ||
-    (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || Object.keys(r.params.salaryEntries||{}).length));
+    (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || Object.keys(r.params.salaryEntries||{}).length ||
+    (r.params.compareSettings && r.params.compareSettings.enabled) || Object.keys(r.params.comparePredefined||{}).length));
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
@@ -4612,7 +4917,7 @@ function renderImportSummary(){
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
         ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
-        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}${Object.keys(r.params.comparePredefined||{}).length || (r.params.compareSettings && r.params.compareSettings.enabled) ? " · comparaison incluse" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
@@ -4712,7 +5017,14 @@ function buildParamsPayload(){
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
     },
-    salaryEntries: Object.assign({}, budget.salaryEntries || {})
+    salaryEntries: Object.assign({}, budget.salaryEntries || {}),
+    compareSettings: {
+      enabled: !!(budget.compare && budget.compare.enabled),
+      mode: (budget.compare && budget.compare.mode) || null,
+      periodFrom: (budget.compare && budget.compare.periodFrom) || null,
+      periodTo: (budget.compare && budget.compare.periodTo) || null,
+    },
+    comparePredefined: Object.assign({}, (budget.compare && budget.compare.predefined) || {})
   };
 }
 
@@ -4803,6 +5115,24 @@ function exportExcel(scope){
     const salHeader = ["Mois","Moi","Ma femme"];
     const salData = [salHeader].concat(salEntries.map(([month, e])=>[month, e.moi==null?"":e.moi, e.femme==null?"":e.femme]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salData), "Budget_Salaires");
+
+    const cmp = b.compare || {};
+    const cmpData = [
+      ["Réglage","Valeur"],
+      ["Activée", cmp.enabled ? "Oui" : "Non"],
+      ["Mode", cmp.mode==="predefined" ? "Budget prédéfini" : "Autre période"],
+      ["Période comparée - de", cmp.periodFrom||""],
+      ["Période comparée - à", cmp.periodTo||""],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cmpData), "Budget_Comparaison");
+
+    const predefEntries = Object.entries(cmp.predefined || {}).sort((x,y)=>x[0].localeCompare(y[0]));
+    const predefHeader = ["Clé","Groupe","Catégorie","Montant mensuel"];
+    const predefData = [predefHeader].concat(predefEntries.map(([key, montant])=>{
+      const parts = key.split("::cat::");
+      return [key, parts[0]||"", parts.length>1?parts[1]:"", montant];
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(predefData), "Budget_Predefini");
   }
 
   const stamp = U.toISO(new Date());
