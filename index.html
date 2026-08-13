@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.12.22.00";
+const APP_VERSION = "v 2026.08.12.22.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -3569,7 +3569,7 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   if(compareCtx){
     cmpIncome = catSplit.income.reduce((s,c)=>s+compareCategoryTotal(compareCtx, title, c.key), 0);
     cmpExpense = catSplit.expense.reduce((s,c)=>s+compareCategoryTotal(compareCtx, title, c.key), 0);
-    cmpVoyage = res.voyages.length ? compareVoyageTotal(compareCtx, title) : 0;
+    cmpVoyage = compareVoyageTotal(compareCtx, title);
     cmp = {income: cmpIncome, expense: cmpExpense, voyage: cmpVoyage, total: cmpIncome+cmpExpense+cmpVoyage};
   }
   const headerHtml = compareCtx ? compareHeaderRowHtml() : "";
@@ -3587,12 +3587,21 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
         </span>
       </div>
   `;
+  /* Voyages : jamais détaillés voyage par voyage en vue comparaison — un total unique, toujours affiché
+     (même à 0/0), pour permettre d'éditer le budget prédéfini des voyages même hors saison. Hors vue
+     comparaison, comportement inchangé : liste détaillée, uniquement si des voyages existent sur la
+     période affichée. */
+  const voyagesHtml = compareCtx ? `
+      <div class="bg-section-total" data-supergroupe="${U.escHtml(title)}" data-type="Voyage" style="cursor:pointer;margin-top:8px;">
+        ${compareRowHtml("Total voyages", dv(res.voyNet), cmpVoyage, {big:false})}
+      </div>
+  ` : (res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : "");
   const html = `
     <div class="card" style="margin-bottom:12px;">
       ${titleRowHtml}
       ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}, compareCtx?cmpIncome:null) : ""}
       ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}, compareCtx?cmpExpense:null) : ""}
-      ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}, compareCtx?cmpVoyage:null) : ""}
+      ${voyagesHtml}
     </div>
   `;
   return {html, cmp};
