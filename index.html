@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.13.16.00";
+const APP_VERSION = "v 2026.08.13.16.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -698,6 +698,7 @@ const Store = {
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
     if(b.mode!=="amorti" && b.mode!=="brut" && b.mode!=="brut_ajout") b.mode = "amorti";
     if(b.startMonth===undefined) b.startMonth = null;
+    if(b.endMonth===undefined) b.endMonth = null;
     if(b.mainGroup===undefined) b.mainGroup = null;
     if(!Array.isArray(b.extraGroups)) b.extraGroups = [];
     if(!Array.isArray(b.amortCategories)) b.amortCategories = [];
@@ -910,6 +911,7 @@ function parseParametresSheet(wb){
       mode: map["mode"] ? String(map["mode"]).trim() : null,
       scope: map["vue (perso/couple)"] ? String(map["vue (perso/couple)"]).trim() : null,
       startMonth: map["mois de debut"] ? String(map["mois de debut"]).trim() : null,
+      endMonth: map["dernier mois"] ? String(map["dernier mois"]).trim() : null,
       mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
       extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
@@ -2696,6 +2698,16 @@ function amortWindowMonths(months, periodMonths){
   const windowEnd = addMonthsToKey(cfg.startMonth, periodMonths-1);
   return months.filter(m=> m>=cfg.startMonth && m<=windowEnd);
 }
+/* Mois de la période affichée qui tombent dans la borne chronologique de l'amortissement (["Mois de
+   début", "Dernier mois"], l'une ou l'autre pouvant être vide). Utilisé pour le diviseur de la vue
+   "Moyenne / mois" — quel que soit le mode (Amort., Ajouts ou Brut), les mois hors bornes ne comptent pas
+   dans la moyenne, tout comme leurs dépenses sont amorties d'office hors de ces bornes. Sans bornes
+   configurées, retombe sur la période affichée complète (comportement d'origine). */
+function amortBoundedMonths(months){
+  const cfg = Store.settings.budget;
+  if(!cfg.startMonth && !cfg.endMonth) return months;
+  return months.filter(m => (!cfg.startMonth || m>=cfg.startMonth) && (!cfg.endMonth || m<=cfg.endMonth));
+}
 
 /* ---------------- Moteur de calcul du budget ---------------- */
 /* Calcule, pour un "groupe de groupe" donné (nom affiché résolu) et une période [from,to] (mois inclus),
@@ -2855,10 +2867,13 @@ function computeGroupBudget(superGroupeName, months, opts){
     // "quotidien" : par catégorie, date corrigée, avec gestion des catégories amorties
     const cat = t.categorie || "(Non renseigné)";
     const tr = t.transform;
-    // Une dépense antérieure au mois de début est elle aussi considérée comme amortie (peu importe sa catégorie)
+    // Une dépense en dehors de la borne chronologique définie (avant "Mois de début" OU après "Dernier
+    // mois") est elle aussi considérée comme amortie, peu importe sa catégorie — même mécanisme des deux
+    // côtés de la fenêtre.
     const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
     const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
-    const amortized = isAmorti && (amortSet.has(cat) || beforeStart);
+    const afterEnd = cfg.endMonth && effMonthKey > cfg.endMonth;
+    const amortized = isAmorti && (amortSet.has(cat) || beforeStart || afterEnd);
     function addToMonth(key, weight){
       if(!monthSet.has(key)) return;
       const o = ensureCat(cat);
@@ -3315,9 +3330,14 @@ function amortSettingsHtml(){
         <input type="month" class="search-mini" id="bg-startmonth" value="${U.escHtml(cfg.startMonth||'')}" style="margin:0;">
       </div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
-        <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;">
+        <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Dernier mois</div>
+        <input type="month" class="search-mini" id="bg-endmonth" value="${U.escHtml(cfg.endMonth||'')}" style="margin:0;">
       </div>
+    </div>
+    <div style="font-size:10.5px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Les dépenses en dehors de ces bornes (avant "Mois de début" ou après "Dernier mois") sont amorties d'office, quelle que soit leur catégorie. La vue "Moyenne / mois" ne divise que par les mois de la période affichée compris entre ces deux bornes — quel que soit le mode (Amort., Ajouts ou Brut).</div>
+    <div style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
+      <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;max-width:160px;">
     </div>
     ${cats.length ? `
     <div style="margin-top:14px;">
@@ -3329,7 +3349,17 @@ function amortSettingsHtml(){
 function wireAmortSettings(afterChange){
   const cfg = Store.settings.budget;
   const startEl = document.getElementById("bg-startmonth");
-  if(startEl) startEl.onchange = (e)=>{ cfg.startMonth = e.target.value || null; Store.saveSettings(); renderBudget(); if(afterChange) afterChange(); };
+  if(startEl) startEl.onchange = (e)=>{
+    cfg.startMonth = e.target.value || null;
+    if(cfg.startMonth && cfg.endMonth && cfg.startMonth>cfg.endMonth) cfg.endMonth = cfg.startMonth;
+    Store.saveSettings(); renderBudget(); if(afterChange) afterChange();
+  };
+  const endEl = document.getElementById("bg-endmonth");
+  if(endEl) endEl.onchange = (e)=>{
+    cfg.endMonth = e.target.value || null;
+    if(cfg.startMonth && cfg.endMonth && cfg.endMonth<cfg.startMonth) cfg.startMonth = cfg.endMonth;
+    Store.saveSettings(); renderBudget(); if(afterChange) afterChange();
+  };
   const perEl = document.getElementById("bg-amortperiod");
   if(perEl) perEl.onchange = (e)=>{ cfg.amortPeriodMonths = Number(e.target.value) || null; Store.saveSettings(); renderBudget(); if(afterChange) afterChange(); };
   document.querySelectorAll(".bg-amort-item[data-c]").forEach(el=>{
@@ -3829,10 +3859,11 @@ function renderBudget(){
 
   const selectedExtra = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup);
   const allGroupNames = [cfg.mainGroup].concat(selectedExtra);
-  // Moyenne = totaux divisés par le nombre de mois de la période affichée. N'affecte que les vues
-  // d'ensemble (cartes/lignes ci-dessous) ; les feuilles de détail (catégorie, voyage, transactions)
+  // Moyenne = totaux divisés par le nombre de mois de la période affichée compris dans la borne
+  // chronologique de l'amortissement (voir amortBoundedMonths) — quel que soit le mode. N'affecte que les
+  // vues d'ensemble (cartes/lignes ci-dessous) ; les feuilles de détail (catégorie, voyage, transactions)
   // continuent d'afficher le total réel de la période, jamais une moyenne.
-  const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
+  const divisor = cfg.displayMode==="moyenne" ? (amortBoundedMonths(months).length || 1) : 1;
   const dv = n => n/divisor;
   const compareCtx = computeCompareContext(months);
 
@@ -4033,7 +4064,8 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     const tr = t.transform;
     const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
     const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
-    const amortized = isAmorti && (amortSet.has(cat) || beforeStart);
+    const afterEnd = cfg.endMonth && effMonthKey > cfg.endMonth;
+    const amortized = isAmorti && (amortSet.has(cat) || beforeStart || afterEnd);
     if(amortized){
       // Toute transaction éligible (même très ancienne) alimente l'amortissement, mais sa contribution
       // affichée est nulle si la période actuellement affichée ne recoupe pas la fenêtre d'amortissement
@@ -4406,7 +4438,8 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
     const tr = t.transform;
     const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
     const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
-    const amortized = isAmortForName(matchedName) && (amortSet.has(cat) || beforeStart);
+    const afterEnd = cfg.endMonth && effMonthKey > cfg.endMonth;
+    const amortized = isAmortForName(matchedName) && (amortSet.has(cat) || beforeStart || afterEnd);
     if(amortized){
       if(windowN<=0) return;
       const displayAmount = (t.montant/periodMonths)*windowN*scopeMult;
@@ -4973,6 +5006,7 @@ function applyParamsImport(params, mode){
         mode: budgetSettings.mode || Store.settings.budget.mode,
         scope: budgetSettings.scope || Store.settings.budget.scope,
         startMonth: budgetSettings.startMonth,
+        endMonth: budgetSettings.endMonth,
         mainGroup: budgetSettings.mainGroup,
         extraGroups: (budgetSettings.extraGroups || []).slice(),
         extraGroupPeriods: Object.assign({}, budgetSettings.extraGroupPeriods || {}),
@@ -5024,6 +5058,7 @@ function applyParamsImport(params, mode){
     if(!b.mode && budgetSettings.mode) b.mode = budgetSettings.mode;
     if(!b.scope && budgetSettings.scope) b.scope = budgetSettings.scope;
     if(!b.startMonth && budgetSettings.startMonth) b.startMonth = budgetSettings.startMonth;
+    if(!b.endMonth && budgetSettings.endMonth) b.endMonth = budgetSettings.endMonth;
     if((!b.extraGroups || !b.extraGroups.length) && (budgetSettings.extraGroups||[]).length) b.extraGroups = budgetSettings.extraGroups.slice();
     if((!b.amortCategories || !b.amortCategories.length) && (budgetSettings.amortCategories||[]).length) b.amortCategories = budgetSettings.amortCategories.slice();
     if(!b.amortPeriodMonths && budgetSettings.amortPeriodMonths) b.amortPeriodMonths = budgetSettings.amortPeriodMonths;
@@ -5228,6 +5263,7 @@ function buildParamsPayload(){
       mode: budget.mode || null,
       scope: budget.scope || null,
       startMonth: budget.startMonth || null,
+      endMonth: budget.endMonth || null,
       mainGroup: budget.mainGroup || null,
       extraGroups: (budget.extraGroups || []).slice(),
       extraGroupPeriods: Object.assign({}, budget.extraGroupPeriods || {}),
@@ -5321,6 +5357,7 @@ function exportExcel(scope){
       ["Mode", b.mode||""],
       ["Vue (perso/couple)", b.scope||""],
       ["Mois de début", b.startMonth||""],
+      ["Dernier mois", b.endMonth||""],
       ["Groupe de groupe principal", b.mainGroup||""],
       ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
       ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
