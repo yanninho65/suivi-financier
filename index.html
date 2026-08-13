@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.13.10.30";
+const APP_VERSION = "v 2026.08.13.15.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2609,7 +2609,7 @@ function bgFmtMoneySigned(n){
   return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}) + " €";
 }
 /* Mois en format court ("sept. 2026" plutôt que "septembre 2026"), utilisé partout dans cet onglet. */
-function fmtMonthYearShort(y,m){ return U.MONTHS_FR_SHORT[m]+" "+y; }
+function fmtMonthYearShort(y,m){ return U.MONTHS_FR_SHORT[m]+" "+String(y).slice(2); }
 /* Liste de pilules One UI cliquables (sélection multiple, plusieurs par ligne) pour remplacer les listes à
    cases à cocher dans cet onglet (comptes exclus, catégories amorties). */
 function pillToggleListHtml(items, selectedSet, dataAttr, extraClass){
@@ -2629,8 +2629,6 @@ function budgetToolButtonHtml(id, label, sublabel){
 
 /* état local de la vue (période affichée) */
 let periodFrom = null, periodTo = null; // "YYYY-MM"
-let acctExcludeSectionOpen = false;
-let filtersSectionOpen = true;
 /* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
    amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
 function isAccountExcluded(compte){
@@ -2641,8 +2639,10 @@ function isAccountExcluded(compte){
 /* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
    clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
    les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
-const groupSectionOpenState = new Map();
-function isGroupSectionOpen(key){ return groupSectionOpenState.has(key) ? groupSectionOpenState.get(key) : true; }
+/* Un seul état partagé pour toutes les sections Revenus/Dépenses/Voyages de toutes les cartes : grouper ou
+   dégrouper l'une d'elles grouper/dégroupe tout le reste en même temps (cf. wiring de .bg-cv-section). */
+let allSectionsOpen = true;
+function isGroupSectionOpen(){ return allSectionsOpen; }
 function ensurePeriod(){
   if(periodFrom && periodTo) return;
   const saved = Store.settings.budget || {};
@@ -3360,42 +3360,50 @@ function openAmortSheet(){
 }
 
 /* ---------------- Comptes exclus : ignorés par tous les calculs du Budget ---------------- */
+/* Contenu (sans habillage carte/popup) de la sélection des comptes exclus — affiché dans le pop-up dédié
+   (openAccountExcludeSheet). */
 function accountExcludeHtml(){
   const cfg = Store.settings.budget;
   const accounts = AGG.distinctValues(Store.transactions, "compte").map(a=>a.value).sort((a,b)=>a.localeCompare(b,'fr'));
-  if(!accounts.length) return "";
   const excluded = new Set(cfg.excludedAccounts||[]);
+  if(!accounts.length) return `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun compte.</div>`;
   return `
-    <details id="bg-acctexcl-details" class="card" style="margin:0 4px 14px;padding:0;" ${acctExcludeSectionOpen?'open':''}>
-      <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:14px;font-weight:800;">Comptes exclus</span>
-        <span style="font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:5px;">
-          ${excluded.size ? excluded.size+" exclu"+(excluded.size>1?"s":"") : "Aucun"}
-          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
-        </span>
-      </summary>
-      <div style="padding:0 14px 14px;">
-        <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Les transactions des comptes cochés sont totalement ignorées dans le Budget (cartes, catégories, voyages, amortissement, salaire).</div>
-        ${pillToggleListHtml(accounts, excluded, "a", "bg-acctexcl-item")}
-      </div>
-    </details>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Les transactions des comptes sélectionnés sont totalement ignorées dans le Budget (cartes, catégories, voyages, amortissement, salaire).</div>
+    ${pillToggleListHtml(accounts, excluded, "a", "bg-acctexcl-item")}
   `;
 }
-function wireAccountExclude(){
-  const outer = document.getElementById("bg-acctexcl-details");
-  if(outer) outer.addEventListener("toggle", function(){ acctExcludeSectionOpen = this.open; });
+function wireAccountExclude(afterChange){
   const cfg = Store.settings.budget;
   document.querySelectorAll(".bg-acctexcl-item[data-a]").forEach(el=>{
     el.onclick = ()=>{
-      acctExcludeSectionOpen = true;
       const a = el.dataset.a;
       const set = new Set(cfg.excludedAccounts||[]);
       if(set.has(a)) set.delete(a); else set.add(a);
       cfg.excludedAccounts = Array.from(set);
       Store.saveSettings();
       renderBudget();
+      if(afterChange) afterChange();
     };
   });
+}
+/* Pop-up dédié : Comptes exclus (pilules One UI). */
+function openAccountExcludeSheet(){
+  function render(){
+    const modal = document.getElementById("modal-detail");
+    const prevScroll = modal.scrollTop;
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:800;font-size:17px;">Comptes exclus</span>
+        <button class="icon-btn" id="acctsheet-close">${ICONS.close}</button>
+      </div>
+      <div style="max-height:70vh;overflow-y:auto;">${accountExcludeHtml()}</div>
+    `;
+    modal.scrollTop = prevScroll;
+    document.getElementById("acctsheet-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
+    wireAccountExclude(render);
+  }
+  render();
+  APP.openOverlay("overlay-detail");
 }
 
 /* ---------------- Ajustements manuels : section sur la page principale du Budget ---------------- */
@@ -3614,7 +3622,7 @@ function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv, click
 function fmtBoundMonth(ym){
   if(!ym) return null;
   const parts = ym.split("-").map(Number);
-  return U.MONTHS_FR_SHORT[parts[1]-1]+" "+String(parts[0]).slice(2);
+  return fmtMonthYearShort(parts[0], parts[1]-1);
 }
 function groupCardHtml(title, res, isMain, divisor, compareCtx){
   divisor = divisor || 1;
@@ -3832,42 +3840,41 @@ function renderBudget(){
     total: acc.total + (c.cmp?c.cmp.total:0)
   }), {income:0, expense:0, voyage:0, total:0}) : null;
 
+  const cmp = cfg.compare;
+  const cmpSublabel = !cmp.enabled ? "Désactivée"
+    : cmp.mode==="predefined" ? "Budget prédéfini"
+    : (cmp.periodFrom && cmp.periodTo) ? (fmtBoundMonth(cmp.periodFrom)+" → "+fmtBoundMonth(cmp.periodTo))
+    : "Autre période";
+
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
-      <details id="bg-filters-details" class="card" style="margin:0 4px 14px;padding:0;" ${filtersSectionOpen?'open':''}>
-        <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
-          <span style="font-size:14px;font-weight:800;">Filtres et critères</span>
-          <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;"><path d="M6 9l6 6 6-6"/></svg>
-        </summary>
-        <div style="padding:0 10px 14px;">
-          <div style="display:flex;gap:8px;margin:0 0 10px;">
-            <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.7;">
-              <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
-              <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Sans amort, avec ajout</button>
-              <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
-            </div>
+      <div class="card" style="margin:0 4px 14px;padding:14px;">
+        <div style="display:flex;gap:8px;margin:0 0 10px;">
+          <div class="seg seg-sm" id="bg-mode-seg" style="flex:1.7;">
+            <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
+            <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Ajouts</button>
+            <button data-m="brut" class="${cfg.mode==='brut'?'active':''}">Brut</button>
           </div>
-          <div style="display:flex;gap:8px;margin:0 0 10px;">
-            <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
-              <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
-              <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
-            </div>
-            <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
-              <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
-              <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
-            </div>
-          </div>
-
-          ${periodPickerHtml()}
-          ${accountExcludeHtml()}
         </div>
-      </details>
-      <div style="display:flex;gap:8px;margin:0 4px 14px;">
+        <div style="display:flex;gap:8px;margin:0 0 10px;">
+          <div class="seg seg-sm" id="bg-scope-seg" style="flex:1;">
+            <button data-v="perso" class="${cfg.scope==='perso'?'active':''}">Perso</button>
+            <button data-v="couple" class="${cfg.scope==='couple'?'active':''}">Couple</button>
+          </div>
+          <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
+            <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
+            <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
+          </div>
+        </div>
+        ${periodPickerHtml()}
+      </div>
+      <div style="display:flex;gap:6px;margin:0 4px 14px;">
         ${budgetToolButtonHtml("bg-amort-open-btn", "Amortissement", cfg.mode==="amorti" ? ((cfg.amortCategories||[]).length+" catégorie"+((cfg.amortCategories||[]).length>1?"s":"")) : "Inactif (mode Brut)")}
         ${budgetToolButtonHtml("bg-adj-open-btn", "Ajustements", adjustmentsInPeriod().length ? (adjustmentsInPeriod().length+" sur la période") : "Aucun")}
-        ${budgetToolButtonHtml("bg-cmp-open-btn", "Comparaison", cfg.compare.enabled ? (cfg.compare.mode==="predefined"?"Budget prédéfini":"Autre période") : "Désactivée")}
+        ${budgetToolButtonHtml("bg-cmp-open-btn", "Comparaison", cmpSublabel)}
+        ${budgetToolButtonHtml("bg-acctexcl-open-btn", "Comptes exclus", (cfg.excludedAccounts||[]).length ? (cfg.excludedAccounts.length+" exclu"+(cfg.excludedAccounts.length>1?"s":"")) : "Aucun")}
       </div>
-      <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
+      <div class="card" style="margin-bottom:14px;">
         ${compareCtx ? `
         ${compareHeaderRowHtml()}
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
@@ -3884,10 +3891,10 @@ function renderBudget(){
         </div>
         ` : `
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;padding:0 0 4px;">
-          <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
+          <span style="font-weight:800;font-size:16px;">Total tous groupes</span>
           <span style="display:flex;align-items:baseline;gap:6px;">
-            <span style="font-size:9.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.3px;opacity:.7;">Total</span>
-            <span style="font-weight:800;font-size:16px;color:var(--primary);">${bgFmtMoneySigned(dv(grandNet))}</span>
+            <span style="font-size:9.5px;font-weight:700;color:var(--text-sub);text-transform:uppercase;letter-spacing:.3px;">Total</span>
+            <span style="font-weight:800;font-size:16px;color:${grandNet<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(dv(grandNet))}</span>
           </span>
         </div>
         <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${bgFmtMoneySigned(dv(grandCatIncome))}</span></div>
@@ -3930,6 +3937,7 @@ function renderBudget(){
     else openAdjustmentForm(null);
   };
   document.getElementById("bg-cmp-open-btn").onclick = openCompareSheet;
+  document.getElementById("bg-acctexcl-open-btn").onclick = openAccountExcludeSheet;
   document.getElementById("bg-newgroup-btn").onclick = ()=>{
     const exclude = new Set([cfg.mainGroup].concat(selectedExtra));
     PICKER.openPicker({
@@ -3961,9 +3969,6 @@ function renderBudget(){
   });
   document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
   document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
-  const filtersDetails = document.getElementById("bg-filters-details");
-  if(filtersDetails) filtersDetails.addEventListener("toggle", function(){ filtersSectionOpen = this.open; });
-  wireAccountExclude();
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
     el.onclick = ()=>{
       if(isSalaryCategory(el.dataset.cat)) openSalaryEditor(el.dataset.supergroupe, el.dataset.cat);
@@ -3987,7 +3992,12 @@ function renderBudget(){
     };
   });
   document.querySelectorAll(".bg-cv-section[data-section-key]").forEach(el=>{
-    el.addEventListener("toggle", function(){ groupSectionOpenState.set(this.dataset.sectionKey, this.open); });
+    el.addEventListener("toggle", function(){
+      allSectionsOpen = this.open;
+      document.querySelectorAll(".bg-cv-section[data-section-key]").forEach(other=>{
+        if(other!==this) other.open = this.open;
+      });
+    });
   });
 }
 
