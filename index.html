@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.12.20.29";
+const APP_VERSION = "v 2026.08.12.21.21";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -3006,21 +3006,41 @@ function compareCategoryTotal(ctx, groupName, catKey){
   const c = r.categories.find(x=>x.key===catKey);
   return c ? (c.income+c.expense)/ctx.divisor : 0;
 }
-/* Ligne d'info compacte affichée sous une ligne principale quand la comparaison est active : montant
-   comparé, variation en valeur (Résultat - Comparé) et en %. Couleur : vert si la variation va dans le
-   sens d'un solde plus favorable (peu importe qu'il s'agisse d'un revenu ou d'une dépense), rouge sinon. */
-function compareSubRowHtml(resultVal, compareVal){
+/* Tableau à quatre colonnes (Résultat / Comparé / Variation / %) affiché quand la comparaison est active.
+   BG_CMP_COLS fixe les proportions des colonnes, partagées entre l'en-tête (compareHeaderRowHtml, affiché
+   une fois en haut de chaque carte/bloc) et chaque ligne de valeurs (compareGridRowHtml). Couleur de la
+   variation : vert si le solde évolue favorablement (Résultat - Comparé > 0), rouge sinon, peu importe
+   qu'il s'agisse d'un revenu ou d'une dépense (montants nets signés). */
+const BG_CMP_COLS = "1.15fr 1.05fr 1.1fr 0.78fr";
+function compareHeaderRowHtml(){
+  const th = (t)=>`<span style="font-size:9px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.2px;text-align:right;">${t}</span>`;
+  return `<div style="display:grid;grid-template-columns:${BG_CMP_COLS};gap:5px;padding:0 0 3px;">${th("Résultat")}${th("Comparé")}${th("Variation")}${th("%")}</div>`;
+}
+function compareGridRowHtml(resultVal, compareVal){
   const diff = resultVal - compareVal;
   const pct = compareVal!==0 ? (diff/Math.abs(compareVal))*100 : (diff===0 ? 0 : null);
   const pctTxt = pct===null ? "—" : (pct>=0?"+":"")+pct.toLocaleString('fr-FR',{maximumFractionDigits:1,minimumFractionDigits:0})+"%";
   const color = diff>0 ? "var(--income)" : diff<0 ? "var(--expense)" : "var(--text-sub)";
   return `
-    <div class="bg-compare-sub" style="display:flex;justify-content:flex-end;align-items:baseline;gap:7px;font-size:10.5px;color:var(--text-sub);padding:0 0 5px;">
-      <span>vs ${U.fmtMoney(compareVal)}</span>
-      <span style="color:${color};font-weight:800;">${U.fmtMoneySigned(diff)} · ${pctTxt}</span>
+    <div style="display:grid;grid-template-columns:${BG_CMP_COLS};gap:5px;align-items:baseline;">
+      <span style="font-size:11.5px;font-weight:800;text-align:right;color:${resultVal<0?'var(--expense)':'var(--income)'};">${U.fmtMoneySigned(resultVal)}</span>
+      <span style="font-size:11px;font-weight:600;text-align:right;color:var(--text-sub);">${U.fmtMoney(compareVal)}</span>
+      <span style="font-size:11px;font-weight:800;text-align:right;color:${color};">${U.fmtMoneySigned(diff)}</span>
+      <span style="font-size:11px;font-weight:800;text-align:right;color:${color};">${pctTxt}</span>
     </div>
   `;
 }
+/* Bloc complet d'une ligne comparée : libellé sur sa propre ligne, puis le tableau à 4 colonnes en dessous
+   (sans répéter l'en-tête — celui-ci n'est affiché qu'une fois en haut du bloc/carte qui contient la ligne). */
+function compareRowBlockHtml(label, resultVal, compareVal, big){
+  return `
+    <div style="margin-bottom:3px;">
+      <span style="font-weight:${big?800:700};font-size:${big?'15.5px':'13.5px'};">${U.escHtml(label)}</span>
+    </div>
+    ${compareGridRowHtml(resultVal, compareVal)}
+  `;
+}
+
 
 /* ---------------- Rendu ---------------- */
 function candidateSuperGroupes(){
@@ -3504,13 +3524,17 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   const dv = n => n/divisor;
   const catRowsHtml = list=>list.map(c=>{
     const val = dv(c.income+c.expense);
-    const cmpHtml = compareCtx ? compareSubRowHtml(val, compareCategoryTotal(compareCtx, title, c.key)) : "";
+    if(compareCtx){
+      return `
+      <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;display:block;padding:8px 2px;">
+        ${compareRowBlockHtml(c.label||c.key, val, compareCategoryTotal(compareCtx, title, c.key), false)}
+      </div>`;
+    }
     return `
     <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
       <span>${U.escHtml(c.label||c.key)}</span>
       <span style="color:${val<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(val)}</span>
     </div>
-    ${cmpHtml}
   `;}).join("");
   const voyRowsHtml = list=>list.map(c=>`
     <div class="detail-row budget-voy-row" data-voy="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;">
@@ -3520,9 +3544,13 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   `).join("");
   const catSplit = splitIncomeExpense(res.categories);
   const cardNet = dv(res.net);
-  const cardCmpHtml = compareCtx ? compareSubRowHtml(cardNet, compareGroupTotal(compareCtx, title)) : "";
-  return `
-    <div class="card" style="margin-bottom:12px;">
+  const headerHtml = compareCtx ? compareHeaderRowHtml() : "";
+  const titleRowHtml = compareCtx ? `
+      ${headerHtml}
+      <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
+        ${compareRowBlockHtml(title, cardNet, compareGroupTotal(compareCtx, title), true)}
+      </div>
+  ` : `
       <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;padding:0 0 4px;">
         <span style="font-weight:800;font-size:15.5px;">${U.escHtml(title)}</span>
         <span style="display:flex;align-items:baseline;gap:6px;">
@@ -3530,7 +3558,10 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
           <span style="font-weight:800;font-size:15.5px;color:${res.net<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(cardNet)}</span>
         </span>
       </div>
-      ${cardCmpHtml}
+  `;
+  return `
+    <div class="card" style="margin-bottom:12px;">
+      ${titleRowHtml}
       ${catSplit.income.length ? collapsibleRowsHtml(title+"::cat::income", "Revenus", "var(--income)", catSplit.income, catRowsHtml, dv, {supergroupe:title, type:"Income"}) : ""}
       ${catSplit.expense.length ? collapsibleRowsHtml(title+"::cat::expense", "Dépenses", "var(--expense)", catSplit.expense, catRowsHtml, dv, {supergroupe:title, type:"Expense"}) : ""}
       ${res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}) : ""}
@@ -3582,7 +3613,6 @@ function renderBudget(){
   const divisor = cfg.displayMode==="moyenne" ? months.length : 1;
   const dv = n => n/divisor;
   const compareCtx = computeCompareContext(months);
-  const grandCmpHtml = compareCtx ? compareSubRowHtml(dv(grandNet), allGroupNames.reduce((s,g)=>s+compareGroupTotal(compareCtx,g),0)) : "";
 
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
@@ -3639,6 +3669,12 @@ function renderBudget(){
         </div>
       </details>
       <div class="card" style="margin-bottom:14px;background:var(--primary-soft);box-shadow:none;">
+        ${compareCtx ? `
+        ${compareHeaderRowHtml()}
+        <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
+          ${compareRowBlockHtml("Total tous groupes", dv(grandNet), allGroupNames.reduce((s,g)=>s+compareGroupTotal(compareCtx,g),0), true)}
+        </div>
+        ` : `
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;padding:0 0 4px;">
           <span style="font-weight:800;font-size:16px;color:var(--primary);">Total tous groupes</span>
           <span style="display:flex;align-items:baseline;gap:6px;">
@@ -3646,7 +3682,7 @@ function renderBudget(){
             <span style="font-weight:800;font-size:16px;color:var(--primary);">${U.fmtMoneySigned(dv(grandNet))}</span>
           </span>
         </div>
-        ${grandCmpHtml}
+        `}
         <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;"><span>Revenus</span><span style="color:var(--income);">${U.fmtMoneySigned(dv(grandCatIncome))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;"><span>Dépenses</span><span style="color:var(--expense);">${U.fmtMoneySigned(dv(grandCatExpense))}</span></div>
         <div class="detail-row bg-typetxn-all-row" data-type="Voyage" style="cursor:pointer;"><span>Voyages</span><span style="color:${grandVoyNet<0?'var(--expense)':'var(--income)'}">${U.fmtMoneySigned(dv(grandVoyNet))}</span></div>
