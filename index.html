@@ -372,7 +372,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.12.22.30";
+const APP_VERSION = "v 2026.08.12.22.11";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2907,16 +2907,39 @@ function computeGroupBudget(superGroupeName, months, opts){
 
   // Salaire : remplace le montant calculé (transactions + amortissement + ajustements) par le montant
   // "utilisé" mois par mois — saisie manuelle Moi/Ma femme si renseignée, sinon transactions (cf.
-  // salaryMonthTotal). Ne concerne que la catégorie déjà présente pour ce groupe (au moins une transaction).
-  catTotals.forEach((o, cat)=>{
-    if(!isSalaryCategory(cat)) return;
-    let total = 0;
-    months.forEach(m=>{ total += salaryMonthTotal(superGroupeName, cat, m); });
-    o.income = total; o.expense = 0;
-    o.realIncome = total; o.realExpense = 0;
-    o.amortIncome = 0; o.amortExpense = 0;
-    o.adjIncome = 0; o.adjExpense = 0;
-  });
+  // salaryMonthTotal). S'applique à la catégorie "Salaire" du groupe même si aucune transaction réelle ne
+  // tombe dans la période affichée (ex. période ne couvrant que des mois purement saisis à la main) : sans
+  // cela, la ligne Salaire disparaîtrait dès que la période ne contient plus de transaction réelle, alors
+  // même que des saisies manuelles existent pour ces mois. On recherche donc le nom canonique de la
+  // catégorie "Salaire" du groupe dans TOUTE l'historique de transactions (pas seulement la période), et on
+  // crée la ligne dès qu'elle existe déjà pour la période OU qu'au moins un mois de la période a une saisie
+  // manuelle (Moi/Ma femme) renseignée.
+  let salaryCatKey = null;
+  catTotals.forEach((o, cat)=>{ if(isSalaryCategory(cat)) salaryCatKey = cat; });
+  if(!salaryCatKey){
+    Store.transactions.some(t=>{
+      if(t.type==="Transfer") return false;
+      if(!matchesSelection(t)) return false;
+      if(isAccountExcluded(t.compte)) return false;
+      const base = t.groupeBase || U.baseGroupe(t.groupe);
+      if(AGG.getGroupKind(base)==="voyage") return false;
+      const cat = t.categorie || "(Non renseigné)";
+      if(isSalaryCategory(cat)){ salaryCatKey = cat; return true; }
+      return false;
+    });
+  }
+  if(salaryCatKey){
+    const hasManualEntry = months.some(m=>{ const e = salaryEntryFor(m); return e.moi!=null || e.femme!=null; });
+    if(catTotals.has(salaryCatKey) || hasManualEntry){
+      const o = ensureCat(salaryCatKey);
+      let total = 0;
+      months.forEach(m=>{ total += salaryMonthTotal(superGroupeName, salaryCatKey, m); });
+      o.income = total; o.expense = 0;
+      o.realIncome = total; o.realExpense = 0;
+      o.amortIncome = 0; o.amortExpense = 0;
+      o.adjIncome = 0; o.adjExpense = 0;
+    }
+  }
 
   const categories = Array.from(catTotals.values());
   const typeMap = new Map();
