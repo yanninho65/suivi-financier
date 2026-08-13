@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.13.15.40";
+const APP_VERSION = "v 2026.08.13.16.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2764,13 +2764,18 @@ function salaryEntryFor(monthKey){
   };
 }
 /* Montant total "utilisé" pour la catégorie Salaire sur un mois donné, selon le scope courant :
-   - Couple : salaire de ma femme (saisi, 0 par défaut si rien saisi) + le mien (saisi si renseigné, sinon montant des transactions).
-   - Perso : le mien (saisi si renseigné, sinon montant des transactions). Pas de multiplication ×2 : le
-     total couple additionne déjà les deux salaires réels. */
+   - Couple : salaire de ma femme (saisi, 0 par défaut si rien saisi) + le mien.
+   - Perso : le mien uniquement. Pas de multiplication ×2 : le total couple additionne déjà les deux
+     salaires réels.
+   Mon salaire ("Moi") : saisi si renseigné, sinon montant des transactions — SAUF en mode "Brut", où la
+   saisie manuelle "Moi" est ignorée et où seul le montant des transactions est utilisé (la correction
+   manuelle ne s'applique donc qu'aux modes avec amortissement/ajustements). Le salaire de "Ma femme" suit
+   toujours la saisie manuelle, quel que soit le mode. */
 function salaryMonthTotal(superGroupeName, catKey, monthKey){
   const cfg = Store.settings.budget;
   const entry = salaryEntryFor(monthKey);
-  const moi = entry.moi!=null ? entry.moi : salaryRealMonthAmount(superGroupeName, catKey, monthKey);
+  const moiManualAllowed = cfg.mode!=="brut";
+  const moi = (moiManualAllowed && entry.moi!=null) ? entry.moi : salaryRealMonthAmount(superGroupeName, catKey, monthKey);
   if(cfg.scope==="couple"){
     const femme = entry.femme!=null ? entry.femme : 0;
     return moi + femme;
@@ -4158,11 +4163,12 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
 function openSalaryEditor(superGroupeName, catKey){
   const cfg = Store.settings.budget;
   const months = monthsInRange(periodFrom, periodTo);
+  const moiManualAllowed = cfg.mode!=="brut";
 
   function computeRow(m){
     const entry = salaryEntryFor(m);
     const fallback = salaryRealMonthAmount(superGroupeName, catKey, m);
-    const moiEff = entry.moi!=null ? entry.moi : fallback;
+    const moiEff = (moiManualAllowed && entry.moi!=null) ? entry.moi : fallback;
     const femmeEff = entry.femme!=null ? entry.femme : 0;
     const total = cfg.scope==="couple" ? moiEff+femmeEff : moiEff;
     return {entry, fallback, total};
@@ -4181,7 +4187,7 @@ function openSalaryEditor(superGroupeName, catKey){
       return `
         <div class="detail-row" style="align-items:center;gap:6px;flex-wrap:nowrap;padding:8px 0;">
           <span style="flex:0 0 62px;font-size:12px;font-weight:600;">${U.escHtml(label)}</span>
-          <input type="number" step="0.01" inputmode="decimal" class="search-mini salf-moi" data-month="${m}" placeholder="${r.fallback?bgFmtMoney(r.fallback):'0,00 €'}" value="${r.entry.moi!=null?r.entry.moi:''}" style="flex:1;min-width:0;margin:0;">
+          <input type="number" step="0.01" inputmode="decimal" class="search-mini salf-moi" data-month="${m}" placeholder="${r.fallback?bgFmtMoney(r.fallback):'0,00 €'}" value="${r.entry.moi!=null?r.entry.moi:''}" ${moiManualAllowed?'':'disabled title="Mode Brut : ma saisie est ignorée, seul le montant des transactions est utilisé"'} style="flex:1;min-width:0;margin:0;${moiManualAllowed?'':'opacity:.5;'}">
           <input type="number" step="0.01" inputmode="decimal" class="search-mini salf-femme" data-month="${m}" placeholder="0,00 €" value="${r.entry.femme!=null?r.entry.femme:''}" style="flex:1;min-width:0;margin:0;">
           <span class="salf-total" data-month="${m}" style="flex:0 0 76px;text-align:right;font-weight:700;font-size:13px;color:${r.total<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(r.total)}</span>
         </div>`;
@@ -4193,7 +4199,8 @@ function openSalaryEditor(superGroupeName, catKey){
       </div>
       <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:10px;">${U.escHtml(superGroupeName)} · saisie manuelle · vue ${cfg.scope==="couple"?"Couple":"Perso"}</div>
       <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">
-        Laisser "Moi" vide pour utiliser le montant des transactions du mois. En vue Couple, le total additionne mon salaire (saisi, sinon transactions) et celui de ma femme (0 € si non saisi). En vue Perso, seul mon salaire compte.
+        Laisser "Moi" vide pour utiliser le montant des transactions du mois. En vue Couple, le total additionne mon salaire et celui de ma femme (0 € si non saisi). En vue Perso, seul mon salaire compte.
+        ${moiManualAllowed ? "" : `<br><strong>Mode Brut :</strong> ma saisie "Moi" est ignorée (grisée ci-dessous) — seul le montant réel des transactions est utilisé. Elle reste enregistrée et se réappliquera si vous repassez en mode "Amort. + ajouts" ou "Ajouts". Le salaire de ma femme, lui, suit toujours la saisie.`}
       </div>
       <div class="detail-row" style="align-items:center;gap:6px;padding:2px 0 6px;font-size:10.5px;color:var(--text-sub);font-weight:700;">
         <span style="flex:0 0 62px;">Mois</span>
