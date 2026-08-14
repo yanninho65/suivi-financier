@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.13.20.40";
+const APP_VERSION = "v 2026.08.13.21.10";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -885,13 +885,16 @@ function parseParametresSheet(wb){
       if(month && groupe && montant!=null){
         const amortiRaw = U.normalize(norm["amorti"]||"");
         const scopeRaw = U.normalize(norm["vue"]||norm["scope"]||"");
+        const viewOnlyRaw = U.normalize(norm["vue uniquement"]||"");
+        const montantScope = scopeRaw==="couple" ? "couple" : (scopeRaw==="les deux"||scopeRaw==="both" ? "both" : "perso");
         budgetAdjustments.push({
           month: String(month).trim(), groupe: String(groupe).trim(),
           categorie: norm["categorie"]?String(norm["categorie"]).trim():"",
           montant: Number(String(montant).replace(",",".")) || 0,
           remarque: norm["remarque"]?String(norm["remarque"]).trim():"",
           amorti: amortiRaw==="oui" || amortiRaw==="yes" || amortiRaw==="true" || amortiRaw==="1",
-          montantScope: scopeRaw==="couple" ? "couple" : (scopeRaw==="les deux"||scopeRaw==="both" ? "both" : "perso")
+          montantScope,
+          montantViewOnly: montantScope!=="both" && (viewOnlyRaw==="oui" || viewOnlyRaw==="yes" || viewOnlyRaw==="true" || viewOnlyRaw==="1")
         });
       }
     });
@@ -2766,12 +2769,17 @@ function groupSelectionMatches(t, selectedName){
    et à ceux des transactions réelles (elles-mêmes ×2 en Couple, cf. scopeMult). Ajustements anciens sans
    montantScope : on suppose qu'ils correspondent déjà au scope courant (comportement historique, brut).
    montantScope==="both" : montant identique en Perso et en Couple (jamais converti), pour les ajustements
-   qui doivent rester fixes quel que soit le scope affiché. */
+   qui doivent rester fixes quel que soit le scope affiché.
+   montantViewOnly (uniquement avec montantScope "perso" ou "couple") : l'ajustement n'apparaît QUE quand la
+   vue affichée correspond exactement à montantScope — 0 dans l'autre vue, jamais converti. Utile pour une
+   correction qui ne doit exister que dans une vue précise (ex. réduire les impôts uniquement en vue Couple,
+   sans que ça double aussi en vue Perso ni que la correction elle-même soit doublée/divisée). */
 function adjustmentScopedAmount(adj){
   const cfg = Store.settings.budget;
   const raw = Number(adj.montant)||0;
   if(adj.montantScope==="both") return raw;
   const adjScope = adj.montantScope || cfg.scope;
+  if(adj.montantViewOnly) return adjScope===cfg.scope ? raw : 0;
   if(adjScope === cfg.scope) return raw;
   return adjScope === "couple" ? raw/2 : raw*2;
 }
@@ -3524,7 +3532,7 @@ function openAdjustmentsListSheet(){
         <div class="detail-row bg-adjlist-row" data-idx="${a.__idx}" style="align-items:center;cursor:pointer;">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(a.remarque||"Ajustement")}</span>
-            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")}</span>
+            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")}${a.montantViewOnly&&a.montantScope!=="both"?" (uniquement cette vue)":""}</span>
           </span>
           <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${adjustmentScopedAmount(a)<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(adjustmentScopedAmount(a))}</span>
         </div>
@@ -3583,6 +3591,12 @@ function openAdjustmentForm(adj, prefill){
         Perso/Couple : le montant est automatiquement multiplié ou divisé par deux si la vue Perso/Couple du budget est changée par la suite. "Les deux" : montant identique, jamais converti, quelle que soit la vue affichée.
       </div>
     </div>
+    <div class="check-item ${data.montantViewOnly?'selected':''}" id="adjf-viewonly-toggle" style="margin-bottom:6px;cursor:pointer;">
+      <span class="cbox">${ICONS.check}</span><span class="lbl">N'apparaît que dans la vue <strong id="adjf-viewonly-scopename"></strong></span>
+    </div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:14px;line-height:1.4;" id="adjf-viewonly-note">
+      Si activé, ce montant ne compte que lorsque le budget est affiché dans cette vue précise — 0 € dans l'autre vue, jamais multiplié/divisé par deux. Utile pour une correction propre à une seule vue (ex. réduire les impôts uniquement en vue Couple, sans que ça double aussi en vue Perso).
+    </div>
     <div class="check-item ${data.amorti?'selected':''}" id="adjf-amorti-toggle" style="margin-bottom:8px;cursor:pointer;">
       <span class="cbox">${ICONS.check}</span><span class="lbl">Amortir ce montant sur toute la période</span>
     </div>
@@ -3597,6 +3611,20 @@ function openAdjustmentForm(adj, prefill){
   document.getElementById("adjf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.getElementById("adjf-amorti-toggle").onclick = (e)=> e.currentTarget.classList.toggle("selected");
   let selectedScope = (data.montantScope==='couple'||data.montantScope==='both') ? data.montantScope : 'perso';
+  let selectedViewOnly = !!data.montantViewOnly && selectedScope!=='both';
+  const viewOnlyToggle = document.getElementById("adjf-viewonly-toggle");
+  if(selectedViewOnly) viewOnlyToggle.classList.add("selected");
+  viewOnlyToggle.onclick = ()=>{
+    selectedViewOnly = !selectedViewOnly;
+    viewOnlyToggle.classList.toggle("selected", selectedViewOnly);
+  };
+  function updateViewOnlyVisibility(){
+    const show = selectedScope!=='both';
+    viewOnlyToggle.style.display = show ? "" : "none";
+    document.getElementById("adjf-viewonly-note").style.display = show ? "" : "none";
+    document.getElementById("adjf-viewonly-scopename").textContent = selectedScope==='couple' ? "Couple" : "Perso";
+    if(!show){ selectedViewOnly = false; viewOnlyToggle.classList.remove("selected"); }
+  }
   function paintScopeOpts(){
     document.querySelectorAll(".adjf-scope-opt").forEach(el=>{
       const on = el.dataset.scope===selectedScope;
@@ -3604,6 +3632,7 @@ function openAdjustmentForm(adj, prefill){
       el.style.background = on ? "var(--primary-soft)" : "";
       el.style.color = on ? "var(--primary)" : "";
     });
+    updateViewOnlyVisibility();
   }
   paintScopeOpts();
   document.querySelectorAll(".adjf-scope-opt").forEach(el=>{
@@ -3629,7 +3658,7 @@ function openAdjustmentForm(adj, prefill){
     const remarque = document.getElementById("adjf-remarque").value.trim();
     const amorti = document.getElementById("adjf-amorti-toggle").classList.contains("selected");
     if(!month || !groupe || !montant){ APP.showToast("Mois, groupe et montant sont requis"); return; }
-    const entry = {month, groupe, categorie, montant, remarque, amorti, montantScope: selectedScope};
+    const entry = {month, groupe, categorie, montant, remarque, amorti, montantScope: selectedScope, montantViewOnly: selectedScope!=='both' && selectedViewOnly};
     cfg.adjustments = cfg.adjustments || [];
     if(isEdit) cfg.adjustments[adj.__idx] = entry;
     else cfg.adjustments.push(entry);
@@ -5340,8 +5369,8 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
-    const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque","Amorti","Vue"];
-    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||"", a.amorti?"Oui":"Non", a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")]));
+    const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque","Amorti","Vue","Vue uniquement"];
+    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||"", a.amorti?"Oui":"Non", a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso"), (a.montantViewOnly&&a.montantScope!=="both")?"Oui":"Non"]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
 
     const b = Store.settings.budget || {};
