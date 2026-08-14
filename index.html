@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.13.16.40";
+const APP_VERSION = "v 2026.08.13.20.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -597,7 +597,7 @@ const Store = {
   settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
-      amortCategories:[], amortPeriodMonths:null, adjustments:[], excludedAccounts:[]}},
+      amortCategories:[], adjustments:[], excludedAccounts:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
 
   /* Charge les données au démarrage. Doit être attendu (await) avant d'afficher l'appli. */
@@ -693,6 +693,7 @@ const Store = {
     if(!s.groupKind) s.groupKind = {};
     if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
     if(!s.groupDateRange) s.groupDateRange = {};
+    if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
@@ -702,7 +703,6 @@ const Store = {
     if(b.mainGroup===undefined) b.mainGroup = null;
     if(!Array.isArray(b.extraGroups)) b.extraGroups = [];
     if(!Array.isArray(b.amortCategories)) b.amortCategories = [];
-    if(b.amortPeriodMonths===undefined) b.amortPeriodMonths = null;
     if(!Array.isArray(b.adjustments)) b.adjustments = [];
     if(!b.salaryEntries || typeof b.salaryEntries!=="object") b.salaryEntries = {};
     if(b.displayMode!=="moyenne" && b.displayMode!=="total") b.displayMode = "total";
@@ -713,7 +713,6 @@ const Store = {
     if(b.compare.periodFrom===undefined) b.compare.periodFrom = null;
     if(b.compare.periodTo===undefined) b.compare.periodTo = null;
     if(!b.compare.predefined || typeof b.compare.predefined!=="object") b.compare.predefined = {};
-    if(!b.extraGroupPeriods || typeof b.extraGroupPeriods!=="object") b.extraGroupPeriods = {};
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -892,7 +891,7 @@ function parseParametresSheet(wb){
           montant: Number(String(montant).replace(",",".")) || 0,
           remarque: norm["remarque"]?String(norm["remarque"]).trim():"",
           amorti: amortiRaw==="oui" || amortiRaw==="yes" || amortiRaw==="true" || amortiRaw==="1",
-          montantScope: scopeRaw==="couple" ? "couple" : "perso"
+          montantScope: scopeRaw==="couple" ? "couple" : (scopeRaw==="les deux"||scopeRaw==="both" ? "both" : "perso")
         });
       }
     });
@@ -915,7 +914,6 @@ function parseParametresSheet(wb){
       mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
       extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
-      amortPeriodMonths: map["periode d'amortissement (mois)"] ? Number(map["periode d'amortissement (mois)"]) : null,
       periodFrom: map["periode affichee - de"] ? String(map["periode affichee - de"]).trim() : null,
       periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
     };
@@ -1600,7 +1598,7 @@ const AGG = window.__SF_AGG;
 const DATA = window.__SF_DATA;
 const ICONS = U.ICONS;
 
-let currentTab = "dashboard";
+let currentTab = "accounts";
 let txnLimit = 60;
 let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | categorie | compte | personne
 let txnGroupsShown = 20; // for dimension-based grouping (limits number of group headers shown)
@@ -1642,10 +1640,9 @@ function buildShell(){
       <div class="balance-hero" id="hero"></div>
     </div>
 
-    <div class="view active" id="view-dashboard"></div>
     <div class="view" id="view-transactions"></div>
     <div class="view" id="view-budget"></div>
-    <div class="view" id="view-accounts"></div>
+    <div class="view active" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
       <div class="float-bar">
@@ -1655,10 +1652,9 @@ function buildShell(){
     </div>
 
     <div class="bottomnav">
-      <button class="navbtn active" data-tab="dashboard">${ICONS.home}<span>Accueil</span></button>
+      <button class="navbtn active" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
       <button class="navbtn" data-tab="transactions">${ICONS.list}<span>Transactions</span></button>
       <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
-      <button class="navbtn" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
@@ -1751,8 +1747,7 @@ function refreshCurrentTab(){
   if(window.__SF_SYNC) window.__SF_SYNC.updateIndicator();
   const V = window.__SF_VIEWS;
   if(!V) return;
-  if(currentTab==="dashboard") V.renderDashboard();
-  else if(currentTab==="transactions") V.renderTransactions();
+  if(currentTab==="transactions") V.renderTransactions();
   else if(currentTab==="budget") V.renderBudget && V.renderBudget();
   else if(currentTab==="accounts") V.renderAccounts();
 }
@@ -1770,7 +1765,7 @@ function updateFilterBadge(){
 /* ================= HERO ================= */
 function renderHero(){
   const hero = document.getElementById("hero");
-  const showOnTab = (currentTab==="dashboard" || currentTab==="transactions");
+  const showOnTab = (currentTab==="transactions");
   if(!showOnTab || Store.transactions.length===0){ hero.innerHTML=""; hero.style.display="none"; return; }
   hero.style.display="";
   const balances = AGG.computeAccountBalances(Store.transactions);
@@ -1851,58 +1846,6 @@ function txnSubtitle(t){
   else { if(t.categorie) parts.push(t.categorie); if(t.personne) parts.push(t.personne); }
   if(t.groupe) parts.push(t.groupe);
   return parts.join(" · ");
-}
-
-/* ================= DASHBOARD ================= */
-function renderDashboard(){
-  const view = document.getElementById("view-dashboard");
-  if(Store.transactions.length===0){
-    view.innerHTML = `<div class="section">${emptyStateHtml({
-      title:"Aucune donnée pour l'instant",
-      text:"Importez votre fichier Excel ou CSV de suivi de dépenses pour commencer, ou testez l'application avec des données d'exemple.",
-      showDemo:true
-    })}</div>`;
-    wireEmptyState(view);
-    return;
-  }
-  const balances = AGG.computeAccountBalances(Store.transactions);
-  const recent = Store.transactions.slice().sort((a,b)=>b.date-a.date).slice(0,6);
-  const dateMin = Store.transactions.reduce((m,t)=>t.date<m?t.date:m, Store.transactions[0].date);
-  const dateMax = Store.transactions.reduce((m,t)=>t.date>m?t.date:m, Store.transactions[0].date);
-
-  view.innerHTML = `
-    <div class="section">
-      <div class="section-title">Comptes</div>
-      <div class="card" style="padding:6px 16px;">
-        ${balances.slice(0,4).map(a=>`
-          <div class="rowline">
-            <span style="font-weight:600;font-size:14px;">${U.escHtml(a.name)}</span>
-            <span style="font-weight:800;">${U.fmtMoney(a.balance)}</span>
-          </div>`).join("")}
-      </div>
-      ${balances.length>4 ? `<button class="btn btn-ghost btn-sm btn-block" id="dash-see-accounts" style="margin-top:10px;">Voir tous les comptes (${balances.length})</button>` : ""}
-    </div>
-
-    <div class="section">
-      <div class="section-title">Transactions récentes</div>
-      <div id="dash-recent"></div>
-      <button class="btn btn-ghost btn-sm btn-block" id="dash-see-all" style="margin-top:10px;">Voir toutes les transactions</button>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Aperçu des données</div>
-      <div class="card">
-        <div class="detail-row"><span>Transactions enregistrées</span><span>${Store.transactions.length.toLocaleString('fr-FR')}</span></div>
-        <div class="detail-row"><span>Période couverte</span><span>${U.fmtDateShort(dateMin)} – ${U.fmtDateShort(dateMax)}</span></div>
-        <div class="detail-row"><span>Nombre de comptes</span><span>${balances.length}</span></div>
-      </div>
-    </div>
-  `;
-  const recentWrap = document.getElementById("dash-recent");
-  recent.forEach(t=>recentWrap.appendChild(makeTxnItemEl(t)));
-  document.getElementById("dash-see-all").onclick = ()=>APP.switchTab("transactions");
-  const seeAcc = document.getElementById("dash-see-accounts");
-  if(seeAcc) seeAcc.onclick = ()=>APP.switchTab("accounts");
 }
 
 /* ================= TRANSACTIONS LIST ================= */
@@ -2495,7 +2438,6 @@ function openTxnEdit(id){
 }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
-window.__SF_VIEWS.renderDashboard = renderDashboard;
 window.__SF_VIEWS.renderTransactions = renderTransactions;
 window.__SF_VIEWS.openTxnDetail = openTxnDetail;
 window.__SF_VIEWS.openTxnEdit = openTxnEdit;
@@ -2514,9 +2456,18 @@ const ICONS = U.ICONS;
 function renderAccounts(){
   const view = document.getElementById("view-accounts");
   if(Store.transactions.length===0){
-    view.innerHTML = `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir vos comptes.</p><button class="btn btn-primary" id="empty-import-btn4">${ICONS.upload}Importer des données</button></div></div>`;
+    view.innerHTML = `<div class="section" style="margin-top:10px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir vos comptes.</p><button class="btn btn-primary" id="empty-import-btn4">${ICONS.upload}Importer des données</button><button class="btn btn-ghost" id="empty-demo-btn4" style="margin-top:10px;">Charger des données d'exemple</button></div></div>`;
     const b = document.getElementById("empty-import-btn4");
     if(b) b.onclick = ()=>window.__SF_IMPORT.open();
+    const bd = document.getElementById("empty-demo-btn4");
+    if(bd) bd.onclick = ()=>{
+      const demo = window.__SF_DATA.generateDemoData(260);
+      const stats = window.__SF_DATA.importTxns(demo, "replace");
+      APP.refreshCurrentTab();
+      window.__SF_STORE.saveTransactions().then(ok=>{
+        APP.showToast(ok ? "Données d'exemple chargées ("+stats.added+" transactions)" : "Chargé, mais la sauvegarde a échoué");
+      });
+    };
     return;
   }
   const balances = AGG.computeAccountBalances(Store.transactions);
@@ -2531,13 +2482,7 @@ function renderAccounts(){
     g.accounts.push(a);
     g.balance += a.balance;
   });
-  const TYPE_ORDER = {"Courant":0, "Épargne":1};
-  const typeGroups = Array.from(byType.values()).sort((a,b)=>{
-    const oa = TYPE_ORDER[a.type]!=null ? TYPE_ORDER[a.type] : 2;
-    const ob = TYPE_ORDER[b.type]!=null ? TYPE_ORDER[b.type] : 2;
-    if(oa!==ob) return oa-ob;
-    return a.type.localeCompare(b.type,'fr');
-  });
+  const typeGroups = orderAccountTypeGroups(Array.from(byType.values()));
 
   const view_html = [`
     <div class="section" style="padding-top:14px;">
@@ -2546,8 +2491,14 @@ function renderAccounts(){
         <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
       </div>
     </div>
+    ${typeGroups.length>1 ? `
+    <div class="section" style="padding-top:0;">
+      <button type="button" class="btn btn-ghost btn-block" id="acc-reorder-btn">${ICONS.list||''} Réorganiser les groupes de comptes</button>
+    </div>` : ""}
   `];
   view.innerHTML = view_html.join("");
+  const reorderBtn = document.getElementById("acc-reorder-btn");
+  if(reorderBtn) reorderBtn.onclick = ()=> openAccountTypeReorderSheet(typeGroups.map(g=>g.type));
 
   typeGroups.forEach(g=>{
     const typeSection = document.createElement("div");
@@ -2570,7 +2521,6 @@ function renderAccounts(){
         <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
         <div class="acc-mid">
           <div class="acc-name">${U.escHtml(a.name)}</div>
-          <div class="acc-flows">${a.count} mouvement${a.count>1?"s":""} · ↑${U.fmtMoney(a.income+a.transferIn)} ↓${U.fmtMoney(Math.abs(a.expense)+a.transferOut)}</div>
         </div>
         <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
       `;
@@ -2583,6 +2533,80 @@ function renderAccounts(){
     });
     view.appendChild(section);
   });
+}
+
+/* Ordonne les groupes de type de compte (Courant/Épargne/types libres) selon l'ordre choisi par
+   l'utilisateur (Store.settings.accountTypeOrder). Les types absents de cet ordre (nouveaux comptes,
+   première utilisation) sont ajoutés à la fin, en respectant l'ordre par défaut (Courant, Épargne, puis
+   alphabétique) — jamais perdus, juste positionnés après les types déjà classés. */
+function orderAccountTypeGroups(groups){
+  const savedOrder = Store.settings.accountTypeOrder || [];
+  const DEFAULT_ORDER = {"Courant":0, "Épargne":1};
+  const byDefault = groups.slice().sort((a,b)=>{
+    const oa = DEFAULT_ORDER[a.type]!=null ? DEFAULT_ORDER[a.type] : 2;
+    const ob = DEFAULT_ORDER[b.type]!=null ? DEFAULT_ORDER[b.type] : 2;
+    if(oa!==ob) return oa-ob;
+    return a.type.localeCompare(b.type,'fr');
+  });
+  if(!savedOrder.length) return byDefault;
+  const rank = new Map(savedOrder.map((t,i)=>[t,i]));
+  return byDefault.slice().sort((a,b)=>{
+    const ra = rank.has(a.type) ? rank.get(a.type) : savedOrder.length + byDefault.indexOf(a);
+    const rb = rank.has(b.type) ? rank.get(b.type) : savedOrder.length + byDefault.indexOf(b);
+    return ra-rb;
+  });
+}
+/* Pop-up de réorganisation des groupes de comptes : boutons haut/bas (pas de drag, plus fiable au toucher
+   et sans dépendance). L'ordre choisi est mémorisé dans Store.settings.accountTypeOrder. */
+function openAccountTypeReorderSheet(currentTypes){
+  let order = currentTypes.slice();
+  function render(){
+    const modal = document.getElementById("modal-detail");
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:800;font-size:17px;">Réorganiser les groupes</span>
+        <button class="icon-btn" id="acctreorder-close">${ICONS.close}</button>
+      </div>
+      <div style="max-height:60vh;overflow-y:auto;">
+        ${order.map((t,i)=>`
+          <div class="detail-row" style="align-items:center;gap:8px;padding:8px 0;">
+            <span style="font-size:13.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(t)}</span>
+            <button type="button" class="icon-btn acctreorder-up" data-i="${i}" ${i===0?'disabled style="opacity:.3;"':''} style="width:32px;height:32px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M18 15l-6-6-6 6"/></svg>
+            </button>
+            <button type="button" class="icon-btn acctreorder-down" data-i="${i}" ${i===order.length-1?'disabled style="opacity:.3;"':''} style="width:32px;height:32px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    document.getElementById("acctreorder-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderAccounts(); };
+    function save(){
+      Store.settings.accountTypeOrder = order.slice();
+      Store.saveSettings();
+    }
+    modal.querySelectorAll(".acctreorder-up[data-i]").forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.dataset.i);
+        if(i<=0) return;
+        [order[i-1],order[i]] = [order[i],order[i-1]];
+        save();
+        render();
+      };
+    });
+    modal.querySelectorAll(".acctreorder-down[data-i]").forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.dataset.i);
+        if(i>=order.length-1) return;
+        [order[i+1],order[i]] = [order[i],order[i+1]];
+        save();
+        render();
+      };
+    });
+  }
+  render();
+  APP.openOverlay("overlay-detail");
 }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
@@ -2708,6 +2732,19 @@ function amortBoundedMonths(months){
   if(!cfg.startMonth && !cfg.endMonth) return months;
   return months.filter(m => (!cfg.startMonth || m>=cfg.startMonth) && (!cfg.endMonth || m<=cfg.endMonth));
 }
+/* Nombre de mois de la fenêtre d'amortissement, calculé automatiquement à partir de "Mois de début" et
+   "Dernier mois" (inclusifs des deux côtés) — plus de saisie manuelle. Sans les deux bornes renseignées,
+   retombe sur le nombre de mois de la période affichée (comportement d'origine). */
+function computeAmortPeriodMonths(months){
+  const cfg = Store.settings.budget;
+  if(cfg.startMonth && cfg.endMonth){
+    const [sy,sm] = cfg.startMonth.split("-").map(Number);
+    const [ey,em] = cfg.endMonth.split("-").map(Number);
+    const diff = (ey-sy)*12 + (em-sm) + 1;
+    if(diff>0) return diff;
+  }
+  return months.length;
+}
 
 /* ---------------- Moteur de calcul du budget ---------------- */
 /* Calcule, pour un "groupe de groupe" donné (nom affiché résolu) et une période [from,to] (mois inclus),
@@ -2727,10 +2764,13 @@ function groupSelectionMatches(t, selectedName){
    Chaque ajustement porte le scope dans lequel son montant a été saisi (montantScope) ; on le convertit
    vers le scope courant (÷2 Couple→Perso, ×2 Perso→Couple) pour qu'il s'intègre correctement aux totaux
    et à ceux des transactions réelles (elles-mêmes ×2 en Couple, cf. scopeMult). Ajustements anciens sans
-   montantScope : on suppose qu'ils correspondent déjà au scope courant (comportement historique, brut). */
+   montantScope : on suppose qu'ils correspondent déjà au scope courant (comportement historique, brut).
+   montantScope==="both" : montant identique en Perso et en Couple (jamais converti), pour les ajustements
+   qui doivent rester fixes quel que soit le scope affiché. */
 function adjustmentScopedAmount(adj){
   const cfg = Store.settings.budget;
   const raw = Number(adj.montant)||0;
+  if(adj.montantScope==="both") return raw;
   const adjScope = adj.montantScope || cfg.scope;
   if(adjScope === cfg.scope) return raw;
   return adjScope === "couple" ? raw/2 : raw*2;
@@ -2943,7 +2983,7 @@ function computeGroupBudget(superGroupeName, months, opts){
   // [Mois de début → Mois de début + période - 1]. Les mois affichés hors de cette fenêtre (avant ou après)
   // reçoivent 0 — jamais une part de l'amortissement, même si la période affichée les inclut.
   if(isAmorti){
-    const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+    const periodMonths = computeAmortPeriodMonths(months);
     const windowN = amortWindowMonths(months, periodMonths).length;
     amortPoolAll.forEach((tot, cat)=>{
       const perMonth = {income: tot.income/periodMonths, expense: tot.expense/periodMonths};
@@ -3038,19 +3078,11 @@ function categoriesForGroup(groupName){
 function predefinedCatKey(groupName, catKey){ return groupName+"::cat::"+catKey; }
 function predefinedVoyageKey(groupName){ return groupName+"::voyage"; }
 
-/* Bornes de période propres à un groupe additionnel (jamais le groupe principal, qui suit toujours la
-   période affichée) : {from, to} en "YYYY-MM", l'un ou l'autre pouvant être vide. Le groupe n'apparaît
-   alors que sur l'intersection entre la période affichée et ses propres bornes — utile pour exclure d'un
-   groupe additionnel des mois qui ne concernent pas cette période de vie (ex. avant une expatriation),
-   sans avoir à toucher à la période affichée du groupe principal. */
-function extraGroupBounds(groupName){
-  const cfg = Store.settings.budget;
-  return (cfg.extraGroupPeriods||{})[groupName] || null;
-}
+/* Les mois "effectifs" d'un groupe additionnel sont désormais toujours les mêmes que ceux de la borne
+   chronologique de l'amortissement (Mois de début → Dernier mois, cf. amortBoundedMonths) — plus de
+   bornage indépendant par groupe additionnel : ils suivent forcément les mêmes mois que le principal. */
 function extraGroupEffectiveMonths(groupName, mainMonths){
-  const b = extraGroupBounds(groupName);
-  if(!b || (!b.from && !b.to)) return mainMonths;
-  return mainMonths.filter(m => (!b.from || m>=b.from) && (!b.to || m<=b.to));
+  return amortBoundedMonths(mainMonths);
 }
 
 /* Construit le contexte de comparaison pour l'ensemble des groupes affichés (principal + additionnels).
@@ -3075,7 +3107,11 @@ function computeCompareContext(mainMonths){
   if(!cmp.periodFrom || !cmp.periodTo) return null;
   const cMonths = monthsInRange(cmp.periodFrom, cmp.periodTo);
   if(!cMonths.length) return null;
-  const divisor = cfg.displayMode==="moyenne" ? cMonths.length : 1;
+  // Même logique que le scénario principal (voir divisor dans renderBudget) : en vue Moyenne/mois, le
+  // diviseur ne compte que les mois de la période COMPARÉE compris dans la borne chronologique de
+  // l'amortissement (Mois de début → Dernier mois), quel que soit le mode — jamais le nombre brut de mois
+  // de la période comparée.
+  const divisor = cfg.displayMode==="moyenne" ? (amortBoundedMonths(cMonths).length || 1) : 1;
   return {type:"period", months: cMonths, divisor, cache: new Map()};
 }
 function compareGroupResult(ctx, groupName){
@@ -3323,6 +3359,8 @@ function amortSettingsHtml(){
   const cfg = Store.settings.budget;
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
   const selectedAmort = new Set(cfg.amortCategories||[]);
+  const months = monthsInRange(periodFrom, periodTo);
+  const computedPeriod = computeAmortPeriodMonths(months);
   return `
     <div style="display:flex;gap:10px;">
       <div style="flex:1;min-width:0;">
@@ -3334,10 +3372,10 @@ function amortSettingsHtml(){
         <input type="month" class="search-mini" id="bg-endmonth" value="${U.escHtml(cfg.endMonth||'')}" style="margin:0;">
       </div>
     </div>
-    <div style="font-size:10.5px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Les dépenses en dehors de ces bornes (avant "Mois de début" ou après "Dernier mois") sont amorties d'office, quelle que soit leur catégorie. La vue "Moyenne / mois" ne divise que par les mois de la période affichée compris entre ces deux bornes — quel que soit le mode (Amort., Ajouts ou Brut).</div>
-    <div style="margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période où on reste (mois)</div>
-      <input type="number" min="1" class="search-mini" id="bg-amortperiod" value="${cfg.amortPeriodMonths||''}" placeholder="ex. 24" style="margin:0;max-width:160px;">
+    <div style="font-size:10.5px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Les dépenses en dehors de ces bornes (avant "Mois de début" ou après "Dernier mois") sont amorties d'office, quelle que soit leur catégorie. La vue "Moyenne / mois" ne divise que par les mois de la période affichée compris entre ces deux bornes — quel que soit le mode (Amort., Ajouts ou Brut). Les groupes additionnels suivent aussi ces mêmes bornes.</div>
+    <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:var(--card-alt);border-radius:100px;padding:9px 16px;">
+      <span style="font-size:12px;font-weight:700;color:var(--text-sub);">Période où on reste (mois)</span>
+      <span style="font-size:13px;font-weight:800;">${computedPeriod}${cfg.startMonth && cfg.endMonth ? "" : " (période affichée, bornes incomplètes)"}</span>
     </div>
     ${cats.length ? `
     <div style="margin-top:14px;">
@@ -3360,8 +3398,6 @@ function wireAmortSettings(afterChange){
     if(cfg.startMonth && cfg.endMonth && cfg.endMonth<cfg.startMonth) cfg.startMonth = cfg.endMonth;
     Store.saveSettings(); renderBudget(); if(afterChange) afterChange();
   };
-  const perEl = document.getElementById("bg-amortperiod");
-  if(perEl) perEl.onchange = (e)=>{ cfg.amortPeriodMonths = Number(e.target.value) || null; Store.saveSettings(); renderBudget(); if(afterChange) afterChange(); };
   document.querySelectorAll(".bg-amort-item[data-c]").forEach(el=>{
     el.onclick = ()=>{
       const c = el.dataset.c;
@@ -3488,7 +3524,7 @@ function openAdjustmentsListSheet(){
         <div class="detail-row bg-adjlist-row" data-idx="${a.__idx}" style="align-items:center;cursor:pointer;">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(a.remarque||"Ajustement")}</span>
-            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${(a.montantScope==="couple")?"Couple":"Perso"}</span>
+            <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")}</span>
           </span>
           <span style="font-weight:700;font-size:13.5px;flex:0 0 auto;color:${adjustmentScopedAmount(a)<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(adjustmentScopedAmount(a))}</span>
         </div>
@@ -3541,9 +3577,10 @@ function openAdjustmentForm(adj, prefill){
       <div style="display:flex;gap:8px;">
         <div class="adjf-scope-opt" data-scope="perso" style="flex:1;text-align:center;padding:9px 0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700;border:2px solid var(--divider);">Perso (×1)</div>
         <div class="adjf-scope-opt" data-scope="couple" style="flex:1;text-align:center;padding:9px 0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700;border:2px solid var(--divider);">Couple (×2)</div>
+        <div class="adjf-scope-opt" data-scope="both" style="flex:1;text-align:center;padding:9px 0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700;border:2px solid var(--divider);">Les deux</div>
       </div>
       <div style="font-size:11px;color:var(--text-sub);margin-top:6px;line-height:1.4;">
-        Le montant est automatiquement multiplié ou divisé par deux si la vue Perso/Couple du budget est changée par la suite.
+        Perso/Couple : le montant est automatiquement multiplié ou divisé par deux si la vue Perso/Couple du budget est changée par la suite. "Les deux" : montant identique, jamais converti, quelle que soit la vue affichée.
       </div>
     </div>
     <div class="check-item ${data.amorti?'selected':''}" id="adjf-amorti-toggle" style="margin-bottom:8px;cursor:pointer;">
@@ -3559,7 +3596,7 @@ function openAdjustmentForm(adj, prefill){
   `;
   document.getElementById("adjf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.getElementById("adjf-amorti-toggle").onclick = (e)=> e.currentTarget.classList.toggle("selected");
-  let selectedScope = data.montantScope==='couple' ? 'couple' : 'perso';
+  let selectedScope = (data.montantScope==='couple'||data.montantScope==='both') ? data.montantScope : 'perso';
   function paintScopeOpts(){
     document.querySelectorAll(".adjf-scope-opt").forEach(el=>{
       const on = el.dataset.scope===selectedScope;
@@ -3693,10 +3730,9 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
     cmp = {income: cmpIncome, expense: cmpExpense, voyage: cmpVoyage, total: cmpIncome+cmpExpense+cmpVoyage};
   }
   const headerHtml = compareCtx ? compareHeaderRowHtml() : "";
-  const bounds = isMain ? null : extraGroupBounds(title);
-  const boundsLabel = bounds && (bounds.from || bounds.to) ? ((fmtBoundMonth(bounds.from)||"…")+" → "+(fmtBoundMonth(bounds.to)||"…")) : "Toute la période";
   /* En-tête de carte : sélecteur de groupe (clic sur le nom → changer ce groupe), et pour un groupe
-     additionnel, en plus : bouton de bornage de période propre au groupe et bouton de suppression. */
+     additionnel, en plus : bouton de suppression. Plus de bornage de période propre au groupe additionnel
+     — il suit toujours les mêmes mois que le principal (bornes d'amortissement, cf. extraGroupEffectiveMonths). */
   const groupSelectorHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
       <button type="button" class="bg-group-swap-btn" data-group="${U.escHtml(title)}" data-ismain="${isMain?1:0}" style="display:flex;align-items:center;gap:4px;background:none;border:none;padding:0;cursor:pointer;min-width:0;flex:1;">
@@ -3704,15 +3740,9 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;color:var(--text-sub);"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       ${!isMain ? `
-      <div style="display:flex;align-items:center;gap:4px;flex:0 0 auto;">
-        <button type="button" class="bg-group-period-btn" data-group="${U.escHtml(title)}" title="Bornes de période" style="display:flex;align-items:center;gap:4px;background:var(--card-alt);border:none;border-radius:100px;padding:5px 10px;cursor:pointer;font-size:10px;font-weight:700;color:var(--text-sub);white-space:nowrap;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;flex:0 0 auto;"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-          <span>${U.escHtml(boundsLabel)}</span>
-        </button>
-        <button type="button" class="bg-group-remove-btn" data-group="${U.escHtml(title)}" title="Retirer ce groupe" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--card-alt);border:none;cursor:pointer;color:var(--text-sub);flex:0 0 auto;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M18 6 6 18M6 6l12 12"/></svg>
-        </button>
-      </div>` : ""}
+      <button type="button" class="bg-group-remove-btn" data-group="${U.escHtml(title)}" title="Retirer ce groupe" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--card-alt);border:none;cursor:pointer;color:var(--text-sub);flex:0 0 auto;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>` : ""}
     </div>
   `;
   const totalRowHtml = compareCtx ? `
@@ -3771,54 +3801,10 @@ function openGroupSwapPicker(groupName, isMain){
       if(!v || v===groupName) return;
       const idx = (cfg.extraGroups||[]).indexOf(groupName);
       if(idx>=0) cfg.extraGroups[idx] = v; else cfg.extraGroups = (cfg.extraGroups||[]).concat([v]);
-      if(cfg.extraGroupPeriods && cfg.extraGroupPeriods[groupName]) delete cfg.extraGroupPeriods[groupName];
       Store.saveSettings();
       renderBudget();
     }
   });
-}
-/* Bornes de période propres à un groupe additionnel (voir extraGroupEffectiveMonths). */
-function openExtraGroupPeriodSheet(groupName){
-  const cfg = Store.settings.budget;
-  function render(){
-    const b = cfg.extraGroupPeriods[groupName] || {};
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <span style="font-weight:800;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(groupName)}</span>
-        <button class="icon-btn" id="exgp-close">${ICONS.close}</button>
-      </div>
-      <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
-        Ce groupe additionnel n'apparaîtra que sur l'intersection entre la période affichée et les bornes ci-dessous. Laisser vide pour ne pas limiter.
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;background:var(--card-alt);border-radius:100px;padding:7px 8px 7px 16px;margin-bottom:14px;">
-        <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Bornes</span>
-        <input type="month" id="exgp-from" value="${U.escHtml(b.from||'')}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
-        <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
-        <input type="month" id="exgp-to" value="${U.escHtml(b.to||'')}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
-      </div>
-      <button class="btn btn-ghost btn-block" id="exgp-clear">Effacer les bornes</button>
-    `;
-    document.getElementById("exgp-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
-    document.getElementById("exgp-from").onchange = (e)=>{
-      cfg.extraGroupPeriods[groupName] = Object.assign({}, cfg.extraGroupPeriods[groupName]||{}, {from: e.target.value||null});
-      Store.saveSettings();
-      renderBudget();
-    };
-    document.getElementById("exgp-to").onchange = (e)=>{
-      cfg.extraGroupPeriods[groupName] = Object.assign({}, cfg.extraGroupPeriods[groupName]||{}, {to: e.target.value||null});
-      Store.saveSettings();
-      renderBudget();
-    };
-    document.getElementById("exgp-clear").onclick = ()=>{
-      delete cfg.extraGroupPeriods[groupName];
-      Store.saveSettings();
-      renderBudget();
-      render();
-    };
-  }
-  render();
-  APP.openOverlay("overlay-detail");
 }
 
 function renderBudget(){
@@ -3991,14 +3977,10 @@ function renderBudget(){
   document.querySelectorAll(".bg-group-swap-btn[data-group]").forEach(el=>{
     el.onclick = ()=> openGroupSwapPicker(el.dataset.group, el.dataset.ismain==="1");
   });
-  document.querySelectorAll(".bg-group-period-btn[data-group]").forEach(el=>{
-    el.onclick = ()=> openExtraGroupPeriodSheet(el.dataset.group);
-  });
   document.querySelectorAll(".bg-group-remove-btn[data-group]").forEach(el=>{
     el.onclick = ()=>{
       const g = el.dataset.group;
       cfg.extraGroups = (cfg.extraGroups||[]).filter(x=>x!==g);
-      if(cfg.extraGroupPeriods && cfg.extraGroupPeriods[g]) delete cfg.extraGroupPeriods[g];
       Store.saveSettings();
       renderBudget();
     };
@@ -4046,7 +4028,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
   const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
-  const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+  const periodMonths = computeAmortPeriodMonths(months);
   const windowN = amortWindowMonths(months, periodMonths).length;
   // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
   // computeGroupBudget) ; les ajustements manuels restent en montant brut, non multipliés (§5.3 doc).
@@ -4080,7 +4062,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(!inPeriod) return;
     let displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
     displayAmount *= scopeMult;
-    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit"});
+    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey, yearsplit: tr.mode==="yearsplit", yearsplitCount: tr.mode==="yearsplit"?yearsplitMonthsInPeriod(tr.year, monthSet):null});
   });
 
   // Ajustements manuels ciblant cette catégorie pour ce groupe, sur la période affichée. Montant converti
@@ -4141,7 +4123,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
           <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
             <span style="display:flex;flex-direction:column;min-width:0;">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · amorti sur "+windowN+"/"+periodMonths+" mois de la fenêtre":""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · "+windowN+"/"+periodMonths+" mois":""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
               ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
@@ -4288,7 +4270,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
   if(voyKey === "__ajustement__"){
     const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
     const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
-    const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+    const periodMonths = computeAmortPeriodMonths(months);
     const windowN = amortWindowMonths(months, periodMonths).length;
     if(applyAdjustments){
       (cfg.adjustments||[]).forEach(adj=>{
@@ -4329,7 +4311,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
       }
       if(!inPeriod) return;
       const displayAmount = (tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant) * scopeMult;
-      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, yearsplit: tr.mode==="yearsplit"});
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, yearsplit: tr.mode==="yearsplit", yearsplitCount: tr.mode==="yearsplit"?yearsplitMonthsInPeriod(tr.year, monthSet):null});
     });
   }
 
@@ -4362,7 +4344,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey){
         <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
           <span style="display:flex;flex-direction:column;min-width:0;">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
           </span>
           <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
             <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
@@ -4390,7 +4372,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
   const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const amortSet = new Set(cfg.amortCategories||[]);
-  const periodMonths = (cfg.amortPeriodMonths && Number(cfg.amortPeriodMonths)>0) ? Number(cfg.amortPeriodMonths) : months.length;
+  const periodMonths = computeAmortPeriodMonths(months);
   const windowN = amortWindowMonths(months, periodMonths).length;
   const multiName = names.length>1;
   const items = [];
@@ -4418,7 +4400,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
         const inYear = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
         if(!inYear) return;
         const displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) * scopeMult;
-        items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:true});
+        items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:true, yearsplitCount: yearsplitMonthsInPeriod(tr.year, monthSet)});
         return;
       }
       let targetMonth = forced;
@@ -4450,7 +4432,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
     if(!inPeriod) return;
     let displayAmount = tr.mode==="yearsplit" ? (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) : t.montant;
     displayAmount *= scopeMult;
-    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||cat||"—", sub, displayAmount, yearsplit: tr.mode==="yearsplit", catKey:cat, matchedName, effMonthKey, rawAmount:t.montant});
+    items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||cat||"—", sub, displayAmount, yearsplit: tr.mode==="yearsplit", yearsplitCount: tr.mode==="yearsplit"?yearsplitMonthsInPeriod(tr.year, monthSet):null, catKey:cat, matchedName, effMonthKey, rawAmount:t.montant});
   });
 
   // Ajustements manuels : uniquement pour le groupe principal, en mode "Amort. + ajouts" ou "Sans amort,
@@ -4530,7 +4512,7 @@ function openGroupTypeTxnSheet(superGroupeNames, type){
           <div class="detail-row grptxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
             <span style="display:flex;flex-direction:column;min-width:0;">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · lissé sur l'année, part de la période affichée":""}</span>
+              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
               ${(x.kind==="reel" && x.catKey && x.matchedName===mainGroup) ? `<button type="button" class="btn btn-ghost btn-sm grptxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-groupe="${U.escHtml(x.matchedName)}" data-cat="${U.escHtml(x.catKey)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
@@ -5009,9 +4991,7 @@ function applyParamsImport(params, mode){
         endMonth: budgetSettings.endMonth,
         mainGroup: budgetSettings.mainGroup,
         extraGroups: (budgetSettings.extraGroups || []).slice(),
-        extraGroupPeriods: Object.assign({}, budgetSettings.extraGroupPeriods || {}),
         amortCategories: (budgetSettings.amortCategories || []).slice(),
-        amortPeriodMonths: budgetSettings.amortPeriodMonths,
         periodFrom: budgetSettings.periodFrom,
         periodTo: budgetSettings.periodTo,
       });
@@ -5061,14 +5041,6 @@ function applyParamsImport(params, mode){
     if(!b.endMonth && budgetSettings.endMonth) b.endMonth = budgetSettings.endMonth;
     if((!b.extraGroups || !b.extraGroups.length) && (budgetSettings.extraGroups||[]).length) b.extraGroups = budgetSettings.extraGroups.slice();
     if((!b.amortCategories || !b.amortCategories.length) && (budgetSettings.amortCategories||[]).length) b.amortCategories = budgetSettings.amortCategories.slice();
-    if(!b.amortPeriodMonths && budgetSettings.amortPeriodMonths) b.amortPeriodMonths = budgetSettings.amortPeriodMonths;
-    // Bornes de période par groupe additionnel : fusionnées groupe par groupe, sans écraser une borne déjà définie localement.
-    if(budgetSettings.extraGroupPeriods){
-      if(!b.extraGroupPeriods || typeof b.extraGroupPeriods!=="object") b.extraGroupPeriods = {};
-      Object.keys(budgetSettings.extraGroupPeriods).forEach(g=>{
-        if(!b.extraGroupPeriods[g]) b.extraGroupPeriods[g] = budgetSettings.extraGroupPeriods[g];
-      });
-    }
   }
   // Salaires saisis manuellement : par mois, on ne remplit que les mois pas encore renseignés localement
   // (ne remplace jamais une saisie existante avec une valeur importée).
@@ -5266,9 +5238,7 @@ function buildParamsPayload(){
       endMonth: budget.endMonth || null,
       mainGroup: budget.mainGroup || null,
       extraGroups: (budget.extraGroups || []).slice(),
-      extraGroupPeriods: Object.assign({}, budget.extraGroupPeriods || {}),
       amortCategories: (budget.amortCategories || []).slice(),
-      amortPeriodMonths: budget.amortPeriodMonths || null,
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
     },
@@ -5305,6 +5275,23 @@ function exportBackup(scope){
 }
 
 /* scope: "both" | "transactions" | "params" */
+/* Convertit une date "YYYY-MM-DD" en objet Date (jour précis, pour écriture Excel en tant que vraie
+   cellule date, pas du texte) ; null/"" → null. */
+function isoToDateObj(iso){
+  if(!iso) return null;
+  const [y,m,d] = String(iso).split("-").map(Number);
+  if(!y || !m || !d) return null;
+  return new Date(y, m-1, d);
+}
+/* Applique le format d'affichage JJ/MM/AAAA aux cellules de type date (t==='d') d'une colonne donnée
+   (0-indexée), sur toutes les lignes à partir de startRow (1 = sous l'en-tête). */
+function setColumnDateFormatDDMMYYYY(ws, colIndex, startRow, rowCount){
+  for(let r=startRow; r<startRow+rowCount; r++){
+    const addr = XLSX.utils.encode_cell({r, c: colIndex});
+    const cell = ws[addr];
+    if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
+  }
+}
 function exportExcel(scope){
   scope = scope || "both";
   const wb = XLSX.utils.book_new();
@@ -5314,11 +5301,12 @@ function exportExcel(scope){
     const data = [header];
     Store.transactions.forEach(t=>{
       data.push([
-        U.pad2(t.date.getDate())+"."+U.pad2(t.date.getMonth()+1)+"."+t.date.getFullYear(),
-        t.type, t.montant, t.categorie, t.personne, t.compte, t.compteCible, t.groupe, t.remarque
+        t.date, t.type, t.montant, t.categorie, t.personne, t.compte, t.compteCible, t.groupe, t.remarque
       ]);
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Transactions");
+    const wsTxn = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
+    setColumnDateFormatDDMMYYYY(wsTxn, 0, 1, data.length-1);
+    XLSX.utils.book_append_sheet(wb, wsTxn, "Transactions");
   }
 
   if(scope==="both" || scope==="params"){
@@ -5336,19 +5324,24 @@ function exportExcel(scope){
     for(let i=0;i<n;i++){
       const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i], d = dateRangeEntries[i];
       pData.push([
-        r?r.groupe:"", r?r.superGroupe:"", r&&r.dateFrom?r.dateFrom:"", r&&r.dateTo?r.dateTo:"",
+        r?r.groupe:"", r?r.superGroupe:"", (r&&r.dateFrom)?isoToDateObj(r.dateFrom):"", (r&&r.dateTo)?isoToDateObj(r.dateTo):"",
         a?a[0]:"", a?a[1]:"",
         p?p.personne:"", p?p.superPersonne:"",
         k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):"",
         co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):"",
-        d?d[0]:"", d&&d[1]?d[1].dateFrom||"":"", d&&d[1]?d[1].dateTo||"":""
+        d?d[0]:"", (d&&d[1]&&d[1].dateFrom)?isoToDateObj(d[1].dateFrom):"", (d&&d[1]&&d[1].dateTo)?isoToDateObj(d[1].dateTo):""
       ]);
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "Paramètres");
+    const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
+    setColumnDateFormatDDMMYYYY(wsParams, 2, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 14, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 15, 1, pData.length-1);
+    XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
     const aHeader = ["Mois","Groupe","Catégorie","Montant","Remarque","Amorti","Vue"];
-    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||"", a.amorti?"Oui":"Non", a.montantScope==="couple"?"Couple":"Perso"]));
+    const aData = [aHeader].concat(adj.map(a=>[a.month||"", a.groupe||"", a.categorie||"", a.montant||0, a.remarque||"", a.amorti?"Oui":"Non", a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
 
     const b = Store.settings.budget || {};
@@ -5361,7 +5354,6 @@ function exportExcel(scope){
       ["Groupe de groupe principal", b.mainGroup||""],
       ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
       ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
-      ["Période d'amortissement (mois)", b.amortPeriodMonths||""],
       ["Période affichée - de", b.periodFrom||""],
       ["Période affichée - à", b.periodTo||""],
     ];
@@ -5453,7 +5445,7 @@ function confirmResetAll(){
     APP.closeOverlay("overlay-confirm");
     APP.closeOverlay("overlay-menu");
     APP.showToast("Données réinitialisées");
-    APP.switchTab("dashboard");
+    APP.switchTab("accounts");
   };
   APP.openOverlay("overlay-confirm");
 }
