@@ -388,7 +388,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.17.23";
+const APP_VERSION = "v 2026.08.17.19.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -854,30 +854,44 @@ function parseParametresSheet(wb){
     rows.forEach(r=>{
       const norm = {};
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
-      const groupe = norm["groupe"];
+      const groupeRaw = norm["groupe"];
       const superGroupe = norm["groupe de groupe"];
+      const occurrenceExacte = norm["occurrence exacte"];
       const compte = norm["compte"];
       const typeCompte = norm["type de compte"];
       const acronymeCompte = norm["acronyme"];
       const personne = norm["personne"];
       const superPersonne = norm["groupe de personnes"];
-      const kGroupe = norm["groupe (type budget)"];
       const kType = norm["type budget (quotidien/voyage)"];
       const kMonth = norm["mois voyage (aaaa-mm)"];
-      const daysGroupe = norm["groupe (jours)"];
       const daysFrom = norm["date debut (jours)"];
       const daysTo = norm["date fin (jours)"];
       const catForced = norm["categorie (classement force)"];
       const catForcedType = norm["type force (revenus/depenses)"];
-      if(groupe && superGroupe){
+      const groupeStr = groupeRaw ? String(groupeRaw).trim() : "";
+      // Type budget / Mois voyage / Bornes (jours) sont indexés directement sur le libellé complet de la
+      // colonne "Groupe" (suffixe de date inclus, ex. "France (26-06_07)") — jamais sur un nom de base
+      // dérivé : deux occurrences distinctes du même lieu sont des groupes différents et peuvent avoir des
+      // réglages différents (cf. getGroupKind/getGroupVoyageMonth).
+      if(groupeStr && superGroupe){
         const df = U.parseDateValue(norm["date debut"]);
         const dt = U.parseDateValue(norm["date fin"]);
-        groupRules.push({
-          groupe: String(groupe).trim(),
+        const groupeBase = U.baseGroupe(groupeStr);
+        const rule = {
+          groupe: groupeBase,
           superGroupe: String(superGroupe).trim(),
           dateFrom: df ? U.toISO(df) : null,
           dateTo: dt ? U.toISO(dt) : null
-        });
+        };
+        // Une règle est toujours résolue en priorité via son occurrence exacte (`full`, libellé complet
+        // avec suffixe) — le nom de base (`groupe`) ne sert que de repli optionnel pour classer en bloc
+        // toutes les occurrences non encore rattachées individuellement (fonctionnement existant de "Gérer
+        // les groupes", cf. findGroupAliasRule/resolvedSuperGroupeForOccurrence). Sans "Occurrence exacte"
+        // renseignée, on la déduit automatiquement dès que "Groupe" contient un suffixe entre parenthèses.
+        const explicitFull = occurrenceExacte && String(occurrenceExacte).trim();
+        if(explicitFull) rule.full = explicitFull;
+        else if(groupeBase !== groupeStr) rule.full = groupeStr;
+        groupRules.push(rule);
       }
       if(personne && superPersonne){
         personRules.push({
@@ -891,15 +905,18 @@ function parseParametresSheet(wb){
       if(compte && acronymeCompte){
         accountAcronyms[String(compte).trim()] = String(acronymeCompte).trim().toUpperCase().slice(0,4);
       }
-      if(kGroupe && kType){
-        const base = String(kGroupe).trim();
-        groupKind[base] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
-        if(kMonth) groupVoyageMonth[base] = String(kMonth).trim();
+      // Type budget / Mois voyage / Bornes (jours) partagent maintenant la même colonne "Groupe" que le
+      // groupe de groupe (au lieu de colonnes "Groupe (type budget)" / "Groupe (jours)" séparées) — un seul
+      // bloc de colonnes contiguës par groupe, plus simple à lire et à éditer dans Excel. Toujours indexés
+      // sur le libellé complet exact (groupeStr), jamais sur un nom de base dérivé.
+      if(groupeStr && kType){
+        groupKind[groupeStr] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
+        if(kMonth) groupVoyageMonth[groupeStr] = String(kMonth).trim();
       }
-      if(daysGroupe && daysFrom && daysTo){
+      if(groupeStr && daysFrom && daysTo){
         const dFrom = U.parseDateValue(daysFrom);
         const dTo = U.parseDateValue(daysTo);
-        if(dFrom && dTo) groupDateRange[String(daysGroupe).trim()] = {dateFrom: U.toISO(dFrom), dateTo: U.toISO(dTo)};
+        if(dFrom && dTo) groupDateRange[groupeStr] = {dateFrom: U.toISO(dFrom), dateTo: U.toISO(dTo)};
       }
       if(catForced && catForcedType){
         categoryTypeOverride[String(catForced).trim()] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
@@ -1342,14 +1359,25 @@ function getAccountAcronym(compteName){
   return (custom && custom.trim()) ? custom.trim() : deriveAccountAcronym(compteName);
 }
 
-/* ---------------- Type de groupe (Vie quotidienne / Voyage) — set manually, utilisé par l'onglet Budget ---------------- */
-function getGroupKind(base){
+/* ---------------- Type de groupe (Vie quotidienne / Voyage) — set manually, utilisé par l'onglet Budget ----------------
+   Toujours réglé et lu via le libellé complet du groupe (avec son éventuel suffixe de date, ex.
+   "France (26-06_07)") — jamais via un nom de base dérivé : deux occurrences distinctes du même nom de
+   base (ex. "France (26-06_07)" et "France (25-07_08)") sont des groupes différents et peuvent avoir des
+   classifications différentes. Le repli sur le nom de base ci-dessous n'existe que pour ne pas perdre les
+   réglages déjà enregistrés avant ce correctif (anciennes données historiquement clées par nom de base). */
+function getGroupKind(fullName){
   const map = Store.settings.groupKind || {};
-  return map[base] === "voyage" ? "voyage" : "quotidien";
+  if(map[fullName] != null) return map[fullName]==="voyage" ? "voyage" : "quotidien";
+  const base = U.baseGroupe(fullName);
+  if(base !== fullName && map[base] != null) return map[base]==="voyage" ? "voyage" : "quotidien";
+  return "quotidien";
 }
-function getGroupVoyageMonth(base){
+function getGroupVoyageMonth(fullName){
   const map = Store.settings.groupVoyageMonth || {};
-  return map[base] || null;
+  if(map[fullName] != null) return map[fullName];
+  const base = U.baseGroupe(fullName);
+  if(base !== fullName && map[base] != null) return map[base];
+  return null;
 }
 /* Date de début/fin d'un groupe (clé = libellé littéral complet si disponible, sinon nom de base) —
    utilisée pour calculer le nombre de jours et les moyennes par jour (coûts, revenus, total). */
@@ -2895,7 +2923,7 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(base)==="voyage") return;
+    if(AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -2985,11 +3013,11 @@ function computeGroupBudget(superGroupeName, months, opts){
     if(!matchesSelection(t)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    const kind = AGG.getGroupKind(base);
+    const kind = AGG.getGroupKind(t.groupe);
 
     if(kind==="voyage"){
       // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
-      const forced = AGG.getGroupVoyageMonth(base);
+      const forced = AGG.getGroupVoyageMonth(t.groupe);
       // Le libellé affiché conserve le nom complet du groupe (avec la date entre parenthèses) :
       // on ne fusionne pas plusieurs séjours du même lieu sous un seul nom de base.
       let targetMonth = forced;
@@ -3132,7 +3160,7 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(!matchesSelection(t)) return false;
       if(isAccountExcluded(t.compte)) return false;
       const base = t.groupeBase || U.baseGroupe(t.groupe);
-      if(AGG.getGroupKind(base)==="voyage") return false;
+      if(AGG.getGroupKind(t.groupe)==="voyage") return false;
       const cat = t.categorie || "(Non renseigné)";
       if(isSalaryCategory(cat)){ salaryCatKey = cat; return true; }
       return false;
@@ -3185,7 +3213,7 @@ function categoriesForGroup(groupName){
     if(!groupSelectionMatches(t, groupName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(base)==="voyage") return;
+    if(AGG.getGroupKind(t.groupe)==="voyage") return;
     set.add(t.categorie || "(Non renseigné)");
   });
   return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -4368,7 +4396,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(base)==="voyage") return;
+    if(AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -4621,14 +4649,14 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
       if(!groupSelectionMatches(t, superGroupeName)) return;
       if(isAccountExcluded(t.compte)) return;
       const base = t.groupeBase || U.baseGroupe(t.groupe);
-      if(AGG.getGroupKind(base)!=="voyage") return;
+      if(AGG.getGroupKind(t.groupe)!=="voyage") return;
       if(t.groupe !== voyKey) return;
       const tr = t.transform;
       let inPeriod;
       if(tr.mode==="yearsplit"){
         inPeriod = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
       } else {
-        const forced = AGG.getGroupVoyageMonth(base);
+        const forced = AGG.getGroupVoyageMonth(t.groupe);
         let targetMonth = forced;
         if(!targetMonth){
           if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
@@ -4729,7 +4757,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
     const matchedName = names.find(n=>groupSelectionMatches(t, n));
     if(!matchedName) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    const kind = AGG.getGroupKind(base);
+    const kind = AGG.getGroupKind(t.groupe);
     const isVoyage = kind==="voyage";
     if(typeFilter==="Voyage" && !isVoyage) return;
     if((typeFilter==="Income" || typeFilter==="Expense") && isVoyage) return;
@@ -4737,7 +4765,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
     const sub = multiName ? [subLabel, matchedName].filter(Boolean).join(" · ") : subLabel;
 
     if(isVoyage){
-      const forced = AGG.getGroupVoyageMonth(base);
+      const forced = AGG.getGroupVoyageMonth(t.groupe);
       const tr = t.transform;
       if(tr.mode==="yearsplit" && !forced){
         const inYear = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
@@ -5360,7 +5388,7 @@ function applyParamsImport(params, mode){
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
-  const rulesAdded = mergeRuleList(existingGroup, groupRules, r=>[r.groupe,r.superGroupe,r.dateFrom||"",r.dateTo||""].join("|"));
+  const rulesAdded = mergeRuleList(existingGroup, groupRules, r=>[r.groupe,r.superGroupe,r.full||"",r.dateFrom||"",r.dateTo||""].join("|"));
   Store.settings.groupAliasRules = existingGroup;
 
   const existingPerson = Store.settings.personAliasRules || [];
@@ -5663,36 +5691,62 @@ function exportExcel(scope){
   }
 
   if(scope==="both" || scope==="params"){
-    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Acronyme","Personne","Groupe de personnes",
-      "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)",
-      "Groupe (jours)","Date début (jours)","Date fin (jours)"];
+    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin",
+      "Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Date début (jours)","Date fin (jours)",
+      "Compte","Type de compte","Acronyme","Personne","Groupe de personnes",
+      "Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
     const rules = Store.settings.groupAliasRules || [];
+    const kindMap = Store.settings.groupKind || {};
+    const voyageMonthMap = Store.settings.groupVoyageMonth || {};
+    const dateRangeMap = Store.settings.groupDateRange || {};
+    // Un seul bloc de colonnes "Groupe" contiguës (groupe de groupe + type budget + mois voyage + bornes
+    // jours), au lieu de plusieurs blocs disjoints ailleurs dans la feuille. La colonne "Groupe" contient
+    // TOUJOURS le libellé complet exact (suffixe de date inclus, ex. "France (26-06_07)") — jamais un nom
+    // de base dérivé — sauf pour une règle "générique" volontairement créée sans occurrence précise dans
+    // "Gérer les groupes" (rattache alors toute occurrence non classée individuellement ; cf. `full` dans
+    // findGroupAliasRule), auquel cas "Groupe" montre simplement le nom tel quel, sans suffixe puisqu'il
+    // n'y en a pas. Une ligne par règle de "groupe de groupe" (rules), enrichie du type budget/mois
+    // voyage/bornes jours du même libellé s'ils existent ; les libellés qui n'ont NI règle de groupe de
+    // groupe MAIS ont un type budget ou des bornes jours reçoivent une ligne dédiée pour ne rien perdre.
+    const ruleKeys = new Set(rules.map(r=>r.full || r.groupe));
+    const extraKeys = Array.from(new Set([...Object.keys(kindMap), ...Object.keys(dateRangeMap)]))
+      .filter(k=>!ruleKeys.has(k));
+    const groupRows = rules.map(r=>{
+      const key = r.full || r.groupe;
+      return {
+        groupe: key, superGroupe: r.superGroupe, dateFrom: r.dateFrom, dateTo: r.dateTo,
+        kind: kindMap[key]||"", voyageMonth: voyageMonthMap[key]||"",
+        daysFrom: (dateRangeMap[key]||{}).dateFrom||null, daysTo: (dateRangeMap[key]||{}).dateTo||null
+      };
+    }).concat(extraKeys.map(k=>({
+      groupe: k, superGroupe: "", dateFrom: null, dateTo: null,
+      kind: kindMap[k]||"", voyageMonth: voyageMonthMap[k]||"",
+      daysFrom: (dateRangeMap[k]||{}).dateFrom||null, daysTo: (dateRangeMap[k]||{}).dateTo||null
+    })));
     const acctTypesMap = Store.settings.accountTypes || {};
     const acctAcronymsMap = Store.settings.accountAcronyms || {};
     const acctNames = Array.from(new Set([...Object.keys(acctTypesMap), ...Object.keys(acctAcronymsMap)]));
     const acct = acctNames.map(name=>[name, acctTypesMap[name]||"", acctAcronymsMap[name]||""]);
     const personRules = Store.settings.personAliasRules || [];
-    const kindEntries = Object.entries(Store.settings.groupKind || {});
     const catOverrideEntries = Object.entries(Store.settings.categoryTypeOverride || {});
-    const dateRangeEntries = Object.entries(Store.settings.groupDateRange || {});
-    const n = Math.max(rules.length, acct.length, personRules.length, kindEntries.length, catOverrideEntries.length, dateRangeEntries.length, 1);
+    const n = Math.max(groupRows.length, acct.length, personRules.length, catOverrideEntries.length, 1);
     const pData = [pHeader];
     for(let i=0;i<n;i++){
-      const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i], d = dateRangeEntries[i];
+      const g = groupRows[i], a = acct[i], p = personRules[i], co = catOverrideEntries[i];
       pData.push([
-        r?r.groupe:"", r?r.superGroupe:"", (r&&r.dateFrom)?isoToDateObj(r.dateFrom):"", (r&&r.dateTo)?isoToDateObj(r.dateTo):"",
+        g?g.groupe:"", g?g.superGroupe:"", (g&&g.dateFrom)?isoToDateObj(g.dateFrom):"", (g&&g.dateTo)?isoToDateObj(g.dateTo):"",
+        g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", g?g.voyageMonth:"",
+        (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"", (g&&g.daysTo)?isoToDateObj(g.daysTo):"",
         a?a[0]:"", a?a[1]:"", a?a[2]:"",
         p?p.personne:"", p?p.superPersonne:"",
-        k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):"",
-        co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):"",
-        d?d[0]:"", (d&&d[1]&&d[1].dateFrom)?isoToDateObj(d[1].dateFrom):"", (d&&d[1]&&d[1].dateTo)?isoToDateObj(d[1].dateTo):""
+        co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):""
       ]);
     }
     const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
     setColumnDateFormatDDMMYYYY(wsParams, 2, 1, pData.length-1);
     setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 15, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 16, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 6, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 7, 1, pData.length-1);
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
@@ -6369,11 +6423,11 @@ function createAliasManager(cfg){
     if(selectMode){
       return `<div class="check-item groupe-child-item ${isSel?'selected':''}" data-sel="${U.escHtml(realBase)}" style="cursor:pointer;">
         <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+        <span class="lbl">${kindIconHtml(b.base)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       </div>`;
     }
     return `<div class="check-item groupe-child-item" data-base="${U.escHtml(realBase)}" data-full="${U.escHtml(b.base)}" style="cursor:pointer;">
-      <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+      <span class="lbl">${kindIconHtml(b.base)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
     </div>`;
   }
@@ -6384,11 +6438,11 @@ function createAliasManager(cfg){
     if(selectMode){
       return `<div class="check-item ${isSel?'selected':''}" data-sel="${U.escHtml(realBase)}" style="cursor:pointer;">
         <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+        <span class="lbl">${kindIconHtml(b.base)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
       </div>`;
     }
     return `<div class="check-item" data-base="${U.escHtml(realBase)}" data-full="${U.escHtml(b.base)}" style="cursor:pointer;">
-      <span class="lbl">${kindIconHtml(realBase)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
+      <span class="lbl">${kindIconHtml(b.base)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
     </div>`;
   }
 
@@ -6560,8 +6614,9 @@ function createAliasManager(cfg){
 
   function kindSectionHtml(){
     if(!cfg.showKind) return "";
-    const kind = AGG.getGroupKind(editingBase);
-    const voyMonth = AGG.getGroupVoyageMonth(editingBase) || "";
+    const key = editingFull || editingBase;
+    const kind = AGG.getGroupKind(key);
+    const voyMonth = AGG.getGroupVoyageMonth(key) || "";
     return `
       <div class="field-label" style="margin-top:0;">Type de groupe (utilisé par l'onglet Budget)</div>
       <div class="seg" id="am-kind-seg" style="margin-bottom:${kind==='voyage'?'10px':'18px'};">
@@ -6586,17 +6641,18 @@ function createAliasManager(cfg){
   }
   function saveKindSection(){
     if(!cfg.showKind) return;
+    const key = editingFull || editingBase;
     const active = document.querySelector("#am-kind-seg button.active");
     const kind = active ? active.dataset.k : "quotidien";
     Store.settings.groupKind = Store.settings.groupKind || {};
     Store.settings.groupVoyageMonth = Store.settings.groupVoyageMonth || {};
     if(kind==="voyage"){
-      Store.settings.groupKind[editingBase] = "voyage";
+      Store.settings.groupKind[key] = "voyage";
       const m = document.getElementById("am-voymonth-input").value || null;
-      if(m) Store.settings.groupVoyageMonth[editingBase] = m; else delete Store.settings.groupVoyageMonth[editingBase];
+      if(m) Store.settings.groupVoyageMonth[key] = m; else delete Store.settings.groupVoyageMonth[key];
     } else {
-      delete Store.settings.groupKind[editingBase];
-      delete Store.settings.groupVoyageMonth[editingBase];
+      delete Store.settings.groupKind[key];
+      delete Store.settings.groupVoyageMonth[key];
     }
   }
 
