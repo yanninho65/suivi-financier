@@ -308,6 +308,32 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 
 .loadmore-wrap{display:flex;justify-content:center;margin-top:16px;}
 
+/* ---------- Onglet Évolution : tableau à colonnes figées (libellé + total) ---------- */
+.evo-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);}
+.evo-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
+.evo-table th,.evo-table td{padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
+.evo-table thead th{font-size:10px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.02em;padding-top:10px;padding-bottom:10px;background:var(--card);border-bottom:2px solid var(--divider);}
+.evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;}
+.evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
+.evo-col-val{min-width:78px;}
+.evo-year-header{cursor:pointer;}
+.evo-year-header:active{color:var(--primary);}
+.evo-section-row{background:var(--card-alt);cursor:pointer;}
+.evo-section-row td{font-weight:800;font-size:13px;}
+.evo-section-row .evo-col-label,.evo-section-row .evo-col-total{background:var(--card-alt);}
+.evo-section-row.selected .evo-col-label,.evo-section-row.selected .evo-col-total{background:var(--primary-soft);}
+.evo-section-row.selected{background:var(--primary-soft);}
+.evo-item-row td{color:var(--text-sub);}
+.evo-item-row.hidden{display:none;}
+.evo-val-cell{cursor:pointer;}
+.evo-val-cell.neg{color:var(--expense);}
+.evo-val-cell.pos{color:var(--income);}
+.evo-chev{display:inline-block;width:10px;height:10px;margin-right:4px;transition:transform .15s;vertical-align:middle;}
+.evo-chev.open{transform:rotate(90deg);}
+.evo-merge-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:100px;background:var(--card-alt);color:var(--text);}
+.evo-merge-chip button{border:none;background:none;padding:0;display:flex;color:var(--text-sub);cursor:pointer;}
+.evo-section-check{width:18px;height:18px;flex:0 0 auto;}
+
 /* ---------- Breakdown / evolution lists ---------- */
 .bd-row{display:flex;align-items:center;gap:12px;padding:11px 4px;}
 .bd-row + .bd-row{border-top:1px solid var(--divider);}
@@ -388,7 +414,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.19.47";
+const APP_VERSION = "v 2026.08.17.22.02";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -620,6 +646,7 @@ const Store = {
   transactions: [], // array of txn objects
   settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
+    evolution:{view:"groupe", monthBasis:"reel", merges:{groupe:[], categorie:[], personne:[]}},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
       amortCategories:[], adjustments:[], excludedAccounts:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
@@ -720,6 +747,11 @@ const Store = {
     if(!s.accountTypes || typeof s.accountTypes!=="object") s.accountTypes = {};
     if(!s.accountAcronyms || typeof s.accountAcronyms!=="object") s.accountAcronyms = {};
     if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
+    if(!s.evolution || typeof s.evolution!=="object") s.evolution = {};
+    if(s.evolution.view!=="groupe" && s.evolution.view!=="categorie" && s.evolution.view!=="personne") s.evolution.view = "groupe";
+    if(s.evolution.monthBasis!=="reel" && s.evolution.monthBasis!=="transformee") s.evolution.monthBasis = "reel";
+    if(!s.evolution.merges || typeof s.evolution.merges!=="object") s.evolution.merges = {};
+    ["groupe","categorie","personne"].forEach(d=>{ if(!Array.isArray(s.evolution.merges[d])) s.evolution.merges[d] = []; });
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
@@ -1651,11 +1683,121 @@ function computeTimeSeries(transactions, granularity, dateBasis, dimension){
   return {buckets:arr, dimTotals};
 }
 
+/* ================= ONGLET ÉVOLUTION — agrégation par groupe/catégorie/personne × année/mois ================= */
+/* Construit l'index {sections:[{key,label,items:[{key,label,values:Map("YYYY-MM"->montant)}]}]} pour une
+   dimension donnée. "reel" = date réelle de chaque transaction ; "transformee" = applique la même logique
+   que le Budget (remarque -> mois réaffecté, ou montant réparti sur 12 mois pour un "yearsplit"). Les
+   transferts sont toujours exclus (comme partout ailleurs dans l'app pour ces 3 dimensions). */
+function buildEvolutionIndex(dimension, monthBasis){
+  const sections = new Map();
+  function ensureSection(key, label){
+    if(!sections.has(key)) sections.set(key, {key, label, items: new Map()});
+    return sections.get(key);
+  }
+  function ensureItem(sec, key, label){
+    if(!sec.items.has(key)) sec.items.set(key, {key, label, values: new Map()});
+    return sec.items.get(key);
+  }
+  function addAmt(item, year, month, amt){
+    const ym = year+"-"+U.pad2(month+1);
+    item.values.set(ym, (item.values.get(ym)||0)+amt);
+  }
+  const catTypeMap = dimension==="categorie" ? classifyCategoryTypes(Store.transactions) : null;
+
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    let sectionKey, sectionLabel, itemKey, itemLabel;
+    if(dimension==="groupe"){
+      if(!t.groupe) return;
+      const base = t.groupeBase || U.baseGroupe(t.groupe);
+      const rule = findGroupAliasRule(base, t.groupe);
+      sectionLabel = rule ? rule.superGroupe : t.groupe;
+      sectionKey = sectionLabel;
+      itemKey = t.groupe; itemLabel = t.groupe;
+    } else if(dimension==="categorie"){
+      itemLabel = t.categorie || "(Non renseigné)";
+      itemKey = itemLabel;
+      sectionKey = (t.categorie && catTypeMap.get(t.categorie)) || t.type;
+      sectionLabel = sectionKey==="Income" ? "Revenus" : "Dépenses";
+    } else { // personne
+      itemLabel = t.personne || "(Non renseigné)";
+      itemKey = itemLabel;
+      sectionLabel = t.personne ? getPersonneDisplay(t) : "(Non renseigné)";
+      sectionKey = sectionLabel;
+    }
+    const sec = ensureSection(sectionKey, sectionLabel);
+    const item = ensureItem(sec, itemKey, itemLabel);
+    if(monthBasis==="reel"){
+      addAmt(item, t.date.getFullYear(), t.date.getMonth(), t.montant);
+    } else {
+      const tr = t.transform;
+      if(tr.mode==="yearsplit"){
+        for(let m=0;m<12;m++) addAmt(item, tr.year, m, t.montant/12);
+      } else if(tr.mode==="month"){
+        addAmt(item, tr.year, tr.month, t.montant);
+      } else {
+        addAmt(item, t.date.getFullYear(), t.date.getMonth(), t.montant);
+      }
+    }
+  });
+
+  let sectionList = Array.from(sections.values()).map(s=>({...s, items: Array.from(s.items.values())}));
+
+  // Fusions manuelles de sections (cf. Store.settings.evolution.merges[dimension])
+  const merges = ((Store.settings.evolution||{}).merges||{})[dimension] || [];
+  merges.forEach(merge=>{
+    const memberSet = new Set(merge.members);
+    const members = sectionList.filter(s=>memberSet.has(s.key));
+    if(members.length<2) return;
+    const merged = {key:"__merge__"+merge.name, label: merge.name, items: [], __merged:true, __members: members.map(m=>m.key)};
+    const itemMap = new Map();
+    members.forEach(m=>{
+      m.items.forEach(it=>{
+        const key = m.key+"::"+it.key; // préfixé par section d'origine pour éviter toute collision de nom
+        itemMap.set(key, {...it, key, __origLabel: it.label, __origSection: m.label});
+      });
+    });
+    merged.items = Array.from(itemMap.values());
+    sectionList = sectionList.filter(s=>!memberSet.has(s.key));
+    sectionList.push(merged);
+  });
+
+  sectionList.forEach(s=> s.items.sort((a,b)=> itemTotalValue(b)-itemTotalValue(a)));
+  sectionList.sort((a,b)=> Math.abs(sectionTotalValue(b))-Math.abs(sectionTotalValue(a)));
+  return {sections: sectionList};
+}
+function itemTotalValue(item){
+  let s=0; item.values.forEach(v=> s+=v); return s;
+}
+function sectionTotalValue(section){
+  let s=0; section.items.forEach(it=> s+=itemTotalValue(it)); return s;
+}
+function itemYearValue(item, year){
+  let s=0; const prefix=year+"-"; item.values.forEach((v,ym)=>{ if(ym.startsWith(prefix)) s+=v; }); return s;
+}
+function sectionYearValue(section, year){
+  let s=0; section.items.forEach(it=> s+=itemYearValue(it, year)); return s;
+}
+function itemMonthValue(item, year, month){
+  return item.values.get(year+"-"+U.pad2(month+1)) || 0;
+}
+function sectionMonthValue(section, year, month){
+  let s=0; section.items.forEach(it=> s+=itemMonthValue(it, year, month)); return s;
+}
+function evolutionYearsList(evoIndex){
+  const years = new Set();
+  evoIndex.sections.forEach(s=> s.items.forEach(it=>{
+    it.values.forEach((v,ym)=> years.add(Number(ym.slice(0,4))));
+  }));
+  return Array.from(years).sort((a,b)=>a-b);
+}
+
 window.__SF_AGG = {applyFilters, distinctValues, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
   getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats,
-  classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue};
+  classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
+  buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList};
 })();
 (function(){
 "use strict";
@@ -1710,6 +1852,7 @@ function buildShell(){
 
     <div class="view" id="view-transactions"></div>
     <div class="view" id="view-budget"></div>
+    <div class="view" id="view-evolution"></div>
     <div class="view active" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
@@ -1723,6 +1866,7 @@ function buildShell(){
       <button class="navbtn active" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
       <button class="navbtn" data-tab="transactions">${ICONS.list}<span>Transactions</span></button>
       <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
+      <button class="navbtn" data-tab="evolution">${ICONS.trend}<span>Évolution</span></button>
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
@@ -1817,6 +1961,7 @@ function refreshCurrentTab(){
   if(!V) return;
   if(currentTab==="transactions") V.renderTransactions();
   else if(currentTab==="budget") V.renderBudget && V.renderBudget();
+  else if(currentTab==="evolution") V.renderEvolution && V.renderEvolution();
   else if(currentTab==="accounts") V.renderAccounts();
 }
 
@@ -4924,6 +5069,327 @@ function openGroupTypeTxnSheet(superGroupeNames, type, opts){
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderBudget = renderBudget;
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+/* ================= ONGLET ÉVOLUTION ================= */
+/* État d'écran (non persisté, réinitialisé à chaque changement de vue/dimension) */
+let drillYear = null;              // null = colonnes "années" ; sinon année dont on affiche les 12 mois
+let collapsedSections = new Set(); // clés de section repliées (par défaut : tout replié)
+let sectionsInitialized = false;   // pour ne "tout replier" par défaut qu'au premier rendu
+let mergeMode = false;
+let mergeSelection = new Set();
+
+const VIEW_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne"};
+
+function evoCfg(){ return Store.settings.evolution; }
+
+function fmtVal(n){ return U.fmtMoneySigned(n); }
+
+function valClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
+
+/* ---------------- Rendu principal ---------------- */
+function renderEvolution(){
+  const view = document.getElementById("view-evolution");
+  const cfg = evoCfg();
+  const dimension = cfg.view;
+  const evoIndex = AGG.buildEvolutionIndex(dimension, cfg.monthBasis);
+  const years = AGG.evolutionYearsList(evoIndex);
+
+  if(!sectionsInitialized){
+    collapsedSections = new Set(evoIndex.sections.map(s=>s.key));
+    sectionsInitialized = true;
+  }
+
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section" style="padding-top:14px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir leur évolution.</p></div></div>`;
+    return;
+  }
+
+  const merges = (cfg.merges||{})[dimension] || [];
+  const headerHtml = `
+    <div class="section" style="padding-top:14px;">
+      <div class="card" style="margin:0 4px 12px;padding:14px;">
+        <div class="seg seg-sm" id="evo-view-seg" style="margin-bottom:10px;">
+          <button data-v="groupe" class="${dimension==='groupe'?'active':''}">Groupe</button>
+          <button data-v="categorie" class="${dimension==='categorie'?'active':''}">Catégorie</button>
+          <button data-v="personne" class="${dimension==='personne'?'active':''}">Personne</button>
+        </div>
+        <div class="seg seg-sm" id="evo-monthbasis-seg">
+          <button data-v="reel" class="${cfg.monthBasis==='reel'?'active':''}">Mois réel</button>
+          <button data-v="transformee" class="${cfg.monthBasis==='transformee'?'active':''}">Mois transformé</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin:0 4px 12px;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost btn-sm" id="evo-merge-toggle-btn">${mergeMode? "Annuler la fusion" : "Fusionner des "+VIEW_LABEL[dimension].toLowerCase()+"s"}</button>
+        ${mergeMode ? `<button type="button" class="btn btn-primary btn-sm" id="evo-merge-apply-btn" ${mergeSelection.size<2?'disabled':''}>Fusionner (${mergeSelection.size})</button>` : ""}
+      </div>
+      ${merges.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 4px 12px;">
+        ${merges.map(m=>`<span class="evo-merge-chip">${U.escHtml(m.name)}<button type="button" data-unmerge="${U.escHtml(m.name)}">${ICONS.close}</button></span>`).join("")}
+      </div>` : ""}
+      ${mergeMode ? `<div style="font-size:12px;color:var(--text-sub);margin:0 4px 12px;line-height:1.4;">Touchez le nom de plusieurs ${VIEW_LABEL[dimension].toLowerCase()}s ci-dessous pour les sélectionner, puis validez.</div>` : ""}
+      ${drillYear!=null ? `<button type="button" class="btn btn-ghost btn-sm" id="evo-back-btn" style="margin:0 4px 12px;">${ICONS.arrowLeft} Retour aux années</button>` : ""}
+    </div>
+  `;
+
+  const tableHtml = buildTableHtml(evoIndex, dimension, years);
+
+  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;"><div class="evo-table-wrap">${tableHtml}</div></div><div style="height:10px;"></div>`;
+
+  wireEvolution(evoIndex, dimension, years);
+}
+
+function buildTableHtml(evoIndex, dimension, years){
+  const cols = drillYear!=null
+    ? Array.from({length:12}, (_,m)=>({type:"month", year:drillYear, month:m, label:U.MONTHS_FR_SHORT[m]}))
+    : years.map(y=>({type:"year", year:y, label:String(y)}));
+
+  const theadHtml = `
+    <thead><tr>
+      <th class="evo-col-label">${VIEW_LABEL[dimension]}</th>
+      <th class="evo-col-total">Total</th>
+      ${cols.map(c=> c.type==="year"
+        ? `<th class="evo-col-val evo-year-header" data-year="${c.year}">${c.label}</th>`
+        : `<th class="evo-col-val">${c.label}</th>`
+      ).join("")}
+    </tr></thead>
+  `;
+
+  const bodyRows = evoIndex.sections.map(sec=>{
+    const secTotal = AGG.sectionTotalValue(sec);
+    const secSelected = mergeMode && mergeSelection.has(sec.key);
+    const secIsMerge = !!sec.__merged;
+    const collapsed = collapsedSections.has(sec.key);
+    const secCells = cols.map(c=>{
+      const v = c.type==="year" ? AGG.sectionYearValue(sec, c.year) : AGG.sectionMonthValue(sec, c.year, c.month);
+      const dataAttrs = secIsMerge
+        ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"`
+        : `data-section="${U.escHtml(sec.key)}"`;
+      const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
+      return `<td class="evo-col-val evo-val-cell ${valClass(v)}" ${dataAttrs} ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
+    }).join("");
+    const totalAttrs = secIsMerge ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"` : `data-section="${U.escHtml(sec.key)}"`;
+    const secRow = `
+      <tr class="evo-section-row${secSelected?' selected':''}" data-section-toggle="${U.escHtml(sec.key)}">
+        <td class="evo-col-label"><span class="evo-chev ${collapsed?'':'open'}">▸</span>${U.escHtml(sec.label)}</td>
+        <td class="evo-col-total evo-val-cell ${valClass(secTotal)}" ${totalAttrs}>${secTotal ? fmtVal(secTotal) : "—"}</td>
+        ${secCells}
+      </tr>
+    `;
+    const itemRows = sec.items.map(it=>{
+      const itTotal = AGG.itemTotalValue(it);
+      const itCells = cols.map(c=>{
+        const v = c.type==="year" ? AGG.itemYearValue(it, c.year) : AGG.itemMonthValue(it, c.year, c.month);
+        const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
+        return `<td class="evo-col-val evo-val-cell ${valClass(v)}" data-item="${U.escHtml(it.label)}" ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
+      }).join("");
+      return `
+      <tr class="evo-item-row${collapsed?' hidden':''}" data-section-key="${U.escHtml(sec.key)}">
+        <td class="evo-col-label" style="padding-left:22px;">${U.escHtml(it.label)}</td>
+        <td class="evo-col-total evo-val-cell ${valClass(itTotal)}" data-item="${U.escHtml(it.label)}">${itTotal ? fmtVal(itTotal) : "—"}</td>
+        ${itCells}
+      </tr>`;
+    }).join("");
+    return secRow + itemRows;
+  }).join("");
+
+  return `<table class="evo-table">${theadHtml}<tbody>${bodyRows}</tbody></table>`;
+}
+
+function wireEvolution(evoIndex, dimension, years){
+  const cfg = evoCfg();
+
+  document.querySelectorAll("#evo-view-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.view = b.dataset.v;
+      Store.saveSettings();
+      drillYear = null; sectionsInitialized = false; mergeMode = false; mergeSelection.clear();
+      renderEvolution();
+    };
+  });
+  document.querySelectorAll("#evo-monthbasis-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.monthBasis = b.dataset.v;
+      Store.saveSettings();
+      renderEvolution();
+    };
+  });
+  const backBtn = document.getElementById("evo-back-btn");
+  if(backBtn) backBtn.onclick = ()=>{ drillYear = null; renderEvolution(); };
+
+  const mergeToggleBtn = document.getElementById("evo-merge-toggle-btn");
+  if(mergeToggleBtn) mergeToggleBtn.onclick = ()=>{
+    mergeMode = !mergeMode;
+    mergeSelection.clear();
+    renderEvolution();
+  };
+  const mergeApplyBtn = document.getElementById("evo-merge-apply-btn");
+  if(mergeApplyBtn) mergeApplyBtn.onclick = ()=> openMergeNameModal(dimension);
+
+  document.querySelectorAll("[data-unmerge]").forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const name = el.dataset.unmerge;
+      const list = cfg.merges[dimension] || [];
+      cfg.merges[dimension] = list.filter(m=>m.name!==name);
+      Store.saveSettings();
+      renderEvolution();
+    };
+  });
+
+  document.querySelectorAll(".evo-year-header[data-year]").forEach(el=>{
+    el.onclick = ()=>{ drillYear = Number(el.dataset.year); renderEvolution(); };
+  });
+
+  document.querySelectorAll(".evo-section-row[data-section-toggle]").forEach(row=>{
+    row.querySelector(".evo-col-label").onclick = ()=>{
+      const key = row.dataset.sectionToggle;
+      if(mergeMode){
+        const sec = evoIndex.sections.find(s=>s.key===key);
+        if(sec && sec.__merged) return; // une section déjà fusionnée ne peut pas re-participer à une fusion
+        if(mergeSelection.has(key)) mergeSelection.delete(key); else mergeSelection.add(key);
+        renderEvolution();
+        return;
+      }
+      if(collapsedSections.has(key)) collapsedSections.delete(key); else collapsedSections.add(key);
+      renderEvolution();
+    };
+  });
+
+  const catTypeMap = dimension==="categorie" ? AGG.classifyCategoryTypes(Store.transactions) : null;
+  document.querySelectorAll(".evo-val-cell").forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      if(mergeMode) return;
+      const opts = {monthBasis: cfg.monthBasis, catTypeMap};
+      if(el.dataset.item!=null) opts.itemKey = el.dataset.item;
+      else if(el.dataset.sectionMembers!=null) opts.sectionMembers = el.dataset.sectionMembers.split("||");
+      else if(el.dataset.section!=null) opts.sectionKey = el.dataset.section;
+      if(el.dataset.year!=null) opts.year = Number(el.dataset.year);
+      if(el.dataset.month!=null) opts.month = Number(el.dataset.month);
+      openEvolutionTxnSheet(dimension, opts);
+    };
+  });
+}
+
+function openMergeNameModal(dimension){
+  const modal = document.getElementById("modal-confirm");
+  const members = Array.from(mergeSelection);
+  modal.innerHTML = `
+    <div style="font-weight:800;font-size:16.5px;margin-bottom:10px;">Fusionner ${members.length} ${VIEW_LABEL[dimension].toLowerCase()}s</div>
+    <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:12px;">${members.map(m=>U.escHtml(m)).join(", ")}</div>
+    <input type="text" class="search-mini" id="evo-merge-name-input" style="margin:0 0 16px;" placeholder="Nom du groupe fusionné">
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="evo-merge-cancel">Annuler</button>
+      <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="evo-merge-confirm">Fusionner</button>
+    </div>
+  `;
+  document.getElementById("evo-merge-cancel").onclick = ()=> APP.closeOverlay("overlay-confirm");
+  document.getElementById("evo-merge-confirm").onclick = ()=>{
+    const name = document.getElementById("evo-merge-name-input").value.trim();
+    if(!name){ APP.showToast("Merci d'indiquer un nom"); return; }
+    const cfg = evoCfg();
+    cfg.merges[dimension] = cfg.merges[dimension] || [];
+    cfg.merges[dimension].push({name, members});
+    Store.saveSettings();
+    APP.closeOverlay("overlay-confirm");
+    mergeMode = false; mergeSelection.clear();
+    renderEvolution();
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
+/* ---------------- Feuille de détail transactions ---------------- */
+function txnBucketsFor(t, monthBasis){
+  if(monthBasis==="reel") return [{year:t.date.getFullYear(), month:t.date.getMonth()}];
+  const tr = t.transform;
+  if(tr.mode==="yearsplit"){
+    const arr=[]; for(let m=0;m<12;m++) arr.push({year:tr.year, month:m}); return arr;
+  }
+  if(tr.mode==="month") return [{year:tr.year, month:tr.month}];
+  return [{year:t.date.getFullYear(), month:t.date.getMonth()}];
+}
+function txnMatchesPeriod(t, monthBasis, year, month){
+  if(year==null) return true;
+  const buckets = txnBucketsFor(t, monthBasis);
+  return buckets.some(b=> b.year===year && (month==null || b.month===month));
+}
+function txnMatchesDimTarget(t, dimension, opts){
+  if(dimension==="groupe"){
+    if(!t.groupe) return false;
+    if(opts.itemKey!=null) return t.groupe===opts.itemKey;
+    const base = t.groupeBase || U.baseGroupe(t.groupe);
+    const rule = AGG.findGroupAliasRule(base, t.groupe);
+    const superName = rule ? rule.superGroupe : t.groupe;
+    if(opts.sectionMembers) return opts.sectionMembers.includes(superName);
+    return superName===opts.sectionKey;
+  }
+  if(dimension==="categorie"){
+    const cat = t.categorie || "(Non renseigné)";
+    if(opts.itemKey!=null) return cat===opts.itemKey;
+    const type = (t.categorie && opts.catTypeMap.get(t.categorie)) || t.type;
+    if(opts.sectionMembers) return opts.sectionMembers.includes(type);
+    return type===opts.sectionKey;
+  }
+  const per = t.personne || "(Non renseigné)";
+  if(opts.itemKey!=null) return per===opts.itemKey;
+  const superName = t.personne ? AGG.getPersonneDisplay(t) : "(Non renseigné)";
+  if(opts.sectionMembers) return opts.sectionMembers.includes(superName);
+  return superName===opts.sectionKey;
+}
+function openEvolutionTxnSheet(dimension, opts){
+  const items = [];
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    if(!txnMatchesDimTarget(t, dimension, opts)) return;
+    if(!txnMatchesPeriod(t, opts.monthBasis, opts.year!=null?opts.year:null, opts.month!=null?opts.month:null)) return;
+    items.push(t);
+  });
+  items.sort((a,b)=> b.date-a.date);
+  const total = items.reduce((s,t)=>s+t.montant,0);
+  const label = opts.itemKey || opts.sectionKey || (opts.sectionMembers ? opts.sectionMembers.join(" + ") : "");
+  const periodLabel = opts.year==null ? "Toute la période"
+    : opts.month==null ? String(opts.year)
+    : U.MONTHS_FR[opts.month]+" "+opts.year;
+
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+      <button class="icon-btn" id="evotxn-close">${ICONS.close}</button>
+    </div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${items.length} transaction${items.length>1?"s":""}</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${U.fmtMoneySigned(total)}</span>
+    </div>
+    <div style="max-height:56vh;overflow-y:auto;">
+      ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
+      items.map(t=>`
+        <div class="detail-row evotxn-row" data-txnid="${U.escHtml(t.id)}" style="align-items:center;cursor:pointer;">
+          <span style="display:flex;flex-direction:column;min-width:0;">
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||"—")}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
+          </span>
+          <span style="font-weight:700;font-size:13.5px;color:${t.montant<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${U.fmtMoneySigned(t.montant)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("evotxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.querySelectorAll(".evotxn-row[data-txnid]").forEach(el=>{
+    el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+  });
+  APP.openOverlay("overlay-detail");
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderEvolution = renderEvolution;
 })();
 (function(){
 "use strict";
