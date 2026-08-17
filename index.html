@@ -388,7 +388,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.19.30";
+const APP_VERSION = "v 2026.08.17.19.47";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -874,14 +874,10 @@ function parseParametresSheet(wb){
       // dérivé : deux occurrences distinctes du même lieu sont des groupes différents et peuvent avoir des
       // réglages différents (cf. getGroupKind/getGroupVoyageMonth).
       if(groupeStr && superGroupe){
-        const df = U.parseDateValue(norm["date debut"]);
-        const dt = U.parseDateValue(norm["date fin"]);
         const groupeBase = U.baseGroupe(groupeStr);
         const rule = {
           groupe: groupeBase,
-          superGroupe: String(superGroupe).trim(),
-          dateFrom: df ? U.toISO(df) : null,
-          dateTo: dt ? U.toISO(dt) : null
+          superGroupe: String(superGroupe).trim()
         };
         // Une règle est toujours résolue en priorité via son occurrence exacte (`full`, libellé complet
         // avec suffixe) — le nom de base (`groupe`) ne sert que de repli optionnel pour classer en bloc
@@ -1216,33 +1212,25 @@ const Filters = {
 };
 window.__SF_FILTERS = Filters;
 
-/* ---------------- Groupe merging (rules: groupe -> groupe de groupe, with optional date range) ---------------- */
+/* ---------------- Groupe merging (rules: groupe -> groupe de groupe) ---------------- */
 /* Une règle peut être : (1) scopée à une occurrence datée précise via `full` (libellé littéral complet,
    ex. "France (26-06-07)") — comparaison stricte par égalité, jamais d'ambiguïté possible avec une autre
    occurrence du même nom de base, même si leurs transactions ont des dates qui se chevauchent ; ou (2) une
-   règle "base" classique (`groupe` = nom de base, dateFrom/dateTo optionnels) qui ne sert plus qu'en repli
-   pour les groupes sans suffixe de date ou pour d'anciennes règles importées avant l'introduction de `full`.
-   Une règle `full` est toujours prioritaire sur toute règle base+date pour la même occurrence. */
-function findGroupAliasRule(base, date, full){
+   règle "base" générique (`groupe` = nom de base) qui s'applique à toute occurrence de ce nom de base non
+   rattachée individuellement via une règle `full`. Une règle `full` est toujours prioritaire sur la règle
+   base générique pour la même occurrence. */
+function findGroupAliasRule(base, full){
   const rules = Store.settings.groupAliasRules || [];
   if(full){
     const exact = rules.find(r=> r.full === full);
     if(exact) return exact;
   }
-  let best = null;
-  for(const r of rules){
-    if(r.full) continue; // règle scopée à une autre occurrence précise : jamais utilisée en repli
-    if(r.groupe !== base) continue;
-    if(r.dateFrom && date < new Date(r.dateFrom)) continue;
-    if(r.dateTo && date > new Date(r.dateTo+"T23:59:59")) continue;
-    if(!best || ((r.dateFrom||r.dateTo) && !(best.dateFrom||best.dateTo))) best = r;
-  }
-  return best;
+  return rules.find(r=> !r.full && r.groupe===base) || null;
 }
 function getGroupeDisplay(t){
   if(!t.groupe) return "(Non renseigné)";
   const base = t.groupeBase || U.baseGroupe(t.groupe);
-  const rule = findGroupAliasRule(base, t.date, t.groupe);
+  const rule = findGroupAliasRule(base, t.groupe);
   // Si aucune règle de groupe de groupe ne s'applique, on conserve le libellé complet
   // (avec la date entre parenthèses) plutôt que de le remplacer par le nom de base seul.
   return rule ? rule.superGroupe : t.groupe;
@@ -5388,11 +5376,11 @@ function applyParamsImport(params, mode){
     return {rulesAdded:groupRules.length, personRulesAdded:personRules.length, acctAdded:Object.keys(accountTypes).length};
   }
   const existingGroup = Store.settings.groupAliasRules || [];
-  const rulesAdded = mergeRuleList(existingGroup, groupRules, r=>[r.groupe,r.superGroupe,r.full||"",r.dateFrom||"",r.dateTo||""].join("|"));
+  const rulesAdded = mergeRuleList(existingGroup, groupRules, r=>[r.groupe,r.superGroupe,r.full||""].join("|"));
   Store.settings.groupAliasRules = existingGroup;
 
   const existingPerson = Store.settings.personAliasRules || [];
-  const personRulesAdded = mergeRuleList(existingPerson, personRules, r=>[r.personne,r.superPersonne,r.dateFrom||"",r.dateTo||""].join("|"));
+  const personRulesAdded = mergeRuleList(existingPerson, personRules, r=>[r.personne,r.superPersonne].join("|"));
   Store.settings.personAliasRules = existingPerson;
 
   const acctBefore = Object.keys(Store.settings.accountTypes||{}).length;
@@ -5691,7 +5679,7 @@ function exportExcel(scope){
   }
 
   if(scope==="both" || scope==="params"){
-    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin",
+    const pHeader = ["Groupe","Groupe de groupe",
       "Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Date début (jours)","Date fin (jours)",
       "Compte","Type de compte","Acronyme","Personne","Groupe de personnes",
       "Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
@@ -5714,12 +5702,12 @@ function exportExcel(scope){
     const groupRows = rules.map(r=>{
       const key = r.full || r.groupe;
       return {
-        groupe: key, superGroupe: r.superGroupe, dateFrom: r.dateFrom, dateTo: r.dateTo,
+        groupe: key, superGroupe: r.superGroupe,
         kind: kindMap[key]||"", voyageMonth: voyageMonthMap[key]||"",
         daysFrom: (dateRangeMap[key]||{}).dateFrom||null, daysTo: (dateRangeMap[key]||{}).dateTo||null
       };
     }).concat(extraKeys.map(k=>({
-      groupe: k, superGroupe: "", dateFrom: null, dateTo: null,
+      groupe: k, superGroupe: "",
       kind: kindMap[k]||"", voyageMonth: voyageMonthMap[k]||"",
       daysFrom: (dateRangeMap[k]||{}).dateFrom||null, daysTo: (dateRangeMap[k]||{}).dateTo||null
     })));
@@ -5734,7 +5722,7 @@ function exportExcel(scope){
     for(let i=0;i<n;i++){
       const g = groupRows[i], a = acct[i], p = personRules[i], co = catOverrideEntries[i];
       pData.push([
-        g?g.groupe:"", g?g.superGroupe:"", (g&&g.dateFrom)?isoToDateObj(g.dateFrom):"", (g&&g.dateTo)?isoToDateObj(g.dateTo):"",
+        g?g.groupe:"", g?g.superGroupe:"",
         g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", g?g.voyageMonth:"",
         (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"", (g&&g.daysTo)?isoToDateObj(g.daysTo):"",
         a?a[0]:"", a?a[1]:"", a?a[2]:"",
@@ -5743,10 +5731,8 @@ function exportExcel(scope){
       ]);
     }
     const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
-    setColumnDateFormatDDMMYYYY(wsParams, 2, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 6, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 7, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 4, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 5, 1, pData.length-1);
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
@@ -6546,12 +6532,7 @@ function createAliasManager(cfg){
         </div>
         <div class="field-label" style="margin-top:0;">Nom du ${cfg.superLabel}</div>
         ${datalistsHtml()}
-        <input type="text" class="search-mini" id="am-bulk-super" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" ${cfg.hasDates?'style="margin-bottom:8px;"':''}>
-        ${cfg.hasDates ? `<div class="daterange">
-          <input type="date" id="am-bulk-from">
-          <input type="date" id="am-bulk-to">
-        </div>
-        <div style="font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Dates optionnelles : laissez vide pour une règle valable sur toute la période.</div>` : ""}
+        <input type="text" class="search-mini" id="am-bulk-super" list="am-super-list" placeholder="Nom du ${cfg.superLabel}">
         <div style="font-size:12px;color:var(--text-sub);margin-top:14px;line-height:1.4;">
           Cette action remplace les règles existantes des éléments sélectionnés par cette nouvelle affectation.
         </div>
@@ -6567,17 +6548,9 @@ function createAliasManager(cfg){
     document.getElementById("am-bulk-apply").onclick = ()=>{
       const sg = document.getElementById("am-bulk-super").value.trim();
       if(!sg){ APP.showToast("Merci d'indiquer un nom de "+cfg.superLabel); return; }
-      const dfEl = document.getElementById("am-bulk-from");
-      const dtEl = document.getElementById("am-bulk-to");
-      const df = dfEl ? (dfEl.value || null) : null;
-      const dt = dtEl ? (dtEl.value || null) : null;
       const selectedSet = new Set(items);
       const others = rules().filter(r=> !selectedSet.has(r[cfg.baseField]));
-      const newRules = items.map(base=>{
-        const entry = {[cfg.baseField]:base, [cfg.superField]:sg};
-        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
-        return entry;
-      });
+      const newRules = items.map(base=>({[cfg.baseField]:base, [cfg.superField]:sg}));
       Store.settings[cfg.settingsKey] = others.concat(newRules);
       Store.saveSettings();
       APP.showToast(items.length+" élément"+(items.length>1?"s déplacés":" déplacé")+" vers « "+sg+" »");
@@ -6591,11 +6564,7 @@ function createAliasManager(cfg){
     const id = "amrow"+(rowSeq++);
     return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px;margin-bottom:10px;" data-rowid="${id}">
       ${editableBase ? `<input type="text" class="search-mini" style="margin-bottom:8px;" placeholder="${cfg.itemLabel} (nom exact)" list="am-base-list" data-field="base" value="${U.escHtml(rule.base||'')}">` : ""}
-      <input type="text" class="search-mini" ${cfg.hasDates?'style="margin-bottom:8px;"':''} placeholder="Nom du ${cfg.superLabel}" list="am-super-list" data-field="super" value="${U.escHtml(rule.superName||'')}">
-      ${cfg.hasDates ? `<div class="daterange">
-        <input type="date" data-field="dateFrom" value="${rule.dateFrom||''}">
-        <input type="date" data-field="dateTo" value="${rule.dateTo||''}">
-      </div>` : ""}
+      <input type="text" class="search-mini" placeholder="Nom du ${cfg.superLabel}" list="am-super-list" data-field="super" value="${U.escHtml(rule.superName||'')}">
       <button class="btn btn-ghost btn-sm" data-del="${id}" style="margin-top:8px;color:var(--expense);">${ICONS.trash} Supprimer cette règle</button>
     </div>`;
   }
@@ -6732,8 +6701,7 @@ function createAliasManager(cfg){
         range = {from:U.toISO(min), to:U.toISO(max), sampleDate:min};
       }
     }
-    const repDate = range ? range.sampleDate : new Date();
-    const currentRule = cfg.hasDates ? AGG.findGroupAliasRule(editingBase, repDate, editingFull) : (rulesForBase(editingBase)[0]||null);
+    const currentRule = cfg.hasDates ? AGG.findGroupAliasRule(editingBase, editingFull) : (rulesForBase(editingBase)[0]||null);
     const currentValue = currentRule ? (currentRule[cfg.superField]||"") : "";
     const currentIsGlobalOther = currentRule ? (isDatedOccurrence && !currentRule.full) : false;
 
@@ -6770,9 +6738,9 @@ function createAliasManager(cfg){
         if(!cfg.hasDates) return r[cfg.baseField] !== editingBase;
         if(isDatedOccurrence){
           // Occurrence datée : on ne retire que l'éventuelle règle EXACTE déjà existante pour cette
-          // occurrence précise (comparaison stricte sur le libellé complet) — jamais une règle base+date,
-          // même si sa fenêtre de dates recoupe celle de cette occurrence, pour ne jamais affecter une
-          // autre occurrence du même nom de base.
+          // occurrence précise (comparaison stricte sur le libellé complet) — jamais une règle base
+          // générique, même si elle s'applique aussi à ce nom de base, pour ne jamais affecter une autre
+          // occurrence du même nom de base.
           return r.full !== editingFull;
         }
         // Occurrence sans suffixe de date : règle globale classique par nom de base (comportement inchangé).
@@ -6780,10 +6748,7 @@ function createAliasManager(cfg){
       });
       if(sg){
         const entry = {[cfg.baseField]: editingBase, [cfg.superField]: sg};
-        if(cfg.hasDates){
-          entry.dateFrom = null; entry.dateTo = null;
-          if(isDatedOccurrence) entry.full = editingFull;
-        }
+        if(cfg.hasDates && isDatedOccurrence) entry.full = editingFull;
         keepOthers.push(entry);
       }
       Store.settings[cfg.settingsKey] = keepOthers;
@@ -6798,7 +6763,7 @@ function createAliasManager(cfg){
   /* "Toutes les règles" : édition libre de toutes les règles à la fois (réorganisation manuelle complète) */
   function renderAll(){
     const sheet = document.getElementById(cfg.sheetId);
-    const rls = rules().filter(r=>!r.full).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField], dateFrom:r.dateFrom, dateTo:r.dateTo}));
+    const rls = rules().filter(r=>!r.full).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField]}));
     const occurrenceRulesCount = rules().filter(r=>r.full).length;
     sheet.innerHTML = `
       <div class="sheet-handle"></div>
@@ -6822,7 +6787,7 @@ function createAliasManager(cfg){
     wireViewToggle();
     wireRowDeletes();
     document.getElementById("am-add-row").onclick = ()=>{
-      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({base:"",superName:"",dateFrom:"",dateTo:""}, true));
+      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({base:"",superName:""}, true));
       wireRowDeletes();
     };
     document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
@@ -6833,12 +6798,7 @@ function createAliasManager(cfg){
         const baseInput = row.querySelector('[data-field="base"]');
         const bs = baseInput ? baseInput.value.trim() : "";
         const sg = row.querySelector('[data-field="super"]').value.trim();
-        const dfEl = row.querySelector('[data-field="dateFrom"]');
-        const dtEl = row.querySelector('[data-field="dateTo"]');
-        const df = dfEl ? (dfEl.value || null) : null;
-        const dt = dtEl ? (dtEl.value || null) : null;
         const entry = {[cfg.baseField]:bs, [cfg.superField]:sg};
-        if(cfg.hasDates){ entry.dateFrom = df; entry.dateTo = dt; }
         if(bs && sg) newRules.push(entry);
       });
       // Les règles propres à une occurrence datée précise (`full`) ne passent jamais par ce tableau brut :
