@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.13.23";
+const APP_VERSION = "v 2026.08.17.13.33";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -440,6 +440,18 @@ function fmtMoney(n){
 function fmtMoneySigned(n){
   const dec = moneyDecimals();
   return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + " €";
+}
+/* Petit bouton pilule "0,00" qui bascule l'affichage global des montants entre 0 et 2 décimales
+   (Store.settings.decimals). Utilisé dans les onglets Transactions et Comptes — le réglage est global,
+   donc l'activer dans un onglet s'applique aussi immédiatement à l'autre. */
+function decimalsToggleBtnHtml(id){
+  const active = moneyDecimals()===2;
+  return `<button type="button" id="${escHtml(id)}" title="${active?'Afficher les montants sans décimales':'Afficher les montants avec 2 décimales'}" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:4px 10px;border:none;border-radius:100px;font-size:11px;font-weight:800;cursor:pointer;background:${active?'var(--primary)':'var(--card-alt)'};color:${active?'#fff':'var(--text-sub)'};">0,00</button>`;
+}
+function toggleMoneyDecimals(){
+  const s = window.__SF_STORE.settings;
+  s.decimals = (s.decimals===2) ? 0 : 2;
+  window.__SF_STORE.saveSettings();
 }
 const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 const MONTHS_FR_SHORT = ["jan.","fév.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
@@ -516,7 +528,8 @@ function baseGroupe(str){
 }
 
 window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
-  fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe};
+  fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,
+  decimalsToggleBtnHtml,toggleMoneyDecimals};
 })();
 (function(){
 "use strict";
@@ -1913,9 +1926,12 @@ function renderTransactions(){
   const isChrono = CHRONO_MODES.includes(groupBy);
 
   let html = `<div class="section" style="padding-top:14px;">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px;gap:8px;">
       <span style="font-size:13px;color:var(--text-sub);font-weight:600;">${filtered.length.toLocaleString('fr-FR')} transaction${filtered.length>1?"s":""}</span>
-      <span style="font-size:13px;font-weight:800;color:${totals.net>=0?'var(--income)':'var(--expense)'}">${U.fmtMoneySigned(totals.net)}</span>
+      <span style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;font-weight:800;color:${totals.net>=0?'var(--income)':'var(--expense)'}">${U.fmtMoneySigned(totals.net)}</span>
+        ${U.decimalsToggleBtnHtml("txn-decimals-btn")}
+      </span>
     </div>
     <div class="chips-bar" id="txn-chips" style="display:none;"></div>
     <div class="dimtabs" id="txn-groupby" style="margin-top:2px;">
@@ -1928,6 +1944,7 @@ function renderTransactions(){
     view.innerHTML = html;
     F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
     wireGroupByButtons();
+    document.getElementById("txn-decimals-btn").onclick = ()=>{ U.toggleMoneyDecimals(); renderTransactions(); };
     return;
   }
 
@@ -1937,6 +1954,7 @@ function renderTransactions(){
 
   F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
   wireGroupByButtons();
+  document.getElementById("txn-decimals-btn").onclick = ()=>{ U.toggleMoneyDecimals(); renderTransactions(); };
 
   const listSection = document.getElementById("txn-list-section");
   const loadmoreWrap = document.getElementById("txn-loadmore-wrap");
@@ -2491,7 +2509,8 @@ function renderAccounts(){
 
   const view_html = [`
     <div class="section" style="padding-top:14px;">
-      <div class="card" style="text-align:center;padding:22px 16px;">
+      <div class="card" style="text-align:center;padding:22px 16px;position:relative;">
+        <div style="position:absolute;top:12px;right:12px;">${U.decimalsToggleBtnHtml("acc-decimals-btn")}</div>
         <div style="font-size:13px;color:var(--text-sub);font-weight:600;">Solde total (tous comptes)</div>
         <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
       </div>
@@ -2502,6 +2521,7 @@ function renderAccounts(){
     </div>` : ""}
   `];
   view.innerHTML = view_html.join("");
+  document.getElementById("acc-decimals-btn").onclick = ()=>{ U.toggleMoneyDecimals(); renderAccounts(); };
   const reorderBtn = document.getElementById("acc-reorder-btn");
   if(reorderBtn) reorderBtn.onclick = ()=> openAccountTypeReorderSheet(typeGroups.map(g=>g.type));
 
@@ -4049,6 +4069,20 @@ function renderBudget(){
     : (cmp.periodFrom && cmp.periodTo) ? (fmtBoundMonth(cmp.periodFrom)+" → "+fmtBoundMonth(cmp.periodTo))
     : "Autre période";
 
+  // En-tête de colonnes (Résultat/Comparé/Variation, ou Réel+ajout/Amorti/Total) : rendu comme une barre
+  // séparée, en dehors de la carte "Total tous groupes", et directement enfant de la section — sa "boîte
+  // englobante" pour le calcul du sticky est donc toute la section (total + cartes de groupes), pas
+  // seulement la petite carte de total. Elle reste ainsi figée en haut de l'écran tant que l'utilisateur
+  // n'a pas dépassé la fin de la liste des cartes, au lieu de disparaître dès la fin de la carte de total.
+  const grandHeaderInner = compareCtx ? compareHeaderRowHtml() : detailOn ? detailHeaderRowHtml(cfg.mode) : "";
+  const grandHeaderStickyHtml = grandHeaderInner ? `
+      <div style="position:sticky;top:0;z-index:10;margin:0 4px 8px;">
+        <div class="card" style="padding:8px 16px;box-shadow:var(--shadow-2);">
+          ${grandHeaderInner}
+        </div>
+      </div>
+  ` : "";
+
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
       <div class="card" style="margin:0 4px 14px;padding:14px;">
@@ -4079,9 +4113,9 @@ function renderBudget(){
         ${budgetToolButtonHtml("bg-cmp-open-btn", "Comparaison", cmpSublabel)}
         ${budgetToolButtonHtml("bg-acctexcl-open-btn", "Comptes exclus", (cfg.excludedAccounts||[]).length ? (cfg.excludedAccounts.length+" exclu"+(cfg.excludedAccounts.length>1?"s":"")) : "Aucun")}
       </div>
+      ${grandHeaderStickyHtml}
       <div class="card" style="margin-bottom:14px;">
         ${compareCtx ? `
-        <div style="position:sticky;top:0;z-index:5;background:var(--card);margin:0 -16px;padding:2px 16px 4px;box-shadow:0 1px 0 var(--divider);">${compareHeaderRowHtml()}</div>
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
           ${compareRowHtml("Total tous groupes", dv(grandNet), grandCmp.total, {big:true})}
         </div>
@@ -4095,7 +4129,6 @@ function renderBudget(){
           ${compareRowHtml("Voyages", dv(grandVoyNet), grandCmp.voyage, {big:false})}
         </div>
         ` : detailOn ? `
-        <div style="position:sticky;top:0;z-index:5;background:var(--card);margin:0 -16px;padding:2px 16px 4px;box-shadow:0 1px 0 var(--divider);">${detailHeaderRowHtml(cfg.mode)}</div>
         <div style="display:block;padding:0 0 6px;">
           ${detailRowHtml("Total tous groupes", cfg.mode, dv(grandBreak.total.real), dv(grandBreak.total.amort), dv(grandBreak.total.adj), {big:true}, {sheet:"group", supergroupe:allGroupNames[0], groups:allGroupNames.join("||"), type:""})}
         </div>
