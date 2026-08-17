@@ -417,7 +417,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.22.19";
+const APP_VERSION = "v 2026.08.17.22.33";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -5198,11 +5198,13 @@ function buildTableHtml(evoIndex, dimension, years){
     </tr></thead>
   `;
 
-  const grandTotal = evoIndex.sections.reduce((s,sec)=> s+AGG.sectionTotalValue(sec), 0);
+  const grandTotal = drillYear!=null
+    ? evoIndex.sections.reduce((s,sec)=> s+AGG.sectionYearValue(sec, drillYear), 0)
+    : evoIndex.sections.reduce((s,sec)=> s+AGG.sectionTotalValue(sec), 0);
   const totalRowHtml = `
     <tr class="evo-total-row">
       <td class="evo-col-label">Total</td>
-      <td class="evo-col-total evo-val-cell ${valClass(grandTotal)}" data-global="1">${grandTotal ? fmtVal(grandTotal) : "—"}</td>
+      <td class="evo-col-total evo-val-cell ${valClass(grandTotal)}" data-global="1" ${drillYear!=null?`data-year="${drillYear}"`:""}>${grandTotal ? fmtVal(grandTotal) : "—"}</td>
       ${cols.map(c=>{
         const v = evoIndex.sections.reduce((s,sec)=> s + (c.type==="year" ? AGG.sectionYearValue(sec,c.year) : AGG.sectionMonthValue(sec,c.year,c.month)), 0);
         const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
@@ -5212,7 +5214,7 @@ function buildTableHtml(evoIndex, dimension, years){
   `;
 
   const bodyRows = evoIndex.sections.map(sec=>{
-    const secTotal = AGG.sectionTotalValue(sec);
+    const secTotal = drillYear!=null ? AGG.sectionYearValue(sec, drillYear) : AGG.sectionTotalValue(sec);
     const secSelected = mergeMode && mergeSelection.has(sec.key);
     const secIsMerge = !!sec.__merged;
     const collapsed = collapsedSections.has(sec.key);
@@ -5224,7 +5226,7 @@ function buildTableHtml(evoIndex, dimension, years){
       const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
       return `<td class="evo-col-val evo-val-cell ${valClass(v)}" ${dataAttrs} ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
     }).join("");
-    const totalAttrs = secIsMerge ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"` : `data-section="${U.escHtml(sec.key)}"`;
+    const totalAttrs = (secIsMerge ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"` : `data-section="${U.escHtml(sec.key)}"`) + (drillYear!=null ? ` data-year="${drillYear}"` : "");
     const secRow = `
       <tr class="evo-section-row${secSelected?' selected':''}" data-section-toggle="${U.escHtml(sec.key)}">
         <td class="evo-col-label"><span class="evo-chev ${collapsed?'':'open'}">▸</span>${U.escHtml(sec.label)}</td>
@@ -5233,16 +5235,17 @@ function buildTableHtml(evoIndex, dimension, years){
       </tr>
     `;
     const itemRows = sec.items.map(it=>{
-      const itTotal = AGG.itemTotalValue(it);
+      const itTotal = drillYear!=null ? AGG.itemYearValue(it, drillYear) : AGG.itemTotalValue(it);
       const itCells = cols.map(c=>{
         const v = c.type==="year" ? AGG.itemYearValue(it, c.year) : AGG.itemMonthValue(it, c.year, c.month);
         const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
         return `<td class="evo-col-val evo-val-cell ${valClass(v)}" data-item="${U.escHtml(it.label)}" ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
       }).join("");
+      const itTotalAttrs = `data-item="${U.escHtml(it.label)}"` + (drillYear!=null ? ` data-year="${drillYear}"` : "");
       return `
       <tr class="evo-item-row${collapsed?' hidden':''}" data-section-key="${U.escHtml(sec.key)}">
         <td class="evo-col-label" style="padding-left:22px;">${U.escHtml(it.label)}</td>
-        <td class="evo-col-total evo-val-cell ${valClass(itTotal)}" data-item="${U.escHtml(it.label)}">${itTotal ? fmtVal(itTotal) : "—"}</td>
+        <td class="evo-col-total evo-val-cell ${valClass(itTotal)}" ${itTotalAttrs}>${itTotal ? fmtVal(itTotal) : "—"}</td>
         ${itCells}
       </tr>`;
     }).join("");
