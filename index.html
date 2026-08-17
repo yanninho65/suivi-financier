@@ -272,14 +272,22 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .seg button.active{background:var(--primary);color:#fff;}
 
 /* ---------- Transactions list ---------- */
-.txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:18px 4px 8px;text-transform:capitalize;}
+.txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:14px 4px 6px;text-transform:capitalize;}
 .txn-item{
-  display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--card);
+  display:flex;align-items:stretch;background:var(--card);
   border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
+  overflow:hidden;
 }
-.txn-item .txn-ico{margin-top:1px;}
-.txn-item .txn-amt{margin-top:1px;}
-.txn-item + .txn-item{margin-top:8px;}
+.txn-item + .txn-item{margin-top:6px;}
+.txn-band{
+  width:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:.03em;
+  font-size:9.5px;font-weight:800;padding:6px 0;
+}
+.txn-band.inc{background:var(--income-soft);color:var(--income);}
+.txn-band.exp{background:var(--expense-soft);color:var(--expense);}
+.txn-band.trf{background:var(--transfer-soft);color:var(--transfer);}
+/* Icône ronde — utilisée uniquement par la fiche détail d'une transaction (la liste utilise .txn-band) */
 .txn-ico{
   width:40px;height:40px;border-radius:50%;flex:0 0 auto;
   display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;
@@ -287,12 +295,13 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .txn-ico.inc{background:var(--income-soft);color:var(--income);}
 .txn-ico.exp{background:var(--expense-soft);color:var(--expense);}
 .txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
+.txn-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;}
 .txn-mid{flex:1;min-width:0;}
-.txn-title{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.txn-sub{font-size:12px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.txn-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-sub{font-size:11px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
 .txn-line{font-size:11px;line-height:1.35;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
 .txn-line .txn-line-tag{opacity:.6;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;margin-right:4px;}
-.txn-amt{font-size:14.5px;font-weight:800;flex:0 0 auto;text-align:right;}
+.txn-amt{font-size:13.5px;font-weight:800;flex:0 0 auto;text-align:right;}
 .txn-amt.inc{color:var(--income);}
 .txn-amt.exp{color:var(--expense);}
 .txn-amt.trf{color:var(--transfer);}
@@ -379,7 +388,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.14.37";
+const APP_VERSION = "v 2026.08.17.17.23";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -609,7 +618,7 @@ function idbDelete(key){
 /* ---------------- Store ---------------- */
 const Store = {
   transactions: [], // array of txn objects
-  settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, personAliasRules:[],
+  settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
       amortCategories:[], adjustments:[], excludedAccounts:[]}},
@@ -708,6 +717,8 @@ const Store = {
     if(!s.groupKind) s.groupKind = {};
     if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
     if(!s.groupDateRange) s.groupDateRange = {};
+    if(!s.accountTypes || typeof s.accountTypes!=="object") s.accountTypes = {};
+    if(!s.accountAcronyms || typeof s.accountAcronyms!=="object") s.accountAcronyms = {};
     if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
     if(!s.budget) s.budget = {};
     const b = s.budget;
@@ -833,6 +844,7 @@ function parseParametresSheet(wb){
   const groupRules = [];
   const personRules = [];
   const accountTypes = {};
+  const accountAcronyms = {};
   const groupKind = {};
   const groupVoyageMonth = {};
   const groupDateRange = {};
@@ -846,6 +858,7 @@ function parseParametresSheet(wb){
       const superGroupe = norm["groupe de groupe"];
       const compte = norm["compte"];
       const typeCompte = norm["type de compte"];
+      const acronymeCompte = norm["acronyme"];
       const personne = norm["personne"];
       const superPersonne = norm["groupe de personnes"];
       const kGroupe = norm["groupe (type budget)"];
@@ -874,6 +887,9 @@ function parseParametresSheet(wb){
       }
       if(compte && typeCompte){
         accountTypes[String(compte).trim()] = String(typeCompte).trim();
+      }
+      if(compte && acronymeCompte){
+        accountAcronyms[String(compte).trim()] = String(acronymeCompte).trim().toUpperCase().slice(0,4);
       }
       if(kGroupe && kType){
         const base = String(kGroupe).trim();
@@ -993,7 +1009,7 @@ function parseParametresSheet(wb){
     });
   }
   if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !cmpSheetName && !predefSheetName) return null;
-  return {groupRules, personRules, accountTypes, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined};
+  return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined};
 }
 
 function parseFile(file){
@@ -1310,6 +1326,21 @@ function getAccountTypeDisplay(compteName){
   const overrides = Store.settings.accountTypes || {};
   return overrides[compteName] || "Courant";
 }
+/* ---------------- Acronyme de compte — réglable par compte dans "Types de compte" (Paramètres), affiché
+   sous forme de badge sur chaque transaction dans l'onglet Transactions. Par défaut (non réglé), on
+   dérive un acronyme à partir des initiales du nom du compte (jusqu'à 3 lettres). ---------------- */
+function deriveAccountAcronym(compteName){
+  const words = String(compteName||"").trim().split(/\s+/).filter(Boolean);
+  if(!words.length) return "?";
+  if(words.length===1) return words[0].slice(0,3).toUpperCase();
+  return words.slice(0,3).map(w=>w[0].toUpperCase()).join("");
+}
+function getAccountAcronym(compteName){
+  if(!compteName) return "?";
+  const overrides = Store.settings.accountAcronyms || {};
+  const custom = overrides[compteName];
+  return (custom && custom.trim()) ? custom.trim() : deriveAccountAcronym(compteName);
+}
 
 /* ---------------- Type de groupe (Vie quotidienne / Voyage) — set manually, utilisé par l'onglet Budget ---------------- */
 function getGroupKind(base){
@@ -1418,10 +1449,12 @@ function distinctValuesCategorieSorted(transactions){
   });
   return withType;
 }
-/* Display value used when grouping/breaking down by a dimension (collapses groupe/compte/personne) */
+/* Display value used when grouping/breaking down by a dimension (collapses groupe/personne). Pour "compte",
+   on regroupe désormais par compte réel (nom exact du compte) — et non plus seulement par type de compte
+   (Courant/Épargne), qui reste disponible séparément dans l'onglet Comptes. */
 function dimDisplayValue(t, dim){
   if(dim==="groupe") return getGroupeDisplay(t);
-  if(dim==="compte") return getAccountTypeDisplay(t.compte);
+  if(dim==="compte") return t.compte || "(Non renseigné)";
   if(dim==="personne") return getPersonneDisplay(t);
   return t[dim] || "(Non renseigné)";
 }
@@ -1605,7 +1638,7 @@ function computeTimeSeries(transactions, granularity, dateBasis, dimension){
 window.__SF_AGG = {applyFilters, distinctValues, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats,
+  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue};
 })();
 (function(){
@@ -1627,8 +1660,8 @@ let detailTxnId = null;
 
 const DIM_FIELD = {groupe:"groupe", categorie:"categorie", personne:"personne", compte:"compte"};
 const DIM_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
-const GROUPBY_LABEL = {day:"Jour", month_indiquee:"Mois (date indiquée)", month_transformee:"Mois (date transformée)",
-  groupe:"Groupe", categorie:"Catégorie", compte:"Compte", personne:"Personne"};
+const GROUPBY_LABEL = {compte:"Compte", day:"Jour", month_indiquee:"Mois (date indiquée)", month_transformee:"Mois (date transformée)",
+  groupe:"Groupe", categorie:"Catégorie", personne:"Personne"};
 const PALETTE = ["#1259D6","#1A9E63","#E4402E","#8A5CF6","#E8A93B","#26A6C9","#D6478B","#6E7A8A","#5FBF7A","#B4772B","#3C6E71","#9B4DCA"];
 
 function resetTxnPagination(){ txnLimit = 60; txnGroupsShown = 20; txnPerGroupShown = {}; }
@@ -1847,43 +1880,45 @@ function wireEmptyState(container){
   };
 }
 
-/* txn icon letter + class */
+/* Classe couleur (inc/exp/trf) du bandeau vertical / montant, selon le type de transaction */
+function txnTypeClass(t){ return t.type==="Income"?"inc":(t.type==="Transfer"?"trf":"exp"); }
+function txnAmtClass(t){ return txnTypeClass(t); }
+/* Icône lettre + classe — utilisée par la fiche détail d'une transaction (pas par la liste, qui utilise
+   désormais le bandeau vertical avec l'acronyme du compte). */
 function txnIconInfo(t){
   if(t.type==="Income") return {cls:"inc", letter:(t.categorie||"R")[0].toUpperCase()};
   if(t.type==="Transfer") return {cls:"trf", letter:"⇄"};
   return {cls:"exp", letter:(t.categorie||"D")[0].toUpperCase()};
 }
-function txnAmtClass(t){ return t.type==="Income"?"inc":(t.type==="Transfer"?"trf":"exp"); }
 function txnTitle(t){
   if(t.remarque) return t.remarque;
   if(t.type==="Transfer") return "Transfert "+t.compte+" → "+t.compteCible;
   return t.categorie || (t.type==="Income"?"Revenu":"Dépense");
 }
+/* Ligne unique condensée : catégorie/personne (ou compte → compte cible pour un transfert), puis groupe */
 function txnSubtitle(t){
   const parts=[];
   if(t.type==="Transfer"){ parts.push(t.compte+" → "+t.compteCible); }
-  else { if(t.categorie) parts.push(t.categorie); if(t.personne) parts.push(t.personne); }
+  else { if(t.categorie) parts.push(t.categorie); if(t.personne) parts.push(AGG.getPersonneDisplay(t)); }
   if(t.groupe) parts.push(t.groupe);
-  return parts.join(" · ");
+  return parts.length ? parts.join(" · ") : "—";
 }
 
 /* ================= TRANSACTIONS LIST ================= */
 function makeTxnItemEl(t){
-  const info = txnIconInfo(t);
   const el = document.createElement("div");
   el.className = "txn-item";
-  const catLine = t.type==="Transfer" ? (t.compte+" → "+t.compteCible) : (t.categorie || "—");
-  const groupeLine = t.groupe || "—";
-  const personneLine = t.personne ? AGG.getPersonneDisplay(t) : "—";
+  const cls = txnTypeClass(t);
+  const acctAcronym = t.compte ? AGG.getAccountAcronym(t.compte) : "";
   el.innerHTML = `
-    <div class="txn-ico ${info.cls}">${info.letter}</div>
-    <div class="txn-mid">
-      <div class="txn-title">${U.escHtml(txnTitle(t))}</div>
-      <div class="txn-line">${U.escHtml(catLine)}</div>
-      <div class="txn-line">${U.escHtml(groupeLine)}</div>
-      <div class="txn-line">${U.escHtml(personneLine)}</div>
+    <div class="txn-band ${cls}" title="${U.escHtml(t.compte||"")}">${U.escHtml(acctAcronym)}</div>
+    <div class="txn-content">
+      <div class="txn-mid">
+        <div class="txn-title">${U.escHtml(txnTitle(t))}</div>
+        <div class="txn-sub">${U.escHtml(txnSubtitle(t))}</div>
+      </div>
+      <div class="txn-amt ${cls}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
     </div>
-    <div class="txn-amt ${txnAmtClass(t)}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
   `;
   el.onclick = ()=> openTxnDetail(t.id);
   return el;
@@ -5272,6 +5307,7 @@ function applyParamsImport(params, mode){
   const groupRules = params.groupRules || [];
   const personRules = params.personRules || [];
   const accountTypes = params.accountTypes || {};
+  const accountAcronyms = params.accountAcronyms || {};
   const groupKind = params.groupKind || {};
   const groupVoyageMonth = params.groupVoyageMonth || {};
   const groupDateRange = params.groupDateRange || {};
@@ -5287,6 +5323,7 @@ function applyParamsImport(params, mode){
     Store.settings.groupAliasRules = groupRules.slice();
     Store.settings.personAliasRules = personRules.slice();
     Store.settings.accountTypes = Object.assign({}, accountTypes);
+    Store.settings.accountAcronyms = Object.assign({}, accountAcronyms);
     Store.settings.groupKind = Object.assign({}, groupKind);
     Store.settings.groupVoyageMonth = Object.assign({}, groupVoyageMonth);
     Store.settings.groupDateRange = Object.assign({}, groupDateRange);
@@ -5333,6 +5370,7 @@ function applyParamsImport(params, mode){
   const acctBefore = Object.keys(Store.settings.accountTypes||{}).length;
   Store.settings.accountTypes = Object.assign({}, Store.settings.accountTypes, accountTypes);
   const acctAdded = Object.keys(Store.settings.accountTypes).length - acctBefore;
+  Store.settings.accountAcronyms = Object.assign({}, Store.settings.accountAcronyms, accountAcronyms);
 
   Store.settings.groupKind = Object.assign({}, Store.settings.groupKind, groupKind);
   Store.settings.groupVoyageMonth = Object.assign({}, Store.settings.groupVoyageMonth, groupVoyageMonth);
@@ -5540,6 +5578,7 @@ function buildParamsPayload(){
     groupRules: (Store.settings.groupAliasRules || []).slice(),
     personRules: (Store.settings.personAliasRules || []).slice(),
     accountTypes: Object.assign({}, Store.settings.accountTypes || {}),
+    accountAcronyms: Object.assign({}, Store.settings.accountAcronyms || {}),
     groupKind: Object.assign({}, Store.settings.groupKind || {}),
     groupVoyageMonth: Object.assign({}, Store.settings.groupVoyageMonth || {}),
     groupDateRange: Object.assign({}, Store.settings.groupDateRange || {}),
@@ -5624,11 +5663,14 @@ function exportExcel(scope){
   }
 
   if(scope==="both" || scope==="params"){
-    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Personne","Groupe de personnes",
+    const pHeader = ["Groupe","Groupe de groupe","Date début","Date fin","Compte","Type de compte","Acronyme","Personne","Groupe de personnes",
       "Groupe (type budget)","Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)",
       "Groupe (jours)","Date début (jours)","Date fin (jours)"];
     const rules = Store.settings.groupAliasRules || [];
-    const acct = Object.entries(Store.settings.accountTypes || {});
+    const acctTypesMap = Store.settings.accountTypes || {};
+    const acctAcronymsMap = Store.settings.accountAcronyms || {};
+    const acctNames = Array.from(new Set([...Object.keys(acctTypesMap), ...Object.keys(acctAcronymsMap)]));
+    const acct = acctNames.map(name=>[name, acctTypesMap[name]||"", acctAcronymsMap[name]||""]);
     const personRules = Store.settings.personAliasRules || [];
     const kindEntries = Object.entries(Store.settings.groupKind || {});
     const catOverrideEntries = Object.entries(Store.settings.categoryTypeOverride || {});
@@ -5639,7 +5681,7 @@ function exportExcel(scope){
       const r = rules[i], a = acct[i], p = personRules[i], k = kindEntries[i], co = catOverrideEntries[i], d = dateRangeEntries[i];
       pData.push([
         r?r.groupe:"", r?r.superGroupe:"", (r&&r.dateFrom)?isoToDateObj(r.dateFrom):"", (r&&r.dateTo)?isoToDateObj(r.dateTo):"",
-        a?a[0]:"", a?a[1]:"",
+        a?a[0]:"", a?a[1]:"", a?a[2]:"",
         p?p.personne:"", p?p.superPersonne:"",
         k?k[0]:"", k?(k[1]==="voyage"?"Voyage":"Quotidien"):"", k?((Store.settings.groupVoyageMonth||{})[k[0]]||""):"",
         co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):"",
@@ -5649,8 +5691,8 @@ function exportExcel(scope){
     const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
     setColumnDateFormatDDMMYYYY(wsParams, 2, 1, pData.length-1);
     setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 14, 1, pData.length-1);
     setColumnDateFormatDDMMYYYY(wsParams, 15, 1, pData.length-1);
+    setColumnDateFormatDDMMYYYY(wsParams, 16, 1, pData.length-1);
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
@@ -6818,12 +6860,13 @@ function renderAcctType(){
     <div class="sheet-head"><h2>Types de compte</h2><button class="icon-btn" id="at-close">${ICONS.close}</button></div>
     <div class="sheet-body">
       <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
-        Indiquez le type de chaque compte (Courant, Épargne, ou un autre type de votre choix). Utilisé pour regrouper vos comptes dans les listes.
+        Indiquez le type de chaque compte (Courant, Épargne, ou un autre type de votre choix) — utilisé pour regrouper vos comptes dans les listes — ainsi qu'un acronyme court, affiché en badge sur chaque transaction dans l'onglet Transactions (par défaut, dérivé automatiquement des initiales du nom).
       </div>
       <datalist id="at-type-list">${typeOptions.map(t=>`<option value="${U.escHtml(t)}">`).join("")}</datalist>
       <div class="card" style="padding:4px 6px;">
         ${comptes.map(c=>{
           const current = AGG.getAccountTypeDisplay(c.value);
+          const currentAcronym = (Store.settings.accountAcronyms||{})[c.value] || "";
           return `
           <div class="rowline" data-compte="${U.escHtml(c.value)}" style="flex-direction:column;align-items:stretch;gap:8px;">
             <span style="font-weight:600;font-size:14px;">${U.escHtml(c.value)}</span>
@@ -6833,6 +6876,10 @@ function renderAcctType(){
                 <div class="chip-opt ${current==='Épargne'?'selected':''}" data-v="Épargne">Épargne</div>
               </div>
               <input type="text" class="search-mini" style="margin:0;flex:1;" list="at-type-list" data-type-input placeholder="Autre type…" value="${U.escHtml(current)}">
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="font-size:11.5px;color:var(--text-sub);flex:0 0 auto;">Acronyme</span>
+              <input type="text" class="search-mini" style="margin:0;flex:1;text-transform:uppercase;" maxlength="4" data-acronym-input placeholder="${U.escHtml(AGG.getAccountAcronym(c.value))}" value="${U.escHtml(currentAcronym)}">
             </div>
           </div>`;
         }).join("")}
@@ -6850,6 +6897,15 @@ function renderAcctType(){
       chip.classList.toggle('selected', chip.dataset.v===value);
     });
   }
+  function setAcronym(row, value){
+    const compte = row.dataset.compte;
+    Store.settings.accountAcronyms = Store.settings.accountAcronyms || {};
+    const v = value.trim().toUpperCase().slice(0,4);
+    if(v) Store.settings.accountAcronyms[compte] = v;
+    else delete Store.settings.accountAcronyms[compte];
+    Store.saveSettings();
+    row.querySelector('[data-acronym-input]').value = v;
+  }
   document.querySelectorAll("#sheet-accttype [data-compte]").forEach(row=>{
     row.querySelectorAll('[data-quickchips] .chip-opt').forEach(chip=>{
       chip.onclick = ()=> setType(row, chip.dataset.v);
@@ -6859,6 +6915,8 @@ function renderAcctType(){
       const v = input.value.trim();
       if(v) setType(row, v);
     };
+    const acronymInput = row.querySelector('[data-acronym-input]');
+    acronymInput.onchange = ()=> setAcronym(row, acronymInput.value);
   });
 }
 function openAcctType(){
