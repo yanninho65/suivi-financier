@@ -311,13 +311,16 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 /* ---------- Onglet Évolution : tableau à colonnes figées (libellé + total) ---------- */
 .evo-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);}
 .evo-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
-.evo-table th,.evo-table td{padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
+.evo-table th,.evo-table td{box-sizing:border-box;padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
 .evo-table thead th{font-size:10px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.02em;padding-top:10px;padding-bottom:10px;background:var(--card);border-bottom:2px solid var(--divider);}
-.evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;}
-.evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
-.evo-col-val{min-width:78px;}
+.evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;}
+.evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);width:82px;min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
+.evo-col-val{width:78px;min-width:78px;max-width:78px;}
 .evo-year-header{cursor:pointer;}
 .evo-year-header:active{color:var(--primary);}
+.evo-total-row{background:var(--card);}
+.evo-total-row td{font-weight:900;font-size:13.5px;border-bottom:2px solid var(--divider);}
+.evo-total-row .evo-col-label,.evo-total-row .evo-col-total{background:var(--card);}
 .evo-section-row{background:var(--card-alt);cursor:pointer;}
 .evo-section-row td{font-weight:800;font-size:13px;}
 .evo-section-row .evo-col-label,.evo-section-row .evo-col-total{background:var(--card-alt);}
@@ -414,7 +417,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.22.02";
+const APP_VERSION = "v 2026.08.17.22.19";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -748,10 +751,10 @@ const Store = {
     if(!s.accountAcronyms || typeof s.accountAcronyms!=="object") s.accountAcronyms = {};
     if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
     if(!s.evolution || typeof s.evolution!=="object") s.evolution = {};
-    if(s.evolution.view!=="groupe" && s.evolution.view!=="categorie" && s.evolution.view!=="personne") s.evolution.view = "groupe";
+    if(!["groupe","categorie","personne","compte"].includes(s.evolution.view)) s.evolution.view = "groupe";
     if(s.evolution.monthBasis!=="reel" && s.evolution.monthBasis!=="transformee") s.evolution.monthBasis = "reel";
     if(!s.evolution.merges || typeof s.evolution.merges!=="object") s.evolution.merges = {};
-    ["groupe","categorie","personne"].forEach(d=>{ if(!Array.isArray(s.evolution.merges[d])) s.evolution.merges[d] = []; });
+    ["groupe","categorie","personne","compte"].forEach(d=>{ if(!Array.isArray(s.evolution.merges[d])) s.evolution.merges[d] = []; });
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
@@ -1702,9 +1705,43 @@ function buildEvolutionIndex(dimension, monthBasis){
     const ym = year+"-"+U.pad2(month+1);
     item.values.set(ym, (item.values.get(ym)||0)+amt);
   }
+  /* Réparti un montant sur un ou plusieurs mois selon "reel"/"transformee" (yearsplit -> 1/12e par mois) */
+  function distribute(item, t, amt){
+    if(monthBasis==="reel"){
+      addAmt(item, t.date.getFullYear(), t.date.getMonth(), amt);
+      return;
+    }
+    const tr = t.transform;
+    if(tr.mode==="yearsplit"){
+      for(let m=0;m<12;m++) addAmt(item, tr.year, m, amt/12);
+    } else if(tr.mode==="month"){
+      addAmt(item, tr.year, tr.month, amt);
+    } else {
+      addAmt(item, t.date.getFullYear(), t.date.getMonth(), amt);
+    }
+  }
   const catTypeMap = dimension==="categorie" ? classifyCategoryTypes(Store.transactions) : null;
 
   Store.transactions.forEach(t=>{
+    if(dimension==="compte"){
+      // Vue Compte : reflète l'évolution du solde de chaque compte — revenus/dépenses normalement, et pour
+      // un virement, -montant sur le compte source et +montant sur le compte cible (même logique que
+      // computeAccountBalances), donc un virement peut alimenter DEUX comptes à la fois.
+      if(t.type==="Transfer"){
+        if(t.compte){
+          const sec = ensureSection(getAccountTypeDisplay(t.compte), getAccountTypeDisplay(t.compte));
+          distribute(ensureItem(sec, t.compte, t.compte), t, -t.montant);
+        }
+        if(t.compteCible){
+          const sec = ensureSection(getAccountTypeDisplay(t.compteCible), getAccountTypeDisplay(t.compteCible));
+          distribute(ensureItem(sec, t.compteCible, t.compteCible), t, t.montant);
+        }
+      } else if(t.compte){
+        const sec = ensureSection(getAccountTypeDisplay(t.compte), getAccountTypeDisplay(t.compte));
+        distribute(ensureItem(sec, t.compte, t.compte), t, t.montant);
+      }
+      return;
+    }
     if(t.type==="Transfer") return;
     let sectionKey, sectionLabel, itemKey, itemLabel;
     if(dimension==="groupe"){
@@ -1727,18 +1764,7 @@ function buildEvolutionIndex(dimension, monthBasis){
     }
     const sec = ensureSection(sectionKey, sectionLabel);
     const item = ensureItem(sec, itemKey, itemLabel);
-    if(monthBasis==="reel"){
-      addAmt(item, t.date.getFullYear(), t.date.getMonth(), t.montant);
-    } else {
-      const tr = t.transform;
-      if(tr.mode==="yearsplit"){
-        for(let m=0;m<12;m++) addAmt(item, tr.year, m, t.montant/12);
-      } else if(tr.mode==="month"){
-        addAmt(item, tr.year, tr.month, t.montant);
-      } else {
-        addAmt(item, t.date.getFullYear(), t.date.getMonth(), t.montant);
-      }
-    }
+    distribute(item, t, t.montant);
   });
 
   let sectionList = Array.from(sections.values()).map(s=>({...s, items: Array.from(s.items.values())}));
@@ -5086,11 +5112,21 @@ let sectionsInitialized = false;   // pour ne "tout replier" par défaut qu'au p
 let mergeMode = false;
 let mergeSelection = new Set();
 
-const VIEW_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne"};
+const VIEW_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
 
 function evoCfg(){ return Store.settings.evolution; }
 
-function fmtVal(n){ return U.fmtMoneySigned(n); }
+/* Toujours 0 décimale dans l'onglet Évolution, indépendamment du réglage global (Transactions/Comptes) */
+function fmtVal(n){
+  if(n==null || isNaN(n)) n=0;
+  const sign = n>0 ? "+ " : (n<0 ? "- " : "");
+  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
+}
+function fmtValPlain(n){
+  if(n==null || isNaN(n)) n=0;
+  const sign = n<0 ? "-" : "";
+  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
+}
 
 function valClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
 
@@ -5117,9 +5153,10 @@ function renderEvolution(){
     <div class="section" style="padding-top:14px;">
       <div class="card" style="margin:0 4px 12px;padding:14px;">
         <div class="seg seg-sm" id="evo-view-seg" style="margin-bottom:10px;">
-          <button data-v="groupe" class="${dimension==='groupe'?'active':''}">Groupe</button>
-          <button data-v="categorie" class="${dimension==='categorie'?'active':''}">Catégorie</button>
-          <button data-v="personne" class="${dimension==='personne'?'active':''}">Personne</button>
+          <button data-v="groupe" class="${dimension==='groupe'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Groupe</button>
+          <button data-v="categorie" class="${dimension==='categorie'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Catégorie</button>
+          <button data-v="personne" class="${dimension==='personne'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Personne</button>
+          <button data-v="compte" class="${dimension==='compte'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Compte</button>
         </div>
         <div class="seg seg-sm" id="evo-monthbasis-seg">
           <button data-v="reel" class="${cfg.monthBasis==='reel'?'active':''}">Mois réel</button>
@@ -5161,6 +5198,19 @@ function buildTableHtml(evoIndex, dimension, years){
     </tr></thead>
   `;
 
+  const grandTotal = evoIndex.sections.reduce((s,sec)=> s+AGG.sectionTotalValue(sec), 0);
+  const totalRowHtml = `
+    <tr class="evo-total-row">
+      <td class="evo-col-label">Total</td>
+      <td class="evo-col-total evo-val-cell ${valClass(grandTotal)}" data-global="1">${grandTotal ? fmtVal(grandTotal) : "—"}</td>
+      ${cols.map(c=>{
+        const v = evoIndex.sections.reduce((s,sec)=> s + (c.type==="year" ? AGG.sectionYearValue(sec,c.year) : AGG.sectionMonthValue(sec,c.year,c.month)), 0);
+        const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
+        return `<td class="evo-col-val evo-val-cell ${valClass(v)}" data-global="1" ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
+      }).join("")}
+    </tr>
+  `;
+
   const bodyRows = evoIndex.sections.map(sec=>{
     const secTotal = AGG.sectionTotalValue(sec);
     const secSelected = mergeMode && mergeSelection.has(sec.key);
@@ -5199,7 +5249,7 @@ function buildTableHtml(evoIndex, dimension, years){
     return secRow + itemRows;
   }).join("");
 
-  return `<table class="evo-table">${theadHtml}<tbody>${bodyRows}</tbody></table>`;
+  return `<table class="evo-table">${theadHtml}<tbody>${totalRowHtml}${bodyRows}</tbody></table>`;
 }
 
 function wireEvolution(evoIndex, dimension, years){
@@ -5268,7 +5318,8 @@ function wireEvolution(evoIndex, dimension, years){
       e.stopPropagation();
       if(mergeMode) return;
       const opts = {monthBasis: cfg.monthBasis, catTypeMap};
-      if(el.dataset.item!=null) opts.itemKey = el.dataset.item;
+      if(el.dataset.global!=null) opts.global = true;
+      else if(el.dataset.item!=null) opts.itemKey = el.dataset.item;
       else if(el.dataset.sectionMembers!=null) opts.sectionMembers = el.dataset.sectionMembers.split("||");
       else if(el.dataset.section!=null) opts.sectionKey = el.dataset.section;
       if(el.dataset.year!=null) opts.year = Number(el.dataset.year);
@@ -5320,7 +5371,14 @@ function txnMatchesPeriod(t, monthBasis, year, month){
   const buckets = txnBucketsFor(t, monthBasis);
   return buckets.some(b=> b.year===year && (month==null || b.month===month));
 }
+function matchesSectionForAccount(compteName, opts){
+  if(!compteName) return false;
+  const type = AGG.getAccountTypeDisplay(compteName);
+  if(opts.sectionMembers) return opts.sectionMembers.includes(type);
+  return type===opts.sectionKey;
+}
 function txnMatchesDimTarget(t, dimension, opts){
+  if(opts.global) return true;
   if(dimension==="groupe"){
     if(!t.groupe) return false;
     if(opts.itemKey!=null) return t.groupe===opts.itemKey;
@@ -5337,23 +5395,45 @@ function txnMatchesDimTarget(t, dimension, opts){
     if(opts.sectionMembers) return opts.sectionMembers.includes(type);
     return type===opts.sectionKey;
   }
+  if(dimension==="compte"){
+    if(t.type==="Transfer"){
+      const matchesSource = opts.itemKey!=null ? t.compte===opts.itemKey : matchesSectionForAccount(t.compte, opts);
+      const matchesDest = opts.itemKey!=null ? t.compteCible===opts.itemKey : matchesSectionForAccount(t.compteCible, opts);
+      return matchesSource || matchesDest;
+    }
+    if(!t.compte) return false;
+    if(opts.itemKey!=null) return t.compte===opts.itemKey;
+    return matchesSectionForAccount(t.compte, opts);
+  }
   const per = t.personne || "(Non renseigné)";
   if(opts.itemKey!=null) return per===opts.itemKey;
   const superName = t.personne ? AGG.getPersonneDisplay(t) : "(Non renseigné)";
   if(opts.sectionMembers) return opts.sectionMembers.includes(superName);
   return superName===opts.sectionKey;
 }
+/* Montant à afficher pour une transaction dans la feuille de détail de la vue Compte : pour un virement,
+   le signe dépend du sens (négatif si le compte/section cliqué est la source, positif s'il est la cible —
+   les deux si la source ET la cible appartiennent à la même section, ex. deux comptes du même type). */
+function evoSignedAmountForCompte(t, opts){
+  if(t.type!=="Transfer") return t.montant;
+  let amt = 0;
+  const matchesSource = opts.itemKey!=null ? t.compte===opts.itemKey : matchesSectionForAccount(t.compte, opts);
+  const matchesDest = opts.itemKey!=null ? t.compteCible===opts.itemKey : matchesSectionForAccount(t.compteCible, opts);
+  if(matchesSource) amt -= t.montant;
+  if(matchesDest) amt += t.montant;
+  return amt;
+}
 function openEvolutionTxnSheet(dimension, opts){
-  const items = [];
+  const rows = [];
   Store.transactions.forEach(t=>{
-    if(t.type==="Transfer") return;
+    if(dimension!=="compte" && t.type==="Transfer") return;
     if(!txnMatchesDimTarget(t, dimension, opts)) return;
     if(!txnMatchesPeriod(t, opts.monthBasis, opts.year!=null?opts.year:null, opts.month!=null?opts.month:null)) return;
-    items.push(t);
+    rows.push({t, amt: dimension==="compte" ? evoSignedAmountForCompte(t, opts) : t.montant});
   });
-  items.sort((a,b)=> b.date-a.date);
-  const total = items.reduce((s,t)=>s+t.montant,0);
-  const label = opts.itemKey || opts.sectionKey || (opts.sectionMembers ? opts.sectionMembers.join(" + ") : "");
+  rows.sort((a,b)=> b.t.date-a.t.date);
+  const total = rows.reduce((s,r)=>s+r.amt,0);
+  const label = opts.global ? "Total" : (opts.itemKey || opts.sectionKey || (opts.sectionMembers ? opts.sectionMembers.join(" + ") : ""));
   const periodLabel = opts.year==null ? "Toute la période"
     : opts.month==null ? String(opts.year)
     : U.MONTHS_FR[opts.month]+" "+opts.year;
@@ -5364,19 +5444,19 @@ function openEvolutionTxnSheet(dimension, opts){
       <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
       <button class="icon-btn" id="evotxn-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${items.length} transaction${items.length>1?"s":""}</div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${U.fmtMoneySigned(total)}</span>
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${fmtVal(total)}</span>
     </div>
     <div style="max-height:56vh;overflow-y:auto;">
-      ${items.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
-      items.map(t=>`
+      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
+      rows.map(({t,amt})=>`
         <div class="detail-row evotxn-row" data-txnid="${U.escHtml(t.id)}" style="align-items:center;cursor:pointer;">
           <span style="display:flex;flex-direction:column;min-width:0;">
-            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||"—")}</span>
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||(t.type==="Transfer"?(t.compte+" → "+t.compteCible):"—"))}</span>
             <span style="font-size:11px;color:var(--text-sub);">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
           </span>
-          <span style="font-weight:700;font-size:13.5px;color:${t.montant<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${U.fmtMoneySigned(t.montant)}</span>
+          <span style="font-weight:700;font-size:13.5px;color:${amt<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${fmtVal(amt)}</span>
         </div>
       `).join("")}
     </div>
