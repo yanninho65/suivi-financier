@@ -379,7 +379,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.12.42";
+const APP_VERSION = "v 2026.08.17.13.23";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4068,7 +4068,7 @@ function renderBudget(){
           </div>
           <div class="seg seg-sm" id="bg-display-seg" style="flex:1;">
             <button data-d="total" class="${cfg.displayMode!=='moyenne'?'active':''}">Total</button>
-            <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne / mois</button>
+            <button data-d="moyenne" class="${cfg.displayMode==='moyenne'?'active':''}">Moyenne</button>
           </div>
         </div>
         ${periodPickerHtml()}
@@ -4081,7 +4081,7 @@ function renderBudget(){
       </div>
       <div class="card" style="margin-bottom:14px;">
         ${compareCtx ? `
-        ${compareHeaderRowHtml()}
+        <div style="position:sticky;top:0;z-index:5;background:var(--card);margin:0 -16px;padding:2px 16px 4px;box-shadow:0 1px 0 var(--divider);">${compareHeaderRowHtml()}</div>
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
           ${compareRowHtml("Total tous groupes", dv(grandNet), grandCmp.total, {big:true})}
         </div>
@@ -4095,7 +4095,7 @@ function renderBudget(){
           ${compareRowHtml("Voyages", dv(grandVoyNet), grandCmp.voyage, {big:false})}
         </div>
         ` : detailOn ? `
-        ${detailHeaderRowHtml(cfg.mode)}
+        <div style="position:sticky;top:0;z-index:5;background:var(--card);margin:0 -16px;padding:2px 16px 4px;box-shadow:0 1px 0 var(--divider);">${detailHeaderRowHtml(cfg.mode)}</div>
         <div style="display:block;padding:0 0 6px;">
           ${detailRowHtml("Total tous groupes", cfg.mode, dv(grandBreak.total.real), dv(grandBreak.total.amort), dv(grandBreak.total.adj), {big:true}, {sheet:"group", supergroupe:allGroupNames[0], groups:allGroupNames.join("||"), type:""})}
         </div>
