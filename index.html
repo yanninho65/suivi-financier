@@ -157,6 +157,17 @@ svg{width:20px;height:20px;flex:0 0 auto;}
   display:flex;align-items:center;justify-content:center;padding:0 3px;
 }
 
+/* ---------- Floating add-transaction button ---------- */
+.fab-add{
+  position:fixed;right:18px;bottom:calc(150px + var(--safe-bottom));
+  width:56px;height:56px;border-radius:50%;border:none;
+  background:var(--primary);color:#fff;
+  display:none;align-items:center;justify-content:center;
+  box-shadow:var(--shadow-2);z-index:45;cursor:pointer;
+}
+.fab-add:active{background:var(--primary-tap);}
+.fab-add svg{width:26px;height:26px;}
+
 /* ---------- Bottom nav ---------- */
 .bottomnav{
   position:fixed;left:0;right:0;bottom:0;
@@ -417,7 +428,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.17.22.33";
+const APP_VERSION = "v 2026.08.19.23.18";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -514,9 +525,12 @@ function parseDateValue(val){
     return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
   const s = String(val).trim();
-  let m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  // dd/mm/yyyy OU dd/mm/yy (année 2 chiffres : pivot 68 -> 00-68 = 2000-2068, 69-99 = 1969-1999)
+  let m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
   if(m){
-    const day=parseInt(m[1],10), month=parseInt(m[2],10), year=parseInt(m[3],10);
+    const day=parseInt(m[1],10), month=parseInt(m[2],10);
+    let year=parseInt(m[3],10);
+    if(m[3].length<=2) year += (year<=68 ? 2000 : 1900);
     if(month>=1&&month<=12&&day>=1&&day<=31) return new Date(year,month-1,day);
   }
   m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -1887,6 +1901,7 @@ function buildShell(){
         <button class="fbtn" id="btn-filter">${ICONS.filter}<span class="filter-badge" id="filter-badge" style="display:none"></span></button>
       </div>
     </div>
+    <button class="fab-add" id="btn-add-txn" title="Ajouter une transaction">${ICONS.plus}</button>
 
     <div class="bottomnav">
       <button class="navbtn active" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
@@ -1900,17 +1915,18 @@ function buildShell(){
     <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
     <div class="overlay" id="overlay-sync"><div class="sheet" id="sheet-sync"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-detail"><div class="modal-center" id="modal-detail"></div></div>
-    <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
     <div class="overlay overlay-large" id="overlay-groupmgr"><div class="sheet sheet-large" id="sheet-groupmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-personmgr"><div class="sheet sheet-large" id="sheet-personmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-accttype"><div class="sheet sheet-large" id="sheet-accttype"></div></div>
     <div class="overlay overlay-large" id="overlay-catmgr"><div class="sheet sheet-large" id="sheet-catmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-picker"><div class="sheet sheet-large" id="sheet-picker"></div></div>
+    <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
   `;
 
   document.getElementById("btn-theme").onclick = cycleTheme;
   document.getElementById("btn-menu").onclick = ()=>window.__SF_MENU.open();
   document.getElementById("btn-filter").onclick = ()=>window.__SF_FILTERSHEET.openFilterSheet();
+  document.getElementById("btn-add-txn").onclick = ()=>window.__SF_VIEWS.openTxnNew();
   document.getElementById("search-input").oninput = U.debounce((e)=>{
     F.search = e.target.value;
     F.persist();
@@ -1939,6 +1955,26 @@ function buildShell(){
 
 function closeOverlay(id){ document.getElementById(id).classList.remove("open"); }
 function openOverlay(id){ document.getElementById(id).classList.add("open"); }
+
+/* Boîte de dialogue de confirmation générique (utilisée avant toute action de suppression).
+   opts: {title, text, confirmLabel="Supprimer", cancelLabel="Annuler", onConfirm} */
+function confirmAction(opts){
+  const modal = document.getElementById("modal-confirm");
+  modal.innerHTML = `
+    <h3 style="margin:0 0 8px;font-size:18px;">${U.escHtml(opts.title||"Confirmer ?")}</h3>
+    ${opts.text ? `<p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">${U.escHtml(opts.text)}</p>` : `<div style="margin-bottom:10px;"></div>`}
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" style="flex:1;" id="confirmaction-cancel">${U.escHtml(opts.cancelLabel||"Annuler")}</button>
+      <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="confirmaction-ok">${U.escHtml(opts.confirmLabel||"Supprimer")}</button>
+    </div>
+  `;
+  document.getElementById("confirmaction-cancel").onclick = ()=>closeOverlay("overlay-confirm");
+  document.getElementById("confirmaction-ok").onclick = ()=>{
+    closeOverlay("overlay-confirm");
+    opts.onConfirm && opts.onConfirm();
+  };
+  openOverlay("overlay-confirm");
+}
 
 function cycleTheme(){
   const order = ["auto","light","dark"];
@@ -1976,6 +2012,7 @@ function switchTab(tab){
   document.getElementById("view-"+tab).classList.add("active");
   const showFloat = (tab==="transactions");
   document.getElementById("floatbar-wrap").style.display = showFloat ? "flex" : "none";
+  document.getElementById("btn-add-txn").style.display = showFloat ? "flex" : "none";
   refreshCurrentTab();
 }
 
@@ -2023,7 +2060,7 @@ function renderHero(){
 }
 
 window.__SF_APP = {
-  buildShell, closeOverlay, openOverlay, switchTab, refreshCurrentTab, showToast, resetTxnPagination, updateThemeColorMeta,
+  buildShell, closeOverlay, openOverlay, switchTab, refreshCurrentTab, showToast, resetTxnPagination, updateThemeColorMeta, confirmAction,
   state:{get currentTab(){return currentTab;},
          get txnLimit(){return txnLimit;}, set txnLimit(v){txnLimit=v;},
          get txnGroupBy(){return txnGroupBy;}, set txnGroupBy(v){txnGroupBy=v;},
@@ -2367,11 +2404,18 @@ function openTxnDetail(id){
   document.getElementById("detail-close").onclick = ()=>APP.closeOverlay("overlay-detail");
   document.getElementById("detail-edit").onclick = ()=> openTxnEdit(id);
   document.getElementById("detail-delete").onclick = ()=>{
-    Store.transactions = Store.transactions.filter(x=>x.id!==id);
-    APP.closeOverlay("overlay-detail");
-    APP.refreshCurrentTab();
-    Store.saveTransactions().then(ok=>{
-      APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+    APP.confirmAction({
+      title:"Supprimer cette transaction ?",
+      text:"Cette action est définitive.",
+      confirmLabel:"Supprimer",
+      onConfirm:()=>{
+        Store.transactions = Store.transactions.filter(x=>x.id!==id);
+        APP.closeOverlay("overlay-detail");
+        APP.refreshCurrentTab();
+        Store.saveTransactions().then(ok=>{
+          APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+        });
+      }
     });
   };
   APP.openOverlay("overlay-detail");
@@ -2524,8 +2568,11 @@ function fieldPickerBtnHtml(id, label, currentValue){
   </button>`;
 }
 
-function openTxnEdit(id){
-  const t = Store.transactions.find(x=>x.id===id);
+function openTxnForm(id){
+  const isNew = !id;
+  const t = isNew
+    ? {type:"Expense", categorie:"", personne:"", compte:"", compteCible:"", groupe:"", remarque:"", montant:0, dateISO:U.toISO(new Date())}
+    : Store.transactions.find(x=>x.id===id);
   if(!t) return;
   const modal = document.getElementById("modal-detail");
   const comptes = AGG.distinctValues(Store.transactions, "compte").map(x=>x.value);
@@ -2545,7 +2592,7 @@ function openTxnEdit(id){
 
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <span style="font-weight:800;font-size:17px;">Modifier la transaction</span>
+      <span style="font-weight:800;font-size:17px;">${isNew?"Nouvelle transaction":"Modifier la transaction"}</span>
       <button class="icon-btn" id="edit-close">${ICONS.close}</button>
     </div>
 
@@ -2557,7 +2604,7 @@ function openTxnEdit(id){
     </div>
 
     <div class="field-label">Montant</div>
-    <input type="number" step="0.01" min="0" id="edit-montant" class="search-mini" style="margin:0;" value="${Math.abs(t.montant)}">
+    <input type="number" step="0.01" min="0" id="edit-montant" class="search-mini" style="margin:0;" value="${isNew?"":Math.abs(t.montant)}">
 
     <div class="field-label">Date</div>
     <input type="date" id="edit-date" class="search-mini" style="margin:0;" value="${t.dateISO}">
@@ -2585,6 +2632,7 @@ function openTxnEdit(id){
     <input type="text" id="edit-remarque" class="search-mini" style="margin:0;" value="${U.escHtml(t.remarque||"")}">
 
     <div style="display:flex;gap:10px;margin-top:18px;">
+      ${!isNew?`<button class="btn btn-ghost" id="edit-delete" style="color:var(--expense);">${ICONS.trash}</button>`:""}
       <button class="btn btn-ghost" id="edit-cancel" style="flex:1;">Annuler</button>
       <button class="btn btn-primary" id="edit-save" style="flex:1;">Enregistrer</button>
     </div>
@@ -2638,7 +2686,24 @@ function openTxnEdit(id){
   });
 
   document.getElementById("edit-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-  document.getElementById("edit-cancel").onclick = ()=> openTxnDetail(id);
+  document.getElementById("edit-cancel").onclick = isNew ? (()=>APP.closeOverlay("overlay-detail")) : (()=> openTxnDetail(id));
+  if(!isNew){
+    document.getElementById("edit-delete").onclick = ()=>{
+      APP.confirmAction({
+        title:"Supprimer cette transaction ?",
+        text:"Cette action est définitive.",
+        confirmLabel:"Supprimer",
+        onConfirm:()=>{
+          Store.transactions = Store.transactions.filter(x=>x.id!==id);
+          APP.closeOverlay("overlay-detail");
+          APP.refreshCurrentTab();
+          Store.saveTransactions().then(ok=>{
+            APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+          });
+        }
+      });
+    };
+  }
 
   document.getElementById("edit-save").onclick = ()=>{
     const type = state.type;
@@ -2665,6 +2730,22 @@ function openTxnEdit(id){
       APP.showToast("Impossible d'enregistrer : données invalides");
       return;
     }
+    if(isNew){
+      // Évite toute collision d'id (peu probable : id dérivé des champs) si une transaction strictement
+      // identique existe déjà — l'id doit rester unique pour que recherche/édition/suppression ciblent
+      // la bonne ligne.
+      let toAdd = updated;
+      if(Store.transactions.some(x=>x.id===toAdd.id)){
+        toAdd = Object.assign({}, updated, {id: updated.id+"|"+U.uid()});
+      }
+      Store.transactions.push(toAdd);
+      APP.closeOverlay("overlay-detail");
+      APP.refreshCurrentTab();
+      Store.saveTransactions().then(ok=>{
+        APP.showToast(ok ? "Transaction ajoutée" : "Ajoutée, mais la sauvegarde a échoué");
+      });
+      return;
+    }
     const idx = Store.transactions.findIndex(x=>x.id===id);
     if(idx===-1){ APP.closeOverlay("overlay-detail"); return; }
     Store.transactions[idx] = updated;
@@ -2677,11 +2758,14 @@ function openTxnEdit(id){
 
   APP.openOverlay("overlay-detail");
 }
+function openTxnEdit(id){ openTxnForm(id); }
+function openTxnNew(){ openTxnForm(null); }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderTransactions = renderTransactions;
 window.__SF_VIEWS.openTxnDetail = openTxnDetail;
 window.__SF_VIEWS.openTxnEdit = openTxnEdit;
+window.__SF_VIEWS.openTxnNew = openTxnNew;
 window.__SF_VIEWS.makeTxnItemEl = makeTxnItemEl;
 window.__SF_PICKER = {openPicker, fieldPickerBtnHtml};
 })();
@@ -3999,11 +4083,18 @@ function openAdjustmentForm(adj, prefill){
   });
   if(isEdit){
     document.getElementById("adjf-delete").onclick = ()=>{
-      cfg.adjustments.splice(adj.__idx,1);
-      Store.saveSettings();
-      APP.closeOverlay("overlay-detail");
-      APP.showToast("Ajustement supprimé");
-      renderBudget();
+      APP.confirmAction({
+        title:"Supprimer cet ajustement ?",
+        text:"Cette action est définitive.",
+        confirmLabel:"Supprimer",
+        onConfirm:()=>{
+          cfg.adjustments.splice(adj.__idx,1);
+          Store.saveSettings();
+          APP.closeOverlay("overlay-detail");
+          APP.showToast("Ajustement supprimé");
+          renderBudget();
+        }
+      });
     };
   }
   document.getElementById("adjf-save").onclick = ()=>{
@@ -5560,6 +5651,121 @@ function wireChecklist(listId, field, searchInputId){
   }
 }
 
+/* ---- Comptes : affichage groupé par type de compte (Courant/Épargne/…), avec sélection en bloc
+   de tous les comptes d'un même type via un clic sur l'en-tête du type (le champ "compte" n'ayant
+   pas de résolution "affichage groupé" comme pour Groupe/Personne, on ajoute/retire directement
+   chaque nom de compte du type dans le filtre). ---- */
+function comptesGroupedHtml(){
+  const items = AGG.distinctValues(Store.transactions, "compte"); // [{value,count}]
+  if(items.length===0) return `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucune valeur disponible</div>`;
+  const filterSet = F.comptes;
+  const groups = new Map(); // type -> [{value,count}]
+  items.forEach(it=>{
+    const type = AGG.getAccountTypeDisplay(it.value) || "Sans type";
+    if(!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(it);
+  });
+  const typeNames = Array.from(groups.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  let html = `<div id="f-list-compte" class="check-list" style="max-height:none;">`;
+  typeNames.forEach(type=>{
+    const children = groups.get(type);
+    const totalCount = children.reduce((s,c)=>s+c.count,0);
+    const allSelected = children.every(c=>filterSet.has(c.value));
+    html += `<div class="groupe-section" data-super="${U.escHtml(type)}">
+      <div class="check-item groupe-section-head ${allSelected?'selected':''}" data-typehead="1">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(type)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${filterSet.has(c.value)?'selected':''}" data-val="${U.escHtml(c.value)}" data-childname="${U.escHtml(c.value)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(c.value)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function wireComptesGrouped(){
+  const list = document.getElementById("f-list-compte");
+  if(!list) return;
+  function refreshHeadState(section){
+    const children = Array.from(section.querySelectorAll(".groupe-child-item"));
+    const allSelected = children.length>0 && children.every(c=>F.comptes.has(c.dataset.val));
+    const head = section.querySelector("[data-typehead]");
+    if(head) head.classList.toggle("selected", allSelected);
+  }
+  list.querySelectorAll(".groupe-child-item").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      if(F.comptes.has(val)) F.comptes.delete(val); else F.comptes.add(val);
+      el.classList.toggle("selected");
+      refreshHeadState(el.closest(".groupe-section"));
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  list.querySelectorAll("[data-typehead]").forEach(head=>{
+    head.onclick = ()=>{
+      const section = head.closest(".groupe-section");
+      const children = Array.from(section.querySelectorAll(".groupe-child-item"));
+      const allSelected = children.length>0 && children.every(c=>F.comptes.has(c.dataset.val));
+      children.forEach(c=>{
+        if(allSelected) F.comptes.delete(c.dataset.val); else F.comptes.add(c.dataset.val);
+        c.classList.toggle("selected", !allSelected);
+      });
+      head.classList.toggle("selected", !allSelected);
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  const search = document.getElementById("f-search-compte");
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      list.querySelectorAll(".groupe-section").forEach(sec=>{
+        let any=false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || U.normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match?"flex":"none";
+          if(match) any=true;
+        });
+        sec.style.display = (!q||any) ? "" : "none";
+      });
+    };
+  }
+}
+
+/* ---- "Tout sélectionner" / "Aucun" : disponible sur chaque section de filtre à choix multiples ---- */
+function quickSelectRowHtml(){
+  return `<div style="display:flex;gap:8px;margin-bottom:10px;">
+    <button type="button" class="btn btn-ghost btn-sm" id="f-select-all" style="flex:1;">Tout sélectionner</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="f-select-none" style="flex:1;">Aucun</button>
+  </div>`;
+}
+function selectAllForKey(key){
+  if(key==="types"){ F.types = new Set(["Income","Expense","Transfer"]); return; }
+  if(key==="comptes"){ F.comptes = new Set(AGG.distinctValues(Store.transactions,"compte").map(i=>i.value)); return; }
+  if(key==="categories"){ F.categories = new Set(AGG.distinctValuesCategorieSorted(Store.transactions).map(i=>i.value)); return; }
+  if(key==="groupes"){ F.groupes = new Set(AGG.distinctValues(Store.transactions,"groupe").map(i=>i.value)); return; }
+  if(key==="personnes"){ F.personnes = new Set(AGG.distinctValues(Store.transactions,"personne").map(i=>i.value)); return; }
+}
+function selectNoneForKey(key){
+  if(key==="types") F.types.clear(); else F[key].clear();
+}
+function wireQuickSelect(key){
+  const allBtn = document.getElementById("f-select-all");
+  const noneBtn = document.getElementById("f-select-none");
+  if(!allBtn || !noneBtn) return;
+  allBtn.onclick = ()=>{ selectAllForKey(key); F.persist(); renderCategoryStep(key); };
+  noneBtn.onclick = ()=>{ selectNoneForKey(key); F.persist(); renderCategoryStep(key); };
+}
+
 function updateApplyButton(){
   document.querySelectorAll(".filter-apply-btn").forEach(btn=>{
     const n = AGG.applyFilters(Store.transactions).length;
@@ -5610,7 +5816,7 @@ function renderMenuStep(){
 /* ---- Step 2: single-category detail ---- */
 const NESTED_DIM_CONFIG = {
   groupes: {listId:"f-list-groupe", searchId:"f-search-groupe", hierarchyFn:()=>AGG.groupeHierarchyFull(Store.transactions)},
-  personnes: {listId:"f-list-personne", searchId:"f-search-personne", hierarchyFn:()=>AGG.personneHierarchy(Store.transactions)},
+  personnes: {listId:"f-list-personne", searchId:"f-search-personne", hierarchyFn:()=>AGG.personneHierarchy(Store.transactions), noGroupLabel:"Sans type"},
 };
 
 function nestedFilterHtml(kind){
@@ -5641,14 +5847,40 @@ function nestedFilterHtml(kind){
     </div>`;
   });
   flat.sort((a,b)=>a.base.localeCompare(b.base,'fr'));
-  flat.forEach(f=>{
-    const selected = filterSet.has(f.base);
-    html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
-      <span class="cbox">${ICONS.check}</span>
-      <span class="lbl">${U.escHtml(f.base)}</span>
-      <span class="cnt">${f.count}</span>
+  if(cfg.noGroupLabel && flat.length){
+    // Les éléments non rattachés à un groupe sont regroupés sous un en-tête "Sans type" dédié,
+    // cliquable comme les autres en-têtes pour tout sélectionner/désélectionner en bloc — il n'existe
+    // toutefois pas de valeur "groupe" unique les représentant tous (contrairement aux en-têtes de
+    // groupe normaux, dont le nom sert lui-même de filtre), donc le clic bascule directement chacun
+    // des éléments qu'il contient (cf. wireNestedFilter → data-notypehead).
+    const totalCount = flat.reduce((s,f)=>s+f.count,0);
+    const allSelected = flat.every(f=>filterSet.has(f.base));
+    html += `<div class="groupe-section" data-super="${U.escHtml(cfg.noGroupLabel)}">
+      <div class="check-item groupe-section-head ${allSelected?'selected':''}" data-notypehead="1">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(cfg.noGroupLabel)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${flat.map(f=>`
+          <div class="check-item groupe-child-item ${filterSet.has(f.base)?'selected':''}" data-val="${U.escHtml(f.base)}" data-childname="${U.escHtml(f.base)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(f.base)}</span>
+            <span class="cnt">${f.count}</span>
+          </div>
+        `).join("")}
+      </div>
     </div>`;
-  });
+  } else {
+    flat.forEach(f=>{
+      const selected = filterSet.has(f.base);
+      html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${U.escHtml(f.base)}</span>
+        <span class="cnt">${f.count}</span>
+      </div>`;
+    });
+  }
   html += `</div>`;
   return html;
 }
@@ -5662,6 +5894,21 @@ function wireNestedFilter(kind){
       const val = el.dataset.val;
       if(filterSet.has(val)) filterSet.delete(val); else filterSet.add(val);
       el.classList.toggle("selected");
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  // En-tête "Sans type" : bascule en bloc tous les éléments non rattachés (cf. commentaire dans nestedFilterHtml).
+  list.querySelectorAll("[data-notypehead]").forEach(head=>{
+    head.onclick = ()=>{
+      const section = head.closest(".groupe-section");
+      const children = Array.from(section.querySelectorAll(".groupe-child-item"));
+      const allSelected = children.length>0 && children.every(c=>filterSet.has(c.dataset.val));
+      children.forEach(c=>{
+        if(allSelected) filterSet.delete(c.dataset.val); else filterSet.add(c.dataset.val);
+        c.classList.toggle("selected", !allSelected);
+      });
+      head.classList.toggle("selected", !allSelected);
       F.persist();
       updateApplyButton();
     };
@@ -5697,26 +5944,29 @@ function categoryBodyHtml(key){
     <div style="font-size:12px;color:var(--text-sub);margin-top:8px;">La période s'applique à la date indiquée des transactions.</div>`;
   }
   if(key==="types"){
-    return `<div class="chiprow" id="f-types">
+    return quickSelectRowHtml() + `<div class="chiprow" id="f-types">
       ${["Income","Expense","Transfer"].map(t=>`<div class="chip-opt ${F.types.has(t)?'selected':''}" data-val="${t}">${TYPE_LABELS[t]}</div>`).join("")}
     </div>`;
   }
   if(key==="groupes"){
-    return `<input type="text" class="search-mini" id="f-search-groupe" placeholder="Rechercher un groupe…">
+    return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-groupe" placeholder="Rechercher un groupe…">
       ${nestedFilterHtml("groupes")}`;
   }
   if(key==="personnes"){
-    return `<input type="text" class="search-mini" id="f-search-personne" placeholder="Rechercher une personne…">
+    return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-personne" placeholder="Rechercher une personne…">
       ${nestedFilterHtml("personnes")}`;
   }
-  const searchIds = {comptes:["f-list-compte","f-search-compte","un compte"],
-    categories:["f-list-cat","f-search-cat","une catégorie"]};
-  const [listId, searchId, placeholderNoun] = searchIds[key];
-  return `<input type="text" class="search-mini" id="${searchId}" placeholder="Rechercher ${placeholderNoun}…">
-    ${checklistHtml(listId, key, F[key])}`;
+  if(key==="comptes"){
+    return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-compte" placeholder="Rechercher un compte…">
+      ${comptesGroupedHtml()}`;
+  }
+  // categories
+  return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-cat" placeholder="Rechercher une catégorie…">
+    ${checklistHtml("f-list-cat", "categories", F.categories)}`;
 }
 
 function wireCategoryBody(key){
+  if(key!=="period") wireQuickSelect(key);
   if(key==="period"){
     document.getElementById("f-date-from").onchange = (e)=>{ F.dateFrom = e.target.value? new Date(e.target.value+"T00:00:00") : null; F.persist(); updateApplyButton(); refreshMenuSummaryIfNeeded(); };
     document.getElementById("f-date-to").onchange = (e)=>{ F.dateTo = e.target.value? new Date(e.target.value+"T23:59:59") : null; F.persist(); updateApplyButton(); refreshMenuSummaryIfNeeded(); };
@@ -5736,10 +5986,8 @@ function wireCategoryBody(key){
   }
   if(key==="groupes"){ wireNestedFilter("groupes"); return; }
   if(key==="personnes"){ wireNestedFilter("personnes"); return; }
-  const searchIds = {comptes:["f-list-compte","f-search-compte"],
-    categories:["f-list-cat","f-search-cat"]};
-  const [listId, searchId] = searchIds[key];
-  wireChecklist(listId, key, searchId);
+  if(key==="comptes"){ wireComptesGrouped(); return; }
+  wireChecklist("f-list-cat", "categories", "f-search-cat");
 }
 function refreshMenuSummaryIfNeeded(){} // no-op placeholder (menu is rebuilt fresh when navigated back to)
 
@@ -6216,10 +6464,11 @@ function exportExcel(scope){
 
   if(scope==="both" || scope==="transactions"){
     const header = ["Date","Type","Montant","Catégorie","Personne","Compte","Compte cible","Groupe","Remarque"];
+    const typeLabelFr = {Income:"Revenu", Expense:"Dépense", Transfer:"Transfert"};
     const data = [header];
     Store.transactions.forEach(t=>{
       data.push([
-        t.date, t.type, t.montant, t.categorie, t.personne, t.compte, t.compteCible, t.groupe, t.remarque
+        t.date, typeLabelFr[t.type]||t.type, t.montant, t.categorie, t.personne, t.compte, t.compteCible, t.groupe, t.remarque
       ]);
     });
     const wsTxn = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
@@ -7120,8 +7369,15 @@ function createAliasManager(cfg){
   function wireRowDeletes(){
     document.querySelectorAll("[data-del]").forEach(btn=>{
       btn.onclick = ()=>{
-        const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
-        if(card) card.remove();
+        APP.confirmAction({
+          title:"Supprimer cette règle ?",
+          text:"Cette action est définitive une fois enregistrée.",
+          confirmLabel:"Supprimer",
+          onConfirm:()=>{
+            const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
+            if(card) card.remove();
+          }
+        });
       };
     });
   }
