@@ -375,14 +375,25 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .chart-wrap{position:relative;height:230px;margin-top:6px;}
 .chart-wrap.tall{height:260px;}
 
-/* ---------- Account cards ---------- */
-.acc-card{background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:16px;display:flex;align-items:center;gap:14px;cursor:pointer;}
-.acc-card + .acc-card{margin-top:10px;}
-.acc-ico{width:44px;height:44px;border-radius:16px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:0 0 auto;}
+/* ---------- Account cards (même format que les lignes de l'onglet Transactions : bandeau
+   acronyme + contenu compact, cf. .txn-item/.txn-band) ---------- */
+.acc-card{
+  display:flex;align-items:stretch;background:var(--card);
+  border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
+  overflow:hidden;
+}
+.acc-card + .acc-card{margin-top:6px;}
+.acc-band{
+  width:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:.03em;
+  font-size:9.5px;font-weight:800;padding:6px 0;
+  background:var(--primary-soft);color:var(--primary);
+}
+.acc-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
 .acc-mid{flex:1;min-width:0;}
-.acc-name{font-weight:700;font-size:14.5px;}
+.acc-name{font-weight:700;font-size:13.5px;}
 .acc-flows{font-size:11.5px;color:var(--text-sub);margin-top:2px;}
-.acc-bal{font-weight:800;font-size:16px;text-align:right;flex:0 0 auto;}
+.acc-bal{font-weight:800;font-size:14.5px;text-align:right;flex:0 0 auto;}
 
 /* ---------- Import ---------- */
 .dropzone{
@@ -429,7 +440,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.21.00.00";
+const APP_VERSION = "v 2026.08.20.20.35";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -766,6 +777,7 @@ const Store = {
     if(!s.accountTypes || typeof s.accountTypes!=="object") s.accountTypes = {};
     if(!s.accountAcronyms || typeof s.accountAcronyms!=="object") s.accountAcronyms = {};
     if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
+    if(!Array.isArray(s.customBalances)) s.customBalances = [];
     if(!s.evolution || typeof s.evolution!=="object") s.evolution = {};
     if(!["groupe","categorie","personne","compte"].includes(s.evolution.view)) s.evolution.view = "groupe";
     if(s.evolution.monthBasis!=="reel" && s.evolution.monthBasis!=="transformee") s.evolution.monthBasis = "reel";
@@ -2964,16 +2976,35 @@ function renderAccounts(){
   });
   const typeGroups = orderAccountTypeGroups(Array.from(byType.values()));
 
+  // Soldes personnalisés (jusqu'à 2), calculés sur la sélection de comptes choisie par l'utilisateur ;
+  // seuls les soldes avec un titre renseigné sont affichés.
+  const customBalancesData = (Store.settings.customBalances||[]).slice(0,2).map(cb=>{
+    const accSet = new Set(cb.accounts||[]);
+    const bal = balances.reduce((s,a)=> accSet.has(a.name) ? s+a.balance : s, 0);
+    return {title:(cb.title||"").trim(), bal};
+  }).filter(cb=>cb.title);
+
   const view_html = [`
     <div class="section" style="padding-top:14px;">
-      <div class="card" style="text-align:center;padding:22px 16px;">
+      <div class="card" style="text-align:center;padding:26px 16px;position:relative;">
+        <button type="button" class="icon-btn" id="acc-balance-edit-btn" title="Configurer les soldes affichés" style="position:absolute;top:10px;right:10px;width:34px;height:34px;box-shadow:none;background:var(--card-alt);">${ICONS.edit||''}</button>
         <div style="font-size:13px;color:var(--text-sub);font-weight:600;">Solde total (tous comptes)</div>
-        <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
+        <div style="font-size:32px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
+        ${customBalancesData.length ? `
+          <div style="display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--divider);">
+            ${customBalancesData.map(cb=>`
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11.5px;color:var(--text-sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${U.escHtml(cb.title)}</div>
+                <div style="font-size:19px;font-weight:800;margin-top:3px;color:${cb.bal>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(cb.bal)}</div>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>
     </div>
-    <div class="section" style="padding-top:0;display:flex;gap:8px;">
-      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;justify-content:center;">${ICONS.copy||''} Copier pour Excel</button>
-      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;justify-content:center;">${ICONS.list||''} Réorganiser</button>` : ""}
+    <div class="section" style="padding-top:14px;display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.copy||''} Copie Excel</button>
+      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.list||''} Réorganiser</button>` : ""}
       ${U.decimalsToggleBtnHtml("acc-decimals-btn")}
     </div>
   `];
@@ -2986,6 +3017,7 @@ function renderAccounts(){
   };
   const reorderBtn = document.getElementById("acc-reorder-btn");
   if(reorderBtn) reorderBtn.onclick = ()=> openAccountTypeReorderSheet(typeGroups.map(g=>g.type));
+  document.getElementById("acc-balance-edit-btn").onclick = ()=> openCustomBalancesSheet(balances);
 
   typeGroups.forEach(g=>{
     const typeSection = document.createElement("div");
@@ -3004,12 +3036,15 @@ function renderAccounts(){
     g.accounts.forEach(a=>{
       const card = document.createElement("div");
       card.className = "acc-card";
+      const acctAcronym = AGG.getAccountAcronym(a.name);
       card.innerHTML = `
-        <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
-        <div class="acc-mid">
-          <div class="acc-name">${U.escHtml(a.name)}</div>
+        <div class="acc-band" title="${U.escHtml(a.name||"")}">${U.escHtml(acctAcronym)}</div>
+        <div class="acc-content">
+          <div class="acc-mid">
+            <div class="acc-name">${U.escHtml(a.name)}</div>
+          </div>
+          <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
         </div>
-        <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
       `;
       card.onclick = ()=>{
         window.__SF_FILTERS.comptes = new Set([a.name]);
@@ -3088,6 +3123,73 @@ function openAccountTypeReorderSheet(currentTypes){
         if(i>=order.length-1) return;
         [order[i+1],order[i]] = [order[i],order[i+1]];
         save();
+        render();
+      };
+    });
+  }
+  render();
+  APP.openOverlay("overlay-detail");
+}
+
+/* ---------------- Soldes personnalisés : jusqu'à 2 soldes additionnels, calculés sur une sélection de
+   comptes choisie par l'utilisateur, affichés dans le bloc solde en haut de l'onglet Comptes (à côté du
+   solde total). Un titre vide masque le solde correspondant. Réglages persistés dans
+   Store.settings.customBalances (tableau de {title, accounts}). ---------------- */
+function customBalancePillListHtml(accountNames, selectedSet, slot){
+  return `<div class="pill-toggle-wrap">${accountNames.map(a=>`
+    <button type="button" class="pill-toggle custombal-acct-item ${selectedSet.has(a)?'selected':''}" data-slot="${slot}" data-acct="${U.escHtml(a)}">${U.escHtml(a)}</button>
+  `).join("")}</div>`;
+}
+function openCustomBalancesSheet(balances){
+  const accountNames = balances.map(a=>a.name).slice().sort((a,b)=>a.localeCompare(b,'fr'));
+  // Copie de travail : toujours 2 emplacements, même vides.
+  let slots = [0,1].map(i=>{
+    const src = (Store.settings.customBalances||[])[i];
+    return {
+      title: (src && src.title) || "",
+      accounts: (src && Array.isArray(src.accounts)) ? src.accounts.slice() : []
+    };
+  });
+  function persist(){
+    Store.settings.customBalances = slots.map(s=>({title:s.title, accounts:s.accounts.slice()}));
+    Store.saveSettings();
+  }
+  function render(){
+    const modal = document.getElementById("modal-detail");
+    const prevScroll = modal.scrollTop;
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:800;font-size:17px;">Soldes personnalisés</span>
+        <button class="icon-btn" id="custombal-close">${ICONS.close}</button>
+      </div>
+      <div style="max-height:70vh;overflow-y:auto;">
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:16px;line-height:1.4;">Affichez jusqu'à 2 soldes supplémentaires, calculés sur une sélection de comptes, à côté du solde total. Laissez le titre vide pour ne pas afficher un solde.</div>
+        ${slots.map((s,i)=>`
+          <div style="${i===0?'margin-bottom:24px;':''}">
+            <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">Solde ${i+1}</div>
+            <input type="text" class="search-mini" maxlength="24" placeholder="Titre (ex. Épargne commune)" data-custombal-title="${i}" value="${U.escHtml(s.title)}">
+            ${accountNames.length ? customBalancePillListHtml(accountNames, new Set(s.accounts), i) : `<div style="font-size:12.5px;color:var(--text-sub);">Aucun compte.</div>`}
+          </div>
+        `).join("")}
+      </div>
+    `;
+    modal.scrollTop = prevScroll;
+    document.getElementById("custombal-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderAccounts(); };
+    modal.querySelectorAll("[data-custombal-title]").forEach(inp=>{
+      inp.oninput = ()=>{
+        const i = Number(inp.dataset.custombalTitle);
+        slots[i].title = inp.value;
+        persist();
+      };
+    });
+    modal.querySelectorAll(".custombal-acct-item[data-slot]").forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.dataset.slot);
+        const a = btn.dataset.acct;
+        const set = new Set(slots[i].accounts);
+        if(set.has(a)) set.delete(a); else set.add(a);
+        slots[i].accounts = Array.from(set);
+        persist();
         render();
       };
     });
