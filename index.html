@@ -3184,13 +3184,15 @@ function openCustomBalancesSheet(balances){
     });
     modal.querySelectorAll(".custombal-acct-item[data-slot]").forEach(btn=>{
       btn.onclick = ()=>{
+        // Bascule uniquement ce bouton (pas de re-rendu complet), pour ne pas réinitialiser le défilement
+        // de la liste de comptes à chaque sélection.
         const i = Number(btn.dataset.slot);
         const a = btn.dataset.acct;
         const set = new Set(slots[i].accounts);
-        if(set.has(a)) set.delete(a); else set.add(a);
+        if(set.has(a)){ set.delete(a); btn.classList.remove("selected"); }
+        else{ set.add(a); btn.classList.add("selected"); }
         slots[i].accounts = Array.from(set);
         persist();
-        render();
       };
     });
   }
