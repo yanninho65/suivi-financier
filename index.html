@@ -327,8 +327,8 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-table th,.evo-table td{box-sizing:border-box;padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
 .evo-table thead th{font-size:10px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.02em;padding-top:10px;padding-bottom:10px;background:var(--card);border-bottom:2px solid var(--divider);}
 .evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;}
-.evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);width:82px;min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
-.evo-col-val{width:78px;min-width:78px;max-width:78px;}
+.evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);width:74px;min-width:74px;max-width:74px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
+.evo-col-val{width:74px;min-width:74px;max-width:74px;}
 .evo-year-header{cursor:pointer;}
 .evo-year-header:active{color:var(--primary);}
 .evo-total-row{background:var(--card);}
@@ -379,11 +379,10 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-section-row .recur-year-col{background:color-mix(in srgb, var(--primary-soft) 55%, var(--card-alt));}
 /* Colonne "libellé" élargie + retour à la ligne (au lieu d'une troncature "...") pour laisser voir le nom
    complet des transactions récurrentes. La colonne Total n'est plus figée : elle défile comme les autres
-   colonnes. Le conteneur est limité en largeur pour ne jamais laisser apparaître plus de 2 colonnes de
-   données à la fois — au-delà, on fait défiler à la main (glisser-déposer souris via U.enableDragScroll,
-   ou tactile natif), ce qui laisse davantage de place à la colonne libellé. */
-.recur-table-wrap{max-width:328px;}
-.recur-table .evo-col-label{width:168px;min-width:168px;max-width:168px;white-space:normal;line-height:1.28;}
+   colonnes. Le bloc utilise toute la largeur disponible (padding latéral réduit, cf. rendu JS) et les
+   colonnes sont compactes pour en laisser apparaître trois à la fois — au-delà, on fait défiler à la main
+   (glisser-déposer souris via U.enableDragScroll, ou tactile natif). */
+.recur-table .evo-col-label{width:150px;min-width:150px;max-width:150px;white-space:normal;line-height:1.28;}
 .recur-table .evo-col-total{position:static;box-shadow:none;}
 
 /* ---------- Breakdown / evolution lists ---------- */
@@ -477,7 +476,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.21.23.10";
+const APP_VERSION = "v 2026.08.21.23.23";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -5975,7 +5974,7 @@ function renderEvolution(){
 
   const tableHtml = buildTableHtml(evoIndex, dimension, years);
 
-  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;"><div class="evo-table-wrap">${tableHtml}</div></div><div style="height:10px;"></div>`;
+  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;padding-left:8px;padding-right:8px;"><div class="evo-table-wrap">${tableHtml}</div></div><div style="height:10px;"></div>`;
 
   wireEvolution(evoIndex, dimension, years);
 }
@@ -6389,7 +6388,7 @@ function renderRecurrent(){
     ? `<div class="empty-state" style="padding:32px 20px;">${ICONS.inbox}<h3>Aucune transaction récurrente</h3><p>Aucune remarque avec suffixe de date sur cette période.</p></div>`
     : `<div class="evo-table-wrap recur-table-wrap">${buildRecurringTableHtml(evoIndex, cols)}</div>`;
 
-  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;">${tableHtml}</div><div style="height:10px;"></div>`;
+  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;padding-left:8px;padding-right:8px;">${tableHtml}</div><div style="height:10px;"></div>`;
 
   wireRecurrent(evoIndex, cfg);
 }
