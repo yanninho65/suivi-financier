@@ -346,6 +346,28 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-val-cell.pos{color:var(--income);}
 .evo-chev{display:inline-block;width:10px;height:10px;margin-right:4px;transition:transform .15s;vertical-align:middle;}
 .evo-chev.open{transform:rotate(90deg);}
+
+/* ---------- Budget : vue "mois par mois" (bouton calendrier) — même style de ligne que la vue détail
+   (Réel+ajout/Amorti/Total, cf. detailRowHtml), simplement avec une colonne par mois au lieu de 3 colonnes
+   fixes, et la colonne Total figée à gauche pour pouvoir faire défiler les mois. ---------- */
+.bgm-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;cursor:grab;user-select:none;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);}
+.bgm-wrap.drag-scroll-active{cursor:grabbing;}
+.bgm-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
+.bgm-table td,.bgm-table th{box-sizing:border-box;padding:7px 6px;text-align:right;white-space:nowrap;}
+.bgm-label-cell{position:sticky;left:0;z-index:2;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;padding-left:12px !important;}
+.bgm-total-cell{position:sticky;left:132px;z-index:2;background:var(--card);width:82px;min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
+.bgm-val-cell{width:72px;min-width:72px;max-width:72px;}
+.bgm-head th{font-size:9px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.2px;padding-top:10px;}
+.bgm-group-row td{font-size:13.5px;font-weight:800;padding-top:14px;border-top:1px solid var(--divider);}
+.bgm-table tbody tr:first-child td{border-top:none;}
+.bgm-group-row .bgm-label-cell{padding-left:12px !important;}
+.bgm-item-row td{font-size:11px;font-weight:600;color:var(--text-sub);}
+.bgm-item-row .bgm-label-cell{padding-left:24px !important;}
+.bgm-val-cell.pos{color:var(--income);font-weight:700;}
+.bgm-val-cell.neg{color:var(--expense);font-weight:700;}
+.bgm-total-cell.pos{color:var(--income);}
+.bgm-total-cell.neg{color:var(--expense);}
+.bg-detail-cell.clickable{cursor:pointer;}
 .evo-merge-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:100px;background:var(--card-alt);color:var(--text);}
 .evo-merge-chip button{border:none;background:none;padding:0;display:flex;color:var(--text-sub);cursor:pointer;}
 .evo-section-check{width:18px;height:18px;flex:0 0 auto;}
@@ -4678,16 +4700,49 @@ function openGroupSwapPicker(groupName, isMain){
 }
 
 const EMPTY_MAP = new Map();
-/* Construit le tableau "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes") :
-   EXACTEMENT les mêmes lignes que la vue par carte habituelle — "Total tous groupes", puis pour chaque
-   groupe (principal puis additionnels) sa ligne Total suivie d'une ligne par catégorie et d'une ligne par
-   voyage (mêmes libellés, même contenu que dans la carte du groupe, cf. groupCardHtml) — simplement
-   ventilées mois par mois au lieu d'un total unique sur la période. Colonne "Total" figée à gauche
-   (identique à la carte habituelle) puis une colonne par mois de la période affichée, à faire défiler vers
-   la droite — même gabarit visuel que le tableau de l'onglet Évolution (classes .evo-table-wrap /
-   .evo-col-label / .evo-col-total / .evo-col-val / .evo-val-cell / .evo-item-row), sticky comprise. Chaque
-   cellule (Total ou mois) est cliquable et ouvre la liste des transactions correspondante, comme dans les
-   autres vues (et comme les lignes catégorie/voyage des cartes habituelles). */
+/* Ligne <tr> de la vue "mois par mois", avec le même style visuel que les lignes de la vue détail à 3
+   colonnes (cf. detailRowHtml plus haut : mêmes tailles/graisses de police, mêmes règles de couleur —
+   .bgm-group-row/.bgm-item-row portent ces tailles via CSS), simplement avec une colonne par mois au lieu
+   de 3 colonnes fixes. Seule différence : la colonne "Total" (comme le libellé) est figée à gauche
+   (.bgm-label-cell/.bgm-total-cell, cf. CSS — même mécanisme que .evo-col-label/.evo-col-total de l'onglet
+   Évolution) pour permettre de faire défiler les mois. clickAttrs (optionnel) rend chaque valeur
+   individuellement cliquable, comme pour les autres vues. */
+function bgmRowHtml(label, total, monthly, months, opts, clickAttrs){
+  opts = opts || {};
+  const rowClass = opts.big ? "bgm-group-row" : "bgm-item-row";
+  function cell(v, cls, extraDataAttrs){
+    const sign = v>0 ? "pos" : (v<0 ? "neg" : "");
+    const text = v ? bgFmtMoneySigned(v) : "—";
+    const clickable = clickAttrs ? " clickable bg-detail-cell" : "";
+    const attrs = clickAttrs ? `${clickAttrs} ${extraDataAttrs||""}` : "";
+    return `<td class="${cls} ${sign}${clickable}" ${attrs}>${text}</td>`;
+  }
+  return `
+    <tr class="${rowClass}">
+      <td class="bgm-label-cell">${U.escHtml(label)}</td>
+      ${cell(total, "bgm-total-cell", "")}
+      ${months.map(m=> cell(monthly.get(m)||0, "bgm-val-cell", `data-month="${m}"`)).join("")}
+    </tr>
+  `;
+}
+function bgmHeaderRowHtml(months){
+  return `
+    <tr class="bgm-head">
+      <th class="bgm-label-cell"></th>
+      <th class="bgm-total-cell">Total</th>
+      ${months.map(m=>{ const [y,mm]=m.split("-").map(Number); return `<th class="bgm-val-cell">${fmtMonthYearShort(y,mm-1)}</th>`; }).join("")}
+    </tr>
+  `;
+}
+/* Construit la vue "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes") : même style
+   que la vue détail à 3 colonnes (cf. bgmRowHtml ci-dessus) et EXACTEMENT les mêmes lignes que la vue par
+   carte habituelle — "Total tous groupes", puis pour chaque groupe (principal puis additionnels) sa ligne
+   Total suivie d'une ligne par catégorie et d'une ligne par voyage (mêmes libellés que dans la carte du
+   groupe, cf. groupCardHtml) — simplement ventilées mois par mois au lieu d'un total unique sur la période.
+   Seule différence avec la vue détail : la colonne "Total" est figée à gauche (comme le libellé) pour
+   permettre de faire défiler les mois vers la droite — via un <table> avec colonnes sticky, le même
+   mécanisme, déjà éprouvé, que celui de l'onglet Évolution. Chaque valeur (Total ou mois) est cliquable et
+   ouvre la liste des transactions correspondante, comme les autres vues. */
 function buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGroupNames){
   const mainDetail = computeGroupBudgetDetailByMonth(cfg.mainGroup, months, {});
   const extraDetail = extraResults.map(e=>({name:e.name, res:e.res, detail: computeGroupBudgetDetailByMonth(e.name, months, {forceBrut:true})}));
@@ -4700,72 +4755,25 @@ function buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGrou
   });
   const grandTotal = mainRes.net + extraResults.reduce((s,e)=>s+e.res.net, 0);
 
-  function cellClass(v){ return v>0 ? "pos" : v<0 ? "neg" : ""; }
-  function fmtCell(v){ return v ? bgFmtMoneySigned(v) : "—"; }
-
-  const theadHtml = `
-    <thead><tr>
-      <th class="evo-col-label">Groupe</th>
-      <th class="evo-col-total">Total</th>
-      ${months.map(m=>{
-        const [y,mm] = m.split("-").map(Number);
-        return `<th class="evo-col-val">${fmtMonthYearShort(y, mm-1)}</th>`;
-      }).join("")}
-    </tr></thead>
-  `;
-
-  // Une ligne "groupe" (figée, en gras) suivie d'une ligne par catégorie puis par voyage (indentées, plus
-  // claires) — data-kind distingue le type de ligne pour le clic (groupe entier / catégorie / voyage).
   function groupRowsHtml(name, res, detail){
-    const groupAttr = U.escHtml(name);
-    const headerCells = months.map(m=>{
-      const v = detail.net.get(m) || 0;
-      return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" data-groups="${groupAttr}" data-month="${m}">${fmtCell(v)}</td>`;
-    }).join("");
-    const headerRow = `
-      <tr class="evo-section-row">
-        <td class="evo-col-label">${U.escHtml(name)}</td>
-        <td class="evo-col-total evo-val-cell ${cellClass(res.net)}" data-groups="${groupAttr}">${fmtCell(res.net)}</td>
-        ${headerCells}
-      </tr>
-    `;
-    function itemRow(kind, key, label, total, byMonth){
-      const attrs = `data-kind="${kind}" data-group="${groupAttr}" data-key="${U.escHtml(key)}"`;
-      const cells = months.map(m=>{
-        const v = (byMonth.get(key)||EMPTY_MAP).get(m) || 0;
-        return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" ${attrs} data-month="${m}">${fmtCell(v)}</td>`;
-      }).join("");
-      return `
-        <tr class="evo-item-row">
-          <td class="evo-col-label" style="padding-left:16px;">${U.escHtml(label)}</td>
-          <td class="evo-col-total evo-val-cell ${cellClass(total)}" ${attrs}>${fmtCell(total)}</td>
-          ${cells}
-        </tr>
-      `;
-    }
-    const catRows = res.categories.map(c=> itemRow("cat", c.key, c.label||c.key, c.income+c.expense, detail.categories)).join("");
-    const voyRows = res.voyages.map(v=> itemRow("voy", v.key, v.label||v.key, v.income+v.expense, detail.voyages)).join("");
+    const groupAttr = `data-groups="${U.escHtml(name)}"`;
+    const headerRow = bgmRowHtml(name, res.net, detail.net, months, {big:true}, groupAttr);
+    const catRows = res.categories.map(c=>
+      bgmRowHtml(c.label||c.key, c.income+c.expense, detail.categories.get(c.key)||EMPTY_MAP, months, {},
+        `data-kind="cat" data-group="${U.escHtml(name)}" data-key="${U.escHtml(c.key)}"`)
+    ).join("");
+    const voyRows = res.voyages.map(v=>
+      bgmRowHtml(v.label||v.key, v.income+v.expense, detail.voyages.get(v.key)||EMPTY_MAP, months, {},
+        `data-kind="voy" data-group="${U.escHtml(name)}" data-key="${U.escHtml(v.key)}"`)
+    ).join("");
     return headerRow + catRows + voyRows;
   }
 
-  const grandGroupsAttr = U.escHtml(allGroupNames.join("||"));
-  const grandCells = months.map(m=>{
-    const v = grandMonthly.get(m) || 0;
-    return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" data-groups="${grandGroupsAttr}" data-month="${m}">${fmtCell(v)}</td>`;
-  }).join("");
-  const grandRow = `
-    <tr class="evo-total-row">
-      <td class="evo-col-label">Total tous groupes</td>
-      <td class="evo-col-total evo-val-cell ${cellClass(grandTotal)}" data-groups="${grandGroupsAttr}">${fmtCell(grandTotal)}</td>
-      ${grandCells}
-    </tr>
-  `;
-
-  const bodyRows = grandRow
-    + groupRowsHtml(cfg.mainGroup, mainRes, mainDetail)
+  const grandRow = bgmRowHtml("Total tous groupes", grandTotal, grandMonthly, months, {big:true}, `data-groups="${U.escHtml(allGroupNames.join("||"))}"`);
+  const groupRows = groupRowsHtml(cfg.mainGroup, mainRes, mainDetail)
     + extraDetail.map(e=> groupRowsHtml(e.name, e.res, e.detail)).join("");
 
-  return `<div class="evo-table-wrap" id="bg-monthly-table-wrap"><table>${theadHtml}<tbody>${bodyRows}</tbody></table></div>`;
+  return `<div class="bgm-wrap" id="bg-monthly-table-wrap"><table class="bgm-table"><thead>${bgmHeaderRowHtml(months)}</thead><tbody>${grandRow}${groupRows}</tbody></table></div>`;
 }
 
 function renderBudget(){
@@ -5014,18 +5022,18 @@ function renderBudget(){
   const monthlyTableWrap = document.getElementById("bg-monthly-table-wrap");
   if(monthlyTableWrap){
     U.enableDragScroll(monthlyTableWrap);
-    monthlyTableWrap.querySelectorAll(".evo-val-cell").forEach(td=>{
-      td.onclick = ()=>{
-        const kind = td.dataset.kind;
-        const monthOpt = td.dataset.month ? {month: td.dataset.month} : {};
+    monthlyTableWrap.querySelectorAll("td.bg-detail-cell").forEach(el=>{
+      el.onclick = ()=>{
+        const kind = el.dataset.kind;
+        const monthOpt = el.dataset.month ? {month: el.dataset.month} : {};
         if(kind==="cat"){
-          if(isSalaryCategory(td.dataset.key)) openSalaryEditor(td.dataset.group, td.dataset.key);
-          else openCategoryTxnSheet(td.dataset.group, td.dataset.key, monthOpt);
+          if(isSalaryCategory(el.dataset.key)) openSalaryEditor(el.dataset.group, el.dataset.key);
+          else openCategoryTxnSheet(el.dataset.group, el.dataset.key, monthOpt);
         } else if(kind==="voy"){
-          openVoyageTxnSheet(td.dataset.group, td.dataset.key, monthOpt);
-        } else if(td.dataset.groups){
-          const groups = td.dataset.groups.split("||");
-          if(td.dataset.month) openGroupMonthTxnSheet(groups, td.dataset.month);
+          openVoyageTxnSheet(el.dataset.group, el.dataset.key, monthOpt);
+        } else if(el.dataset.groups){
+          const groups = el.dataset.groups.split("||");
+          if(el.dataset.month) openGroupMonthTxnSheet(groups, el.dataset.month);
           else openGroupTypeTxnSheet(groups, null);
         }
       };
