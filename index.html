@@ -3751,24 +3751,38 @@ function computeGroupBudget(superGroupeName, months, opts){
     catIncome, catExpense, voyIncome, voyExpense, voyNet: voyIncome+voyExpense};
 }
 
-/* Ventilation "mois par mois" du net d'un groupe (principal ou additionnel), pour la vue calendrier de
-   l'onglet Budget. Réutilise directement computeGroupBudget() un mois à la fois (aucune duplication de sa
-   logique réel/amortissement/ajustements/salaire) ; boundsMonths = la période affichée complète, pour que
-   le calcul de la fenêtre d'amortissement (voir amortWindowMonths/computeAmortPeriodMonths) reste exact
-   même appelé sur un seul mois. Les groupes additionnels (forceBrut) suivent leurs mois effectifs habituels
-   (extraGroupEffectiveMonths) : les mois hors de cette borne sont absents de la Map retournée (0 pour
-   l'appelant), exactement comme pour leur total agrégé habituel. */
-function computeGroupBudgetByMonth(groupName, allMonths, opts){
+/* Ventilation "mois par mois" d'un groupe (principal ou additionnel), pour la vue calendrier de l'onglet
+   Budget — net global ET détail par catégorie / par voyage (mêmes lignes que la carte du groupe : le
+   calendrier doit lister les mêmes catégories et voyages, pas seulement un total par groupe). Réutilise
+   directement computeGroupBudget() un mois à la fois (aucune duplication de sa logique
+   réel/amortissement/ajustements/salaire) ; boundsMonths = la période affichée complète, pour que le calcul
+   de la fenêtre d'amortissement (voir amortWindowMonths/computeAmortPeriodMonths) reste exact même appelé
+   sur un seul mois. Les groupes additionnels (forceBrut) suivent leurs mois effectifs habituels
+   (extraGroupEffectiveMonths) : les mois hors de cette borne sont absents des Map retournées (0 pour
+   l'appelant), exactement comme pour leur total agrégé habituel.
+   Retourne {net: Map(mois->net), categories: Map(catKey -> Map(mois->net)), voyages: Map(voyKey ->
+   Map(mois->net))}. */
+function computeGroupBudgetDetailByMonth(groupName, allMonths, opts){
   opts = opts || {};
   const effMonths = opts.forceBrut ? extraGroupEffectiveMonths(groupName, allMonths) : allMonths;
   const effSet = new Set(effMonths);
-  const map = new Map();
+  const net = new Map();
+  const categories = new Map();
+  const voyages = new Map();
   allMonths.forEach(m=>{
     if(!effSet.has(m)) return;
     const res = computeGroupBudget(groupName, [m], Object.assign({}, opts, {boundsMonths: allMonths}));
-    map.set(m, res.net);
+    net.set(m, res.net);
+    res.categories.forEach(c=>{
+      if(!categories.has(c.key)) categories.set(c.key, new Map());
+      categories.get(c.key).set(m, c.income+c.expense);
+    });
+    res.voyages.forEach(v=>{
+      if(!voyages.has(v.key)) voyages.set(v.key, new Map());
+      voyages.get(v.key).set(m, v.income+v.expense);
+    });
   });
-  return map;
+  return {net, categories, voyages};
 }
 
 /* ---------------- Comparaison (autre période / budget prédéfini) ---------------- */
@@ -4663,29 +4677,28 @@ function openGroupSwapPicker(groupName, isMain){
   });
 }
 
-/* Construit le tableau "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes") : une
-   ligne "Total tous groupes" + une ligne par groupe (principal puis additionnels), colonne "Total" figée à
-   gauche (identique à la carte habituelle) puis une colonne par mois de la période affichée, à faire
-   défiler vers la droite — même gabarit visuel que le tableau de l'onglet Évolution (classes .evo-table-wrap
-   / .evo-col-label / .evo-col-total / .evo-col-val / .evo-val-cell), sticky comprise. Chaque cellule
-   (Total ou mois) est cliquable et ouvre la liste des transactions correspondante, comme dans les autres
-   vues. */
+const EMPTY_MAP = new Map();
+/* Construit le tableau "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes") :
+   EXACTEMENT les mêmes lignes que la vue par carte habituelle — "Total tous groupes", puis pour chaque
+   groupe (principal puis additionnels) sa ligne Total suivie d'une ligne par catégorie et d'une ligne par
+   voyage (mêmes libellés, même contenu que dans la carte du groupe, cf. groupCardHtml) — simplement
+   ventilées mois par mois au lieu d'un total unique sur la période. Colonne "Total" figée à gauche
+   (identique à la carte habituelle) puis une colonne par mois de la période affichée, à faire défiler vers
+   la droite — même gabarit visuel que le tableau de l'onglet Évolution (classes .evo-table-wrap /
+   .evo-col-label / .evo-col-total / .evo-col-val / .evo-val-cell / .evo-item-row), sticky comprise. Chaque
+   cellule (Total ou mois) est cliquable et ouvre la liste des transactions correspondante, comme dans les
+   autres vues (et comme les lignes catégorie/voyage des cartes habituelles). */
 function buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGroupNames){
-  const mainMonthly = computeGroupBudgetByMonth(cfg.mainGroup, months, {});
-  const extraMonthly = extraResults.map(e=>({name:e.name, res:e.res, monthly: computeGroupBudgetByMonth(e.name, months, {forceBrut:true})}));
+  const mainDetail = computeGroupBudgetDetailByMonth(cfg.mainGroup, months, {});
+  const extraDetail = extraResults.map(e=>({name:e.name, res:e.res, detail: computeGroupBudgetDetailByMonth(e.name, months, {forceBrut:true})}));
 
   const grandMonthly = new Map();
   months.forEach(m=>{
-    let v = mainMonthly.get(m) || 0;
-    extraMonthly.forEach(e=> v += (e.monthly.get(m) || 0));
+    let v = mainDetail.net.get(m) || 0;
+    extraDetail.forEach(e=> v += (e.detail.net.get(m) || 0));
     grandMonthly.set(m, v);
   });
   const grandTotal = mainRes.net + extraResults.reduce((s,e)=>s+e.res.net, 0);
-
-  const rows = [
-    {label:"Total tous groupes", groups: allGroupNames, total: grandTotal, monthly: grandMonthly, grand:true},
-    {label: cfg.mainGroup, groups: [cfg.mainGroup], total: mainRes.net, monthly: mainMonthly, grand:false}
-  ].concat(extraMonthly.map(e=>({label:e.name, groups:[e.name], total:e.res.net, monthly:e.monthly, grand:false})));
 
   function cellClass(v){ return v>0 ? "pos" : v<0 ? "neg" : ""; }
   function fmtCell(v){ return v ? bgFmtMoneySigned(v) : "—"; }
@@ -4701,20 +4714,56 @@ function buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGrou
     </tr></thead>
   `;
 
-  const bodyRows = rows.map(r=>{
-    const groupsAttr = U.escHtml(r.groups.join("||"));
-    const cells = months.map(m=>{
-      const v = r.monthly.get(m) || 0;
-      return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" data-groups="${groupsAttr}" data-month="${m}">${fmtCell(v)}</td>`;
+  // Une ligne "groupe" (figée, en gras) suivie d'une ligne par catégorie puis par voyage (indentées, plus
+  // claires) — data-kind distingue le type de ligne pour le clic (groupe entier / catégorie / voyage).
+  function groupRowsHtml(name, res, detail){
+    const groupAttr = U.escHtml(name);
+    const headerCells = months.map(m=>{
+      const v = detail.net.get(m) || 0;
+      return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" data-groups="${groupAttr}" data-month="${m}">${fmtCell(v)}</td>`;
     }).join("");
-    return `
-      <tr class="${r.grand?'evo-total-row':'evo-section-row'}">
-        <td class="evo-col-label">${U.escHtml(r.label)}</td>
-        <td class="evo-col-total evo-val-cell ${cellClass(r.total)}" data-groups="${groupsAttr}">${fmtCell(r.total)}</td>
-        ${cells}
+    const headerRow = `
+      <tr class="evo-section-row">
+        <td class="evo-col-label">${U.escHtml(name)}</td>
+        <td class="evo-col-total evo-val-cell ${cellClass(res.net)}" data-groups="${groupAttr}">${fmtCell(res.net)}</td>
+        ${headerCells}
       </tr>
     `;
+    function itemRow(kind, key, label, total, byMonth){
+      const attrs = `data-kind="${kind}" data-group="${groupAttr}" data-key="${U.escHtml(key)}"`;
+      const cells = months.map(m=>{
+        const v = (byMonth.get(key)||EMPTY_MAP).get(m) || 0;
+        return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" ${attrs} data-month="${m}">${fmtCell(v)}</td>`;
+      }).join("");
+      return `
+        <tr class="evo-item-row">
+          <td class="evo-col-label" style="padding-left:16px;">${U.escHtml(label)}</td>
+          <td class="evo-col-total evo-val-cell ${cellClass(total)}" ${attrs}>${fmtCell(total)}</td>
+          ${cells}
+        </tr>
+      `;
+    }
+    const catRows = res.categories.map(c=> itemRow("cat", c.key, c.label||c.key, c.income+c.expense, detail.categories)).join("");
+    const voyRows = res.voyages.map(v=> itemRow("voy", v.key, v.label||v.key, v.income+v.expense, detail.voyages)).join("");
+    return headerRow + catRows + voyRows;
+  }
+
+  const grandGroupsAttr = U.escHtml(allGroupNames.join("||"));
+  const grandCells = months.map(m=>{
+    const v = grandMonthly.get(m) || 0;
+    return `<td class="evo-col-val evo-val-cell ${cellClass(v)}" data-groups="${grandGroupsAttr}" data-month="${m}">${fmtCell(v)}</td>`;
   }).join("");
+  const grandRow = `
+    <tr class="evo-total-row">
+      <td class="evo-col-label">Total tous groupes</td>
+      <td class="evo-col-total evo-val-cell ${cellClass(grandTotal)}" data-groups="${grandGroupsAttr}">${fmtCell(grandTotal)}</td>
+      ${grandCells}
+    </tr>
+  `;
+
+  const bodyRows = grandRow
+    + groupRowsHtml(cfg.mainGroup, mainRes, mainDetail)
+    + extraDetail.map(e=> groupRowsHtml(e.name, e.res, e.detail)).join("");
 
   return `<div class="evo-table-wrap" id="bg-monthly-table-wrap"><table>${theadHtml}<tbody>${bodyRows}</tbody></table></div>`;
 }
@@ -4959,16 +5008,26 @@ function renderBudget(){
       }
     });
   };
-  // Vue "mois par mois" : chaque cellule (Total ou mois) ouvre la liste des transactions correspondante,
-  // comme les autres vues ; le tableau se fait glisser à la souris sur ordinateur (voir enableDragScroll).
+  // Vue "mois par mois" : chaque cellule (Total ou mois), qu'elle appartienne à une ligne groupe, catégorie
+  // ou voyage, ouvre la même liste de transactions que le clic correspondant dans la vue par carte ; le
+  // tableau se fait glisser à la souris sur ordinateur (voir enableDragScroll).
   const monthlyTableWrap = document.getElementById("bg-monthly-table-wrap");
   if(monthlyTableWrap){
     U.enableDragScroll(monthlyTableWrap);
-    monthlyTableWrap.querySelectorAll(".evo-val-cell[data-groups]").forEach(td=>{
+    monthlyTableWrap.querySelectorAll(".evo-val-cell").forEach(td=>{
       td.onclick = ()=>{
-        const groups = td.dataset.groups.split("||");
-        if(td.dataset.month) openGroupMonthTxnSheet(groups, td.dataset.month);
-        else openGroupTypeTxnSheet(groups, null);
+        const kind = td.dataset.kind;
+        const monthOpt = td.dataset.month ? {month: td.dataset.month} : {};
+        if(kind==="cat"){
+          if(isSalaryCategory(td.dataset.key)) openSalaryEditor(td.dataset.group, td.dataset.key);
+          else openCategoryTxnSheet(td.dataset.group, td.dataset.key, monthOpt);
+        } else if(kind==="voy"){
+          openVoyageTxnSheet(td.dataset.group, td.dataset.key, monthOpt);
+        } else if(td.dataset.groups){
+          const groups = td.dataset.groups.split("||");
+          if(td.dataset.month) openGroupMonthTxnSheet(groups, td.dataset.month);
+          else openGroupTypeTxnSheet(groups, null);
+        }
       };
     });
   }
@@ -5042,12 +5101,16 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
   const cfg = Store.settings.budget;
-  const months = monthsInRange(periodFrom, periodTo);
+  // boundsMonths = période affichée complète (pour le calcul de fenêtre d'amortissement, cf.
+  // amortWindowMonths/computeAmortPeriodMonths) ; months = soit cette même période (comportement d'origine),
+  // soit un seul mois quand opts.month est fourni (clic sur une cellule de la vue "mois par mois").
+  const boundsMonths = monthsInRange(periodFrom, periodTo);
+  const months = opts.month ? [opts.month] : boundsMonths;
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
   const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
-  const periodMonths = computeAmortPeriodMonths(months);
-  const windowN = amortWindowMonths(months, periodMonths).length;
+  const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
+  const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
   // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
   // computeGroupBudget) ; les ajustements manuels restent en montant brut, non multipliés (§5.3 doc).
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
@@ -5109,11 +5172,12 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   items.sort((a,b)=> b.date - a.date);
 
   // Totaux cohérents avec ceux affichés sur la carte du groupe (calcul identique à computeGroupBudget).
-  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup, boundsMonths});
   const catEntry = budgetRes.categories.find(c=>c.key===catKey);
   const realTotal = catEntry ? (catEntry.realIncome||0)+(catEntry.realExpense||0) : 0;
   const amortTotal = catEntry ? (catEntry.amortIncome||0)+(catEntry.amortExpense||0) : 0;
   const adjTotal = catEntry ? (catEntry.adjIncome||0)+(catEntry.adjExpense||0) : 0;
+  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
 
   const KIND_STYLE = {
     reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
@@ -5129,7 +5193,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
         <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
         <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <span class="cattxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="cattxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
@@ -5279,7 +5343,10 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
   const cfg = Store.settings.budget;
-  const months = monthsInRange(periodFrom, periodTo);
+  // boundsMonths = période affichée complète ; months = cette même période, ou un seul mois si opts.month
+  // est fourni (clic sur une cellule de la vue "mois par mois") — voir openCategoryTxnSheet ci-dessus.
+  const boundsMonths = monthsInRange(periodFrom, periodTo);
+  const months = opts.month ? [opts.month] : boundsMonths;
   const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
 
@@ -5287,8 +5354,8 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   if(voyKey === "__ajustement__"){
     const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
     const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
-    const periodMonths = computeAmortPeriodMonths(months);
-    const windowN = amortWindowMonths(months, periodMonths).length;
+    const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
+    const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
     if(applyAdjustments){
       (cfg.adjustments||[]).forEach(adj=>{
         if(adj.groupe !== superGroupeName) return;
@@ -5334,12 +5401,13 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
 
   items.sort((a,b)=> b.date - a.date);
 
-  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup, boundsMonths});
   const voyEntry = budgetRes.voyages.find(v=>v.key===voyKey);
   const realTotal = voyEntry ? (voyEntry.realIncome||0)+(voyEntry.realExpense||0) : 0;
   const amortTotal = voyEntry ? (voyEntry.amortIncome||0)+(voyEntry.amortExpense||0) : 0;
   const adjTotal = voyEntry ? (voyEntry.adjIncome||0)+(voyEntry.adjExpense||0) : 0;
   const label = voyEntry ? (voyEntry.label||voyEntry.key) : voyKey;
+  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
 
   const KIND_STYLE = {
     reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
@@ -5355,7 +5423,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
         <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
         <button class="icon-btn" id="voytxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <span class="voytxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="voytxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
