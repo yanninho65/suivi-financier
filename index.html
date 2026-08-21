@@ -139,6 +139,10 @@ svg{width:20px;height:20px;flex:0 0 auto;}
   display:flex;align-items:center;gap:6px;
   padding:6px 6px 6px 18px;
 }
+.float-bar.actions{
+  width:auto;max-width:none;
+  padding:6px;justify-content:center;gap:10px;
+}
 .float-bar input{
   flex:1;border:none;outline:none;background:transparent;color:var(--text);
   font-size:15px;padding:10px 0;
@@ -156,17 +160,6 @@ svg{width:20px;height:20px;flex:0 0 auto;}
   font-size:10px;font-weight:800;border-radius:50%;min-width:16px;height:16px;
   display:flex;align-items:center;justify-content:center;padding:0 3px;
 }
-
-/* ---------- Floating add-transaction button ---------- */
-.fab-add{
-  position:fixed;right:18px;bottom:calc(150px + var(--safe-bottom));
-  width:56px;height:56px;border-radius:50%;border:none;
-  background:var(--primary);color:#fff;
-  display:none;align-items:center;justify-content:center;
-  box-shadow:var(--shadow-2);z-index:45;cursor:pointer;
-}
-.fab-add:active{background:var(--primary-tap);}
-.fab-add svg{width:26px;height:26px;}
 
 /* ---------- Bottom nav ---------- */
 .bottomnav{
@@ -281,6 +274,14 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .chev-rot{transition:transform .15s ease;}
 details[open] > summary .chev-rot{transform:rotate(180deg);}
 .seg button.active{background:var(--primary);color:#fff;}
+.txn-view-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--card-alt);border:none;border-radius:100px;
+  padding:6px 12px 6px 10px;margin:8px 4px 0;cursor:pointer;
+  font-size:12.5px;font-weight:700;color:var(--text);
+}
+.txn-view-pill svg{width:15px;height:15px;flex:0 0 auto;}
+.txn-view-pill .tvp-chev{width:12px;height:12px;color:var(--text-faint);}
 
 /* ---------- Transactions list ---------- */
 .txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:14px 4px 6px;text-transform:capitalize;}
@@ -306,11 +307,11 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .txn-ico.inc{background:var(--income-soft);color:var(--income);}
 .txn-ico.exp{background:var(--expense-soft);color:var(--expense);}
 .txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
-.txn-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;}
+.txn-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
 .txn-mid{flex:1;min-width:0;}
-.txn-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.txn-sub{font-size:11px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
-.txn-line{font-size:11px;line-height:1.35;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.txn-title{font-size:13px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-sub{font-size:11px;line-height:1.25;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.txn-line{font-size:10.5px;line-height:1.25;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
 .txn-line .txn-line-tag{opacity:.6;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;margin-right:4px;}
 .txn-amt{font-size:13.5px;font-weight:800;flex:0 0 auto;text-align:right;}
 .txn-amt.inc{color:var(--income);}
@@ -428,7 +429,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.19.23.18";
+const APP_VERSION = "v 2026.08.21.00.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -444,6 +445,7 @@ const ICONS = {
   wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>',
   search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
   filter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>',
+  layers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
   close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>',
   upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>',
   download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
@@ -795,6 +797,7 @@ const Store = {
     if(!s.sync.filename) s.sync.filename = "suivi_financier_sync.json";
     if(s.sync.lastSyncedAt===undefined) s.sync.lastSyncedAt = null;
     if(s.sync.lastSyncedHash===undefined) s.sync.lastSyncedHash = null;
+    if(typeof s.txnGroupsExpanded!=="boolean") s.txnGroupsExpanded = false;
   },
   clearAll(){
     this.transactions=[];
@@ -1186,11 +1189,14 @@ const Filters = {
   personnes: new Set(),
   comptes: new Set(),
   groupes: new Set(),
+  moisIndiques: new Set(),  // "AAAA-MM" — mois réel (date de la transaction)
+  moisCalcules: new Set(),  // "AAAA-MM" — mois après transformation éventuelle (cf. computeTransform)
 
   reset(){
     this.search=""; this.dateFrom=null; this.dateTo=null;
     this.types.clear(); this.categories.clear(); this.personnes.clear();
     this.comptes.clear(); this.groupes.clear();
+    this.moisIndiques.clear(); this.moisCalcules.clear();
   },
   /* Sauvegarde les filtres actuels pour qu'ils soient retrouvés à la prochaine ouverture de l'application. */
   persist(){
@@ -1203,6 +1209,8 @@ const Filters = {
       personnes: Array.from(this.personnes),
       comptes: Array.from(this.comptes),
       groupes: Array.from(this.groupes),
+      moisIndiques: Array.from(this.moisIndiques),
+      moisCalcules: Array.from(this.moisCalcules),
     };
     const ok = Store.saveSettings();
     if(!ok && window.__SF_APP && window.__SF_APP.showToast){
@@ -1222,6 +1230,8 @@ const Filters = {
     this.personnes = new Set(saved.personnes||[]);
     this.comptes = new Set(saved.comptes||[]);
     this.groupes = new Set(saved.groupes||[]);
+    this.moisIndiques = new Set(saved.moisIndiques||[]);
+    this.moisCalcules = new Set(saved.moisCalcules||[]);
   },
   activeCount(){
     let c=0;
@@ -1231,6 +1241,8 @@ const Filters = {
     if(this.personnes.size) c++;
     if(this.comptes.size) c++;
     if(this.groupes.size) c++;
+    if(this.moisIndiques.size) c++;
+    if(this.moisCalcules.size) c++;
     return c;
   },
   matches(t){
@@ -1250,6 +1262,15 @@ const Filters = {
     if(this.comptes.size){
       const inCompte = this.comptes.has(t.compte) || (t.compteCible && this.comptes.has(t.compteCible));
       if(!inCompte) return false;
+    }
+    if(this.moisIndiques.size){
+      const key = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
+      if(!this.moisIndiques.has(key)) return false;
+    }
+    if(this.moisCalcules.size){
+      const ym = getCalcMonthYM(t);
+      const key = ym.y+"-"+U.pad2(ym.m+1);
+      if(!this.moisCalcules.has(key)) return false;
     }
     if(this.search){
       const s = U.normalize(this.search);
@@ -1416,6 +1437,22 @@ function getGroupVoyageMonth(fullName){
   if(base !== fullName && map[base] != null) return map[base];
   return null;
 }
+/* Année/mois "calculé" d'une transaction, utilisé par le regroupement "Mois calculé" et son filtre :
+   pour un groupe de type "voyage" avec un mois forcé renseigné dans la fiche du groupe, ce mois
+   prévaut toujours sur le mois obtenu par transformation de la Remarque — cohérent avec le calcul
+   déjà utilisé par l'onglet Budget (cf. plus bas, calcul des dépenses/revenus par groupe voyage). */
+function getCalcMonthYM(t){
+  if(getGroupKind(t.groupe)==="voyage"){
+    const forced = getGroupVoyageMonth(t.groupe);
+    if(forced){
+      const parts = String(forced).split("-");
+      const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1;
+      if(!isNaN(y) && !isNaN(m)) return {y, m};
+    }
+  }
+  if(t.transform && t.transform.mode==="month"){ return {y:t.transform.year, m:t.transform.month}; }
+  return {y:t.date.getFullYear(), m:t.date.getMonth()};
+}
 /* Date de début/fin d'un groupe (clé = libellé littéral complet si disponible, sinon nom de base) —
    utilisée pour calculer le nombre de jours et les moyennes par jour (coûts, revenus, total). */
 function getGroupDateRange(key){
@@ -1526,6 +1563,14 @@ function dimDisplayValue(t, dim){
 
 const TYPE_LABELS_FR = {Income:"Revenus", Expense:"Dépenses", Transfer:"Transferts"};
 
+/* "AAAA-MM" -> libellé lisible ("Mai 2024"), pour les puces de filtre actif. */
+function monthKeyLabel(key){
+  const parts = String(key).split("-");
+  const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1;
+  const lbl = U.fmtMonthYear(y,m);
+  return lbl.charAt(0).toUpperCase()+lbl.slice(1);
+}
+
 function getActiveChips(){
   const chips = [];
   if(Filters.dateFrom) chips.push({kind:"dateFrom", label:"Depuis "+U.fmtDateShort(Filters.dateFrom)});
@@ -1535,6 +1580,8 @@ function getActiveChips(){
   Filters.groupes.forEach(v=>chips.push({kind:"groupes", value:v, label:v}));
   Filters.categories.forEach(v=>chips.push({kind:"categories", value:v, label:v}));
   Filters.personnes.forEach(v=>chips.push({kind:"personnes", value:v, label:v}));
+  Filters.moisIndiques.forEach(v=>chips.push({kind:"moisIndiques", value:v, label:monthKeyLabel(v)}));
+  Filters.moisCalcules.forEach(v=>chips.push({kind:"moisCalcules", value:v, label:monthKeyLabel(v)}));
   if(Filters.search) chips.push({kind:"search", label:'"'+Filters.search+'"'});
   return chips;
 }
@@ -1576,6 +1623,8 @@ function renderChipsBar(containerId, onchange){
   };
 }
 Filters.renderChipsBar = renderChipsBar;
+Filters.getActiveChips = getActiveChips;
+Filters.removeChip = removeChip;
 
 function applyFilters(transactions){
   return transactions.filter(t=>Filters.matches(t));
@@ -1590,6 +1639,32 @@ function distinctValues(transactions, field){
     map.set(v, (map.get(v)||0)+1);
   });
   return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).map(([value,count])=>({value,count}));
+}
+
+/* Mois distincts présents dans les transactions, pour le filtre "Mois indiqué" / "Mois calculé".
+   mode: "indiquee" (date réelle de la transaction) | "transformee" (date après transformation
+   éventuelle via la Remarque, cf. computeTransform). value = "AAAA-MM", trié du plus récent au
+   plus ancien. */
+function distinctMonths(transactions, mode){
+  const map = new Map(); // "AAAA-MM" -> {label, sortVal, count}
+  transactions.forEach(t=>{
+    let y, m;
+    if(mode==="transformee"){
+      const ym = getCalcMonthYM(t);
+      y=ym.y; m=ym.m;
+    } else {
+      y=t.date.getFullYear(); m=t.date.getMonth();
+    }
+    const key = y+"-"+U.pad2(m+1);
+    if(!map.has(key)){
+      const lbl = U.fmtMonthYear(y,m);
+      map.set(key, {label: lbl.charAt(0).toUpperCase()+lbl.slice(1), sortVal: y*12+m, count:0});
+    }
+    map.get(key).count++;
+  });
+  return Array.from(map.entries())
+    .sort((a,b)=> b[1].sortVal - a[1].sortVal)
+    .map(([value,o])=>({value, label:o.label, count:o.count}));
 }
 
 /* ---------------- Account balances (always all-time, unfiltered by design) ---------------- */
@@ -1832,10 +1907,10 @@ function evolutionYearsList(evoIndex){
   return Array.from(years).sort((a,b)=>a-b);
 }
 
-window.__SF_AGG = {applyFilters, distinctValues, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
+window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats,
+  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
   buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList};
 })();
@@ -1849,20 +1924,20 @@ const DATA = window.__SF_DATA;
 const ICONS = U.ICONS;
 
 let currentTab = "accounts";
-let txnLimit = 60;
 let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | categorie | compte | personne
-let txnGroupsShown = 20; // for dimension-based grouping (limits number of group headers shown)
-let txnPerGroupShown = {}; // groupKey -> number of items shown within that group
+let txnGroupsShown = 20; // nombre de groupes affichés (tous modes confondus, chargement automatique au scroll)
+let txnPerGroupShown = {}; // groupKey -> nombre d'éléments affichés au sein de ce groupe
+let txnOpenGroups = new Map(); // clé de groupe -> true/false (dépassement individuel du réglage "tout déplier/replier")
 let pendingImport = null; // {txns, skipped, total, fileName, isJson}
 let detailTxnId = null;
 
 const DIM_FIELD = {groupe:"groupe", categorie:"categorie", personne:"personne", compte:"compte"};
 const DIM_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
-const GROUPBY_LABEL = {compte:"Compte", day:"Jour", month_indiquee:"Mois (date indiquée)", month_transformee:"Mois (date transformée)",
+const GROUPBY_LABEL = {compte:"Compte", day:"Jour", month_indiquee:"Mois indiqué", month_transformee:"Mois calculé",
   groupe:"Groupe", categorie:"Catégorie", personne:"Personne"};
 const PALETTE = ["#1259D6","#1A9E63","#E4402E","#8A5CF6","#E8A93B","#26A6C9","#D6478B","#6E7A8A","#5FBF7A","#B4772B","#3C6E71","#9B4DCA"];
 
-function resetTxnPagination(){ txnLimit = 60; txnGroupsShown = 20; txnPerGroupShown = {}; }
+function resetTxnPagination(){ txnGroupsShown = 20; txnPerGroupShown = {}; txnOpenGroups = new Map(); }
 
 function showToast(msg){
   const el = document.getElementById("toast");
@@ -1896,12 +1971,17 @@ function buildShell(){
     <div class="view active" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
-      <div class="float-bar">
+      <div class="float-bar actions" id="float-bar-actions">
+        <button class="fbtn" id="btn-display" title="Affichage">${ICONS.layers}</button>
+        <button class="fbtn" id="btn-search-toggle" title="Rechercher">${ICONS.search}</button>
+        <button class="fbtn" id="btn-filter" title="Filtres">${ICONS.filter}<span class="filter-badge" id="filter-badge" style="display:none"></span></button>
+        <button class="fbtn" id="btn-add-txn" title="Ajouter une transaction">${ICONS.plus}</button>
+      </div>
+      <div class="float-bar" id="float-bar-search" style="display:none;">
         <input type="text" id="search-input" placeholder="Rechercher une dépense, un lieu…">
-        <button class="fbtn" id="btn-filter">${ICONS.filter}<span class="filter-badge" id="filter-badge" style="display:none"></span></button>
+        <button class="fbtn" id="btn-search-close">${ICONS.close}</button>
       </div>
     </div>
-    <button class="fab-add" id="btn-add-txn" title="Ajouter une transaction">${ICONS.plus}</button>
 
     <div class="bottomnav">
       <button class="navbtn active" data-tab="accounts">${ICONS.wallet}<span>Comptes</span></button>
@@ -1911,6 +1991,7 @@ function buildShell(){
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
+    <div class="overlay" id="overlay-dispmenu"><div class="sheet" id="sheet-dispmenu"></div></div>
     <div class="overlay" id="overlay-import"><div class="sheet" id="sheet-import"></div></div>
     <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
     <div class="overlay" id="overlay-sync"><div class="sheet" id="sheet-sync"></div></div>
@@ -1927,6 +2008,16 @@ function buildShell(){
   document.getElementById("btn-menu").onclick = ()=>window.__SF_MENU.open();
   document.getElementById("btn-filter").onclick = ()=>window.__SF_FILTERSHEET.openFilterSheet();
   document.getElementById("btn-add-txn").onclick = ()=>window.__SF_VIEWS.openTxnNew();
+  document.getElementById("btn-display").onclick = ()=>window.__SF_VIEWS.openDisplayMenu();
+  document.getElementById("btn-search-toggle").onclick = ()=>{
+    document.getElementById("float-bar-actions").style.display = "none";
+    document.getElementById("float-bar-search").style.display = "flex";
+    document.getElementById("search-input").focus();
+  };
+  document.getElementById("btn-search-close").onclick = ()=>{
+    document.getElementById("float-bar-search").style.display = "none";
+    document.getElementById("float-bar-actions").style.display = "flex";
+  };
   document.getElementById("search-input").oninput = U.debounce((e)=>{
     F.search = e.target.value;
     F.persist();
@@ -1939,6 +2030,7 @@ function buildShell(){
   });
 
   document.getElementById("overlay-filter").onclick = (e)=>{ if(e.target.id==="overlay-filter") closeOverlay("overlay-filter"); };
+  document.getElementById("overlay-dispmenu").onclick = (e)=>{ if(e.target.id==="overlay-dispmenu") closeOverlay("overlay-dispmenu"); };
   document.getElementById("overlay-import").onclick = (e)=>{ if(e.target.id==="overlay-import") closeOverlay("overlay-import"); };
   document.getElementById("overlay-menu").onclick = (e)=>{ if(e.target.id==="overlay-menu") closeOverlay("overlay-menu"); };
   document.getElementById("overlay-sync").onclick = (e)=>{ if(e.target.id==="overlay-sync") closeOverlay("overlay-sync"); };
@@ -2012,7 +2104,9 @@ function switchTab(tab){
   document.getElementById("view-"+tab).classList.add("active");
   const showFloat = (tab==="transactions");
   document.getElementById("floatbar-wrap").style.display = showFloat ? "flex" : "none";
-  document.getElementById("btn-add-txn").style.display = showFloat ? "flex" : "none";
+  // Repart toujours sur la rangée d'icônes (pas la barre de recherche dépliée) en arrivant sur l'onglet.
+  document.getElementById("float-bar-search").style.display = "none";
+  document.getElementById("float-bar-actions").style.display = "flex";
   refreshCurrentTab();
 }
 
@@ -2036,6 +2130,8 @@ function updateFilterBadge(){
   if(searchInput.value !== F.search) searchInput.value = F.search;
   if(n>0){ badge.style.display="flex"; badge.textContent=n; btn.classList.add("active-filter"); }
   else { badge.style.display="none"; btn.classList.remove("active-filter"); }
+  const searchBtn = document.getElementById("btn-search-toggle");
+  if(searchBtn) searchBtn.classList.toggle("active-filter", !!F.search);
 }
 
 /* ================= HERO ================= */
@@ -2062,10 +2158,10 @@ function renderHero(){
 window.__SF_APP = {
   buildShell, closeOverlay, openOverlay, switchTab, refreshCurrentTab, showToast, resetTxnPagination, updateThemeColorMeta, confirmAction,
   state:{get currentTab(){return currentTab;},
-         get txnLimit(){return txnLimit;}, set txnLimit(v){txnLimit=v;},
          get txnGroupBy(){return txnGroupBy;}, set txnGroupBy(v){txnGroupBy=v;},
          get txnGroupsShown(){return txnGroupsShown;}, set txnGroupsShown(v){txnGroupsShown=v;},
          get txnPerGroupShown(){return txnPerGroupShown;},
+         get txnOpenGroups(){return txnOpenGroups;},
          get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;}},
   DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE,
   pendingImportRef:{get(){return pendingImport;}, set(v){pendingImport=v;}}
@@ -2119,13 +2215,19 @@ function txnTitle(t){
   if(t.type==="Transfer") return "Transfert "+t.compte+" → "+t.compteCible;
   return t.categorie || (t.type==="Income"?"Revenu":"Dépense");
 }
-/* Ligne unique condensée : catégorie/personne (ou compte → compte cible pour un transfert), puis groupe */
-function txnSubtitle(t){
+/* Ligne 2 : Catégorie · Personne (ou Compte → Compte cible pour un transfert) */
+function txnLine2(t){
+  if(t.type==="Transfer") return t.compte+" → "+t.compteCible;
   const parts=[];
-  if(t.type==="Transfer"){ parts.push(t.compte+" → "+t.compteCible); }
-  else { if(t.categorie) parts.push(t.categorie); if(t.personne) parts.push(AGG.getPersonneDisplay(t)); }
-  if(t.groupe) parts.push(t.groupe);
+  if(t.categorie) parts.push(t.categorie);
+  if(t.personne) parts.push(AGG.getPersonneDisplay(t));
   return parts.length ? parts.join(" · ") : "—";
+}
+/* Ligne 3 : Date · Groupe */
+function txnLine3(t){
+  const parts=[U.fmtDateShort(t.date)];
+  if(t.groupe) parts.push(t.groupe);
+  return parts.join(" · ");
 }
 
 /* ================= TRANSACTIONS LIST ================= */
@@ -2139,7 +2241,8 @@ function makeTxnItemEl(t){
     <div class="txn-content">
       <div class="txn-mid">
         <div class="txn-title">${U.escHtml(txnTitle(t))}</div>
-        <div class="txn-sub">${U.escHtml(txnSubtitle(t))}</div>
+        <div class="txn-sub">${U.escHtml(txnLine2(t))}</div>
+        <div class="txn-line">${U.escHtml(txnLine3(t))}</div>
       </div>
       <div class="txn-amt ${cls}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
     </div>
@@ -2160,9 +2263,8 @@ function getGroupInfo(t, groupBy){
     return {key:y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
   }
   if(groupBy==="month_transformee"){
-    let y,m;
-    if(t.transform.mode==="month"){ y=t.transform.year; m=t.transform.month; }
-    else { y=t.date.getFullYear(); m=t.date.getMonth(); }
+    const ym = AGG.getCalcMonthYM(t);
+    const y=ym.y, m=ym.m;
     return {key:"t"+y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
   }
   // dimension-based grouping: groupe / categorie / compte / personne
@@ -2171,7 +2273,42 @@ function getGroupInfo(t, groupBy){
 }
 const CHRONO_MODES = ["day","month_indiquee","month_transformee"];
 
+/* Regroupe les transactions filtrées selon le mode actif (chronologique ou par dimension), avec
+   totaux par groupe et tri approprié. Fonction commune à tous les modes d'affichage. */
+function computeTxnGroups(filtered, groupBy){
+  const isChrono = CHRONO_MODES.includes(groupBy);
+  const groups = new Map(); // key -> {key, label, sortVal, items:[], income, expense, count}
+  filtered.forEach(t=>{
+    const g = getGroupInfo(t, groupBy);
+    if(!groups.has(g.key)) groups.set(g.key, {key:g.key, label:g.label, sortVal:g.sortVal, items:[], income:0, expense:0, count:0});
+    const o = groups.get(g.key);
+    o.items.push(t);
+    if(t.type==="Income") o.income += t.montant;
+    else if(t.type==="Expense") o.expense += t.montant;
+    o.count++;
+  });
+  const arr = Array.from(groups.values());
+  arr.forEach(g=> g.items.sort((a,b)=>b.date-a.date));
+  if(isChrono){
+    arr.sort((a,b)=> b.sortVal - a.sortVal);
+  } else if(groupBy==="categorie"){
+    // Range catégorie par Revenu puis Dépense, puis ordre alphabétique
+    const typeMap = AGG.classifyCategoryTypes(filtered);
+    arr.sort((a,b)=>{
+      const ka = typeMap.get(a.key) || "Expense", kb = typeMap.get(b.key) || "Expense";
+      if(ka!==kb) return ka==="Income" ? -1 : 1;
+      return a.key.localeCompare(b.key, 'fr');
+    });
+  } else {
+    arr.sort((a,b)=> (Math.abs(b.income)+Math.abs(b.expense)) - (Math.abs(a.income)+Math.abs(a.expense)));
+  }
+  return arr;
+}
+
+let txnScrollObserver = null;
+
 function renderTransactions(){
+  if(txnScrollObserver){ txnScrollObserver.disconnect(); txnScrollObserver=null; }
   const view = document.getElementById("view-transactions");
   if(Store.transactions.length===0){
     view.innerHTML = `<div class="section" style="margin-top:10px;">${emptyStateHtml({
@@ -2183,147 +2320,85 @@ function renderTransactions(){
   const filtered = AGG.applyFilters(Store.transactions);
   const totals = AGG.computeTotals(filtered);
   const groupBy = APP.state.txnGroupBy;
-  const isChrono = CHRONO_MODES.includes(groupBy);
+  const allExpanded = !!Store.settings.txnGroupsExpanded;
 
-  let html = `<div class="section" style="padding-top:14px;">
+  let html = `<div class="section" style="padding-top:14px;padding-left:12px;padding-right:12px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px;gap:8px;">
       <span style="font-size:13px;color:var(--text-sub);font-weight:600;">${filtered.length.toLocaleString('fr-FR')} transaction${filtered.length>1?"s":""}</span>
       <span style="font-size:13px;font-weight:800;color:${totals.net>=0?'var(--income)':'var(--expense)'}">${U.fmtMoneySigned(totals.net)}</span>
     </div>
-    <div class="chips-bar" id="txn-chips" style="display:none;"></div>
-    <div class="dimtabs" id="txn-groupby" style="margin-top:2px;">
-      ${Object.keys(APP.GROUPBY_LABEL).map(k=>`<button data-v="${k}" class="${groupBy===k?'active':''}">${APP.GROUPBY_LABEL[k]}</button>`).join("")}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <button type="button" class="txn-view-pill" id="txn-view-indicator">
+        ${ICONS.layers}<span>${U.escHtml(APP.GROUPBY_LABEL[groupBy])}</span>
+        <span class="tvp-chev" style="display:flex;transform:rotate(180deg);">${ICONS.arrowLeft}</span>
+      </button>
+      <button type="button" class="txn-view-pill" id="txn-expand-toggle">
+        <span style="display:flex;transform:rotate(${allExpanded?90:-90}deg);">${ICONS.arrowLeft}</span>
+        <span>${allExpanded?"Tout replier":"Tout déplier"}</span>
+      </button>
     </div>
   </div>`;
 
   if(filtered.length===0){
     html += `<div class="section"><div class="empty-state">${ICONS.search}<h3>Aucun résultat</h3><p>Essayez d'ajuster vos filtres ou votre recherche.</p></div></div>`;
     view.innerHTML = html;
-    F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
-    wireGroupByButtons();
+    wireViewIndicator();
     return;
   }
 
-  html += `<div class="section" id="txn-list-section"></div>
-  <div class="section loadmore-wrap" id="txn-loadmore-wrap"></div>`;
+  html += `<div class="section" id="txn-list-section" style="padding-left:12px;padding-right:12px;"></div>
+  <div id="txn-scroll-sentinel" style="height:1px;"></div>`;
   view.innerHTML = html;
-
-  F.renderChipsBar("txn-chips", ()=>{ APP.resetTxnPagination(); renderTransactions(); });
-  wireGroupByButtons();
+  wireViewIndicator();
 
   const listSection = document.getElementById("txn-list-section");
-  const loadmoreWrap = document.getElementById("txn-loadmore-wrap");
+  const sentinel = document.getElementById("txn-scroll-sentinel");
 
-  if(isChrono){
-    renderChronoGroups(listSection, loadmoreWrap, filtered, groupBy);
-  } else {
-    renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy);
-  }
+  const arr = computeTxnGroups(filtered, groupBy);
+  renderTxnGroupCards(listSection, arr);
+  setupTxnInfiniteScroll(sentinel, arr);
 }
 
-function wireGroupByButtons(){
-  document.querySelectorAll("#txn-groupby button").forEach(b=>{
-    b.onclick = ()=>{
-      APP.state.txnGroupBy = b.dataset.v;
-      APP.resetTxnPagination();
-      renderTransactions();
-    };
-  });
+function wireViewIndicator(){
+  const btn = document.getElementById("txn-view-indicator");
+  if(btn) btn.onclick = ()=> window.__SF_VIEWS.openDisplayMenu();
+  const expandBtn = document.getElementById("txn-expand-toggle");
+  if(expandBtn) expandBtn.onclick = ()=>{
+    // Réglage global persistant ("se rappeler quand je quitte la page ou change d'onglet") : on
+    // efface les dépassements individuels pour repartir d'un état homogène (tout ouvert ou tout fermé).
+    const next = !Store.settings.txnGroupsExpanded;
+    Store.settings.txnGroupsExpanded = next;
+    Store.saveSettings();
+    APP.state.txnOpenGroups.clear();
+    renderTransactions();
+  };
 }
 
-/* Chronological grouping: Jour / Mois (indiquée) / Mois (transformée) */
-function renderChronoGroups(listSection, loadmoreWrap, filtered, groupBy){
-  const enriched = filtered.map(t=>{
-    const g = getGroupInfo(t, groupBy);
-    return {t, key:g.key, label:g.label, sortVal:g.sortVal};
-  });
-  enriched.sort((a,b)=> (b.sortVal-a.sortVal) || (b.t.date-a.t.date));
-
-  const totalsByKey = new Map();
-  enriched.forEach(e=>{
-    if(!totalsByKey.has(e.key)) totalsByKey.set(e.key, {label:e.label, income:0, expense:0, count:0});
-    const o = totalsByKey.get(e.key);
-    if(e.t.type==="Income") o.income += e.t.montant;
-    else if(e.t.type==="Expense") o.expense += e.t.montant;
-    o.count++;
-  });
-
-  const limit = APP.state.txnLimit;
-  const shown = enriched.slice(0, limit);
-  const isDay = groupBy==="day";
-
-  let currentKey = null;
-  let groupWrap = null;
-  shown.forEach(e=>{
-    if(e.key !== currentKey){
-      currentKey = e.key;
-      const gt = totalsByKey.get(e.key);
-      const header = document.createElement("div");
-      if(isDay){
-        header.className = "txn-date-label";
-        header.textContent = e.label;
-      } else {
-        header.className = "txn-date-label";
-        header.style.display = "flex";
-        header.style.justifyContent = "space-between";
-        header.style.alignItems = "baseline";
-        const net = gt.income + gt.expense;
-        header.innerHTML = `<span>${U.escHtml(e.label)}</span><span style="color:${net>=0?'var(--income)':'var(--expense)'};font-weight:800;">${U.fmtMoneySigned(net)}</span>`;
-      }
-      listSection.appendChild(header);
-      groupWrap = document.createElement("div");
-      groupWrap.className = "txn-daygroup-items";
-      listSection.appendChild(groupWrap);
-    }
-    groupWrap.appendChild(makeTxnItemEl(e.t));
-  });
-
-  if(enriched.length > limit){
-    const btn = document.createElement("button");
-    btn.className = "btn btn-ghost";
-    btn.textContent = "Charger plus ("+(enriched.length-limit)+" restantes)";
-    btn.onclick = ()=>{ APP.state.txnLimit += 60; renderTransactions(); };
-    loadmoreWrap.appendChild(btn);
-  }
-}
-
-/* Dimension-based grouping: Groupe / Catégorie / Compte / Personne */
-function renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy){
-  const groups = new Map(); // key -> {label, items:[], income, expense, count}
-  filtered.forEach(t=>{
-    const g = getGroupInfo(t, groupBy);
-    if(!groups.has(g.key)) groups.set(g.key, {label:g.label, items:[], income:0, expense:0, count:0});
-    const o = groups.get(g.key);
-    o.items.push(t);
-    if(t.type==="Income") o.income += t.montant;
-    else if(t.type==="Expense") o.expense += t.montant;
-    o.count++;
-  });
-  const arr = Array.from(groups.entries()).map(([key,o])=>({key, ...o}));
-  arr.forEach(g=> g.items.sort((a,b)=>b.date-a.date));
-  if(groupBy==="categorie"){
-    // Range catégorie par Income puis Expense, puis ordre alphabétique
-    const typeMap = AGG.classifyCategoryTypes(filtered);
-    arr.sort((a,b)=>{
-      const ka = typeMap.get(a.key) || "Expense", kb = typeMap.get(b.key) || "Expense";
-      if(ka!==kb) return ka==="Income" ? -1 : 1;
-      return a.key.localeCompare(b.key, 'fr');
-    });
-  } else {
-    arr.sort((a,b)=> (Math.abs(b.income)+Math.abs(b.expense)) - (Math.abs(a.income)+Math.abs(a.expense)));
-  }
-
+/* Affiche les groupes (Jour / Mois / Compte / Groupe / Catégorie / Personne) sous forme de cartes
+   repliables identiques dans tous les modes, avec le total du groupe dans son en-tête. Par défaut,
+   l'état d'ouverture de chaque groupe suit le réglage global "Tout déplier / Tout replier"
+   (Store.settings.txnGroupsExpanded, persistant) ; un dépassement individuel (clic sur un groupe
+   précis) est mémorisé le temps de la session (APP.state.txnOpenGroups) afin de survivre aux
+   re-rendus déclenchés par "Afficher plus" ou par le chargement automatique au scroll. */
+function renderTxnGroupCards(listSection, arr){
   const groupsShown = APP.state.txnGroupsShown;
   const shownGroups = arr.slice(0, groupsShown);
   const perGroupMap = APP.state.txnPerGroupShown;
+  const openGroups = APP.state.txnOpenGroups;
+  const allExpanded = !!Store.settings.txnGroupsExpanded;
 
-  shownGroups.forEach((g,idx)=>{
+  shownGroups.forEach(g=>{
     const net = g.income + g.expense;
     const details = document.createElement("details");
-    details.className = "card";
+    details.className = "card txn-group-card";
     details.style.padding = "0";
     details.style.marginBottom = "10px";
-    if(idx===0) details.open = true;
+    const isOpen = openGroups.has(g.key) ? openGroups.get(g.key) : allExpanded;
+    if(isOpen) details.open = true;
+    details.addEventListener("toggle", ()=>{
+      openGroups.set(g.key, details.open);
+    });
+
     const perShown = perGroupMap[g.key] || 10;
     const itemsToShow = g.items.slice(0, perShown);
 
@@ -2339,16 +2414,16 @@ function renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy){
     details.appendChild(summary);
 
     const body = document.createElement("div");
-    body.style.cssText = "padding:0 12px 12px;";
+    body.style.cssText = "padding:0 0 10px;";
     itemsToShow.forEach(t=>{
       const el = makeTxnItemEl(t);
-      el.style.marginTop = "8px";
+      el.style.margin = "6px 6px 0";
       body.appendChild(el);
     });
     if(g.items.length > perShown){
       const more = document.createElement("button");
-      more.className = "btn btn-ghost btn-sm btn-block";
-      more.style.marginTop = "8px";
+      more.className = "btn btn-ghost btn-sm";
+      more.style.cssText = "display:block;width:calc(100% - 12px);margin:8px 6px 0;";
       more.textContent = "Afficher plus ("+(g.items.length-perShown)+" restantes)";
       more.onclick = (ev)=>{ ev.preventDefault(); perGroupMap[g.key] = perShown + 15; renderTransactions(); };
       body.appendChild(more);
@@ -2356,14 +2431,56 @@ function renderDimensionGroups(listSection, loadmoreWrap, filtered, groupBy){
     details.appendChild(body);
     listSection.appendChild(details);
   });
+}
 
-  if(arr.length > groupsShown){
-    const btn = document.createElement("button");
-    btn.className = "btn btn-ghost";
-    btn.textContent = "Afficher plus de groupes ("+(arr.length-groupsShown)+" restants)";
-    btn.onclick = ()=>{ APP.state.txnGroupsShown += 20; renderTransactions(); };
-    loadmoreWrap.appendChild(btn);
-  }
+/* Chargement automatique au scroll : dévoile davantage de groupes quand la sentinelle en bas de
+   liste approche du viewport, sans bouton "Charger plus" à cliquer. */
+function setupTxnInfiniteScroll(sentinel, arr){
+  if(txnScrollObserver){ txnScrollObserver.disconnect(); txnScrollObserver=null; }
+  const groupsShown = APP.state.txnGroupsShown;
+  if(arr.length <= groupsShown) return;
+  txnScrollObserver = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        txnScrollObserver.disconnect();
+        txnScrollObserver = null;
+        APP.state.txnGroupsShown += 20;
+        renderTransactions();
+      }
+    });
+  }, {root:null, rootMargin:"600px"});
+  txnScrollObserver.observe(sentinel);
+}
+
+/* Sheet "Affichage" : sélection du mode de regroupement (remplace l'ancienne rangée d'onglets
+   toujours visible en haut de la liste des transactions). */
+function openDisplayMenu(){
+  const sheet = document.getElementById("sheet-dispmenu");
+  const groupBy = APP.state.txnGroupBy;
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Affichage</h2><button class="icon-btn" id="dispmenu-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="card" style="padding:4px 6px;">
+        ${Object.keys(APP.GROUPBY_LABEL).map(k=>`
+          <div class="rowline dispmenu-row" data-key="${k}" style="cursor:pointer;">
+            <span style="font-weight:600;font-size:14.5px;">${U.escHtml(APP.GROUPBY_LABEL[k])}</span>
+            ${groupBy===k ? `<span style="color:var(--primary);display:flex;">${ICONS.check}</span>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+  document.getElementById("dispmenu-close").onclick = ()=>APP.closeOverlay("overlay-dispmenu");
+  document.querySelectorAll(".dispmenu-row").forEach(row=>{
+    row.onclick = ()=>{
+      APP.state.txnGroupBy = row.dataset.key;
+      APP.resetTxnPagination();
+      APP.closeOverlay("overlay-dispmenu");
+      renderTransactions();
+    };
+  });
+  APP.openOverlay("overlay-dispmenu");
 }
 
 
@@ -2766,6 +2883,7 @@ window.__SF_VIEWS.renderTransactions = renderTransactions;
 window.__SF_VIEWS.openTxnDetail = openTxnDetail;
 window.__SF_VIEWS.openTxnEdit = openTxnEdit;
 window.__SF_VIEWS.openTxnNew = openTxnNew;
+window.__SF_VIEWS.openDisplayMenu = openDisplayMenu;
 window.__SF_VIEWS.makeTxnItemEl = makeTxnItemEl;
 window.__SF_PICKER = {openPicker, fieldPickerBtnHtml};
 })();
@@ -5579,6 +5697,8 @@ const FILTER_TO_TXNFIELD = {comptes:"compte", groupes:"groupe", categories:"cate
 
 const MENU_ITEMS = [
   {key:"period", label:"Période"},
+  {key:"moisIndiques", label:"Mois indiqué"},
+  {key:"moisCalcules", label:"Mois calculé"},
   {key:"types", label:"Type"},
   {key:"comptes", label:"Compte"},
   {key:"groupes", label:"Groupe"},
@@ -5606,6 +5726,8 @@ function checklistHtml(listId, filterField, selectedSet){
   let items;
   if(filterField==="groupes") items = AGG.distinctValuesGroupeDisplay(Store.transactions);
   else if(filterField==="categories") items = AGG.distinctValuesCategorieSorted(Store.transactions);
+  else if(filterField==="moisIndiques") items = AGG.distinctMonths(Store.transactions, "indiquee");
+  else if(filterField==="moisCalcules") items = AGG.distinctMonths(Store.transactions, "transformee");
   else items = AGG.distinctValues(Store.transactions, FILTER_TO_TXNFIELD[filterField]);
   if(items.length===0) return `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucune valeur disponible</div>`;
   let lastKind = null;
@@ -5615,10 +5737,11 @@ function checklistHtml(listId, filterField, selectedSet){
       lastKind = it.kind;
       headHtml = `<div class="check-item" style="cursor:default;background:var(--card-alt);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sub);padding:8px 14px;">${it.kind==="Income"?"Revenus":"Dépenses"}</div>`;
     }
+    const displayLabel = it.label!==undefined ? it.label : it.value;
     return headHtml + `
       <div class="check-item ${selectedSet.has(it.value)?'selected':''}" data-val="${U.escHtml(it.value)}">
         <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${U.escHtml(it.value)}</span>
+        <span class="lbl">${U.escHtml(displayLabel)}</span>
         <span class="cnt">${it.count}</span>
       </div>
     `;
@@ -5644,7 +5767,9 @@ function wireChecklist(listId, field, searchInputId){
     search.oninput = ()=>{
       const q = U.normalize(search.value);
       list.querySelectorAll(".check-item[data-val]").forEach(el=>{
-        const match = U.normalize(el.dataset.val).includes(q);
+        const lbl = el.querySelector(".lbl");
+        const text = lbl ? lbl.textContent : el.dataset.val;
+        const match = U.normalize(text).includes(q);
         el.style.display = match ? "flex" : "none";
       });
     };
@@ -5741,6 +5866,98 @@ function wireComptesGrouped(){
   }
 }
 
+/* ---- Mois indiqué / Mois calculé : affichage groupé par année, avec sélection en bloc de tous les
+   mois d'une même année via un clic sur l'en-tête (permet de filtrer directement par année entière). ---- */
+const MOIS_LIST_ID = {moisIndiques:"f-list-moisind", moisCalcules:"f-list-moiscalc"};
+const MOIS_SEARCH_ID = {moisIndiques:"f-search-moisind", moisCalcules:"f-search-moiscalc"};
+function moisGroupedHtml(mode){
+  const items = AGG.distinctMonths(Store.transactions, mode==="moisIndiques" ? "indiquee" : "transformee"); // [{value:"AAAA-MM", label, count}]
+  if(items.length===0) return `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucune valeur disponible</div>`;
+  const filterSet = F[mode];
+  const groups = new Map(); // année -> [{value,label,count}]
+  items.forEach(it=>{
+    const year = it.value.split("-")[0];
+    if(!groups.has(year)) groups.set(year, []);
+    groups.get(year).push(it);
+  });
+  const years = Array.from(groups.keys()).sort((a,b)=> b.localeCompare(a));
+  let html = `<div id="${MOIS_LIST_ID[mode]}" class="check-list" style="max-height:none;">`;
+  years.forEach(year=>{
+    const children = groups.get(year);
+    const totalCount = children.reduce((s,c)=>s+c.count,0);
+    const allSelected = children.every(c=>filterSet.has(c.value));
+    html += `<div class="groupe-section" data-super="${U.escHtml(year)}">
+      <div class="check-item groupe-section-head ${allSelected?'selected':''}" data-yearhead="1">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(year)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${filterSet.has(c.value)?'selected':''}" data-val="${U.escHtml(c.value)}" data-childname="${U.escHtml(c.label)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(c.label)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function wireMoisGrouped(mode){
+  const list = document.getElementById(MOIS_LIST_ID[mode]);
+  if(!list) return;
+  const filterSet = F[mode];
+  function refreshHeadState(section){
+    const children = Array.from(section.querySelectorAll(".groupe-child-item"));
+    const allSelected = children.length>0 && children.every(c=>filterSet.has(c.dataset.val));
+    const head = section.querySelector("[data-yearhead]");
+    if(head) head.classList.toggle("selected", allSelected);
+  }
+  list.querySelectorAll(".groupe-child-item").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      if(filterSet.has(val)) filterSet.delete(val); else filterSet.add(val);
+      el.classList.toggle("selected");
+      refreshHeadState(el.closest(".groupe-section"));
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  list.querySelectorAll("[data-yearhead]").forEach(head=>{
+    head.onclick = ()=>{
+      const section = head.closest(".groupe-section");
+      const children = Array.from(section.querySelectorAll(".groupe-child-item"));
+      const allSelected = children.length>0 && children.every(c=>filterSet.has(c.dataset.val));
+      children.forEach(c=>{
+        if(allSelected) filterSet.delete(c.dataset.val); else filterSet.add(c.dataset.val);
+        c.classList.toggle("selected", !allSelected);
+      });
+      head.classList.toggle("selected", !allSelected);
+      F.persist();
+      updateApplyButton();
+    };
+  });
+  const search = document.getElementById(MOIS_SEARCH_ID[mode]);
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      list.querySelectorAll(".groupe-section").forEach(sec=>{
+        const yearMatch = U.normalize(sec.dataset.super).includes(q);
+        let any=false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || yearMatch || U.normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match?"flex":"none";
+          if(match) any=true;
+        });
+        sec.style.display = (!q||any) ? "" : "none";
+      });
+    };
+  }
+}
+
 /* ---- "Tout sélectionner" / "Aucun" : disponible sur chaque section de filtre à choix multiples ---- */
 function quickSelectRowHtml(){
   return `<div style="display:flex;gap:8px;margin-bottom:10px;">
@@ -5754,6 +5971,8 @@ function selectAllForKey(key){
   if(key==="categories"){ F.categories = new Set(AGG.distinctValuesCategorieSorted(Store.transactions).map(i=>i.value)); return; }
   if(key==="groupes"){ F.groupes = new Set(AGG.distinctValues(Store.transactions,"groupe").map(i=>i.value)); return; }
   if(key==="personnes"){ F.personnes = new Set(AGG.distinctValues(Store.transactions,"personne").map(i=>i.value)); return; }
+  if(key==="moisIndiques"){ F.moisIndiques = new Set(AGG.distinctMonths(Store.transactions,"indiquee").map(i=>i.value)); return; }
+  if(key==="moisCalcules"){ F.moisCalcules = new Set(AGG.distinctMonths(Store.transactions,"transformee").map(i=>i.value)); return; }
 }
 function selectNoneForKey(key){
   if(key==="types") F.types.clear(); else F[key].clear();
@@ -5781,6 +6000,50 @@ function applyAndClose(){
 }
 
 /* ---- Step 1: category menu ---- */
+const CHIP_KIND_LABEL = {dateFrom:"Période", dateTo:"Période", moisIndiques:"Mois indiqué", moisCalcules:"Mois calculé", types:"Type", comptes:"Compte", groupes:"Groupe", categories:"Catégorie", personnes:"Personne", search:"Recherche"};
+const CHIP_KIND_ORDER = ["Période","Mois indiqué","Mois calculé","Type","Compte","Groupe","Catégorie","Personne","Recherche"];
+
+/* Filtres actuellement actifs, regroupés par type, affichés dans la sheet de filtres (sous la liste
+   des catégories) plutôt qu'en permanence au-dessus de la liste des transactions. */
+function activeFiltersSectionHtml(){
+  const chips = F.getActiveChips();
+  if(chips.length===0) return "";
+  const groups = new Map(); // label de type -> chips[]
+  chips.forEach((c,i)=>{
+    const label = CHIP_KIND_LABEL[c.kind] || c.kind;
+    if(!groups.has(label)) groups.set(label, []);
+    groups.get(label).push({...c, __i:i});
+  });
+  const labels = Array.from(groups.keys()).sort((a,b)=> CHIP_KIND_ORDER.indexOf(a)-CHIP_KIND_ORDER.indexOf(b));
+  return `<div class="card" style="padding:12px 14px;margin-top:12px;" id="active-filters-card">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:10px;">Filtres actifs</div>
+    ${labels.map(label=>`
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-faint);margin-bottom:4px;">${U.escHtml(label)}</div>
+        <div class="chips-bar" style="padding:0;">
+          ${groups.get(label).map(c=>`
+            <div class="chip-active">
+              <span>${U.escHtml(c.label)}</span>
+              <button class="chip-x" data-ci="${c.__i}" aria-label="Retirer">${ICONS.close}</button>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `).join("")}
+  </div>`;
+}
+function wireActiveFiltersSection(){
+  const chips = F.getActiveChips();
+  document.querySelectorAll("#active-filters-card .chip-x").forEach(btn=>{
+    btn.onclick = ()=>{
+      const i = parseInt(btn.dataset.ci, 10);
+      F.removeChip(chips[i]);
+      F.persist();
+      renderMenuStep();
+    };
+  });
+}
+
 function renderMenuStep(){
   const sheet = document.getElementById("sheet-filter");
   sheet.innerHTML = `
@@ -5798,6 +6061,7 @@ function renderMenuStep(){
           </div>
         `).join("")}
       </div>
+      ${activeFiltersSectionHtml()}
     </div>
     <div class="sheet-foot">
       <button class="btn btn-ghost" id="filter-reset">Réinitialiser tout</button>
@@ -5808,6 +6072,7 @@ function renderMenuStep(){
   document.querySelectorAll(".filter-menu-row").forEach(row=>{
     row.onclick = ()=>{ sheetView = row.dataset.key; renderFilterSheet(); };
   });
+  wireActiveFiltersSection();
   document.getElementById("filter-reset").onclick = ()=>{ F.reset(); F.persist(); applyAndClose(); };
   document.getElementById("filter-apply-btn").onclick = applyAndClose;
   updateApplyButton();
@@ -5960,6 +6225,14 @@ function categoryBodyHtml(key){
     return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-compte" placeholder="Rechercher un compte…">
       ${comptesGroupedHtml()}`;
   }
+  if(key==="moisIndiques"){
+    return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-moisind" placeholder="Rechercher un mois ou une année…">
+      ${moisGroupedHtml("moisIndiques")}`;
+  }
+  if(key==="moisCalcules"){
+    return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-moiscalc" placeholder="Rechercher un mois ou une année…">
+      ${moisGroupedHtml("moisCalcules")}`;
+  }
   // categories
   return quickSelectRowHtml() + `<input type="text" class="search-mini" id="f-search-cat" placeholder="Rechercher une catégorie…">
     ${checklistHtml("f-list-cat", "categories", F.categories)}`;
@@ -5987,6 +6260,8 @@ function wireCategoryBody(key){
   if(key==="groupes"){ wireNestedFilter("groupes"); return; }
   if(key==="personnes"){ wireNestedFilter("personnes"); return; }
   if(key==="comptes"){ wireComptesGrouped(); return; }
+  if(key==="moisIndiques"){ wireMoisGrouped("moisIndiques"); return; }
+  if(key==="moisCalcules"){ wireMoisGrouped("moisCalcules"); return; }
   wireChecklist("f-list-cat", "categories", "f-search-cat");
 }
 function refreshMenuSummaryIfNeeded(){} // no-op placeholder (menu is rebuilt fresh when navigated back to)
