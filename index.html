@@ -321,8 +321,7 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .loadmore-wrap{display:flex;justify-content:center;margin-top:16px;}
 
 /* ---------- Onglet Évolution : tableau à colonnes figées (libellé + total) ---------- */
-.evo-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);cursor:grab;user-select:none;}
-.evo-table-wrap.drag-scroll-active{cursor:grabbing;}
+.evo-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);}
 .evo-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
 .evo-table th,.evo-table td{box-sizing:border-box;padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
 .evo-table thead th{font-size:10px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.02em;padding-top:10px;padding-bottom:10px;background:var(--card);border-bottom:2px solid var(--divider);}
@@ -346,31 +345,15 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-val-cell.pos{color:var(--income);}
 .evo-chev{display:inline-block;width:10px;height:10px;margin-right:4px;transition:transform .15s;vertical-align:middle;}
 .evo-chev.open{transform:rotate(90deg);}
-
-/* ---------- Budget : vue "mois par mois" (bouton calendrier) — même style de ligne que la vue détail
-   (Réel+ajout/Amorti/Total, cf. detailRowHtml), simplement avec une colonne par mois au lieu de 3 colonnes
-   fixes, et la colonne Total figée à gauche pour pouvoir faire défiler les mois. ---------- */
-.bgm-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;cursor:grab;user-select:none;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);}
-.bgm-wrap.drag-scroll-active{cursor:grabbing;}
-.bgm-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
-.bgm-table td,.bgm-table th{box-sizing:border-box;padding:7px 6px;text-align:right;white-space:nowrap;}
-.bgm-label-cell{position:sticky;left:0;z-index:2;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;padding-left:12px !important;}
-.bgm-total-cell{position:sticky;left:132px;z-index:2;background:var(--card);width:82px;min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
-.bgm-val-cell{width:72px;min-width:72px;max-width:72px;}
-.bgm-head th{font-size:9px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.2px;padding-top:10px;}
-.bgm-group-row td{font-size:13.5px;font-weight:800;padding-top:14px;border-top:1px solid var(--divider);}
-.bgm-table tbody tr:first-child td{border-top:none;}
-.bgm-group-row .bgm-label-cell{padding-left:12px !important;}
-.bgm-item-row td{font-size:11px;font-weight:600;color:var(--text-sub);}
-.bgm-item-row .bgm-label-cell{padding-left:24px !important;}
-.bgm-val-cell.pos{color:var(--income);font-weight:700;}
-.bgm-val-cell.neg{color:var(--expense);font-weight:700;}
-.bgm-total-cell.pos{color:var(--income);}
-.bgm-total-cell.neg{color:var(--expense);}
-.bg-detail-cell.clickable{cursor:pointer;}
 .evo-merge-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:100px;background:var(--card-alt);color:var(--text);}
 .evo-merge-chip button{border:none;background:none;padding:0;display:flex;color:var(--text-sub);cursor:pointer;}
 .evo-section-check{width:18px;height:18px;flex:0 0 auto;}
+
+/* ---------- Onglet Récurrent : colonne "année" spéciale (montant non réparti, placée après décembre) ---------- */
+.evo-col-val.recur-year-col{background:var(--primary-soft);}
+.evo-table thead th.recur-year-col{background:var(--primary-soft);color:var(--primary);font-style:italic;}
+.evo-total-row .recur-year-col{background:var(--primary-soft);}
+.evo-section-row .recur-year-col{background:color-mix(in srgb, var(--primary-soft) 55%, var(--card-alt));}
 
 /* ---------- Breakdown / evolution lists ---------- */
 .bd-row{display:flex;align-items:center;gap:12px;padding:11px 4px;}
@@ -398,25 +381,14 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .chart-wrap{position:relative;height:230px;margin-top:6px;}
 .chart-wrap.tall{height:260px;}
 
-/* ---------- Account cards (même format que les lignes de l'onglet Transactions : bandeau
-   acronyme + contenu compact, cf. .txn-item/.txn-band) ---------- */
-.acc-card{
-  display:flex;align-items:stretch;background:var(--card);
-  border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
-  overflow:hidden;
-}
-.acc-card + .acc-card{margin-top:6px;}
-.acc-band{
-  width:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
-  writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:.03em;
-  font-size:9.5px;font-weight:800;padding:6px 0;
-  background:var(--primary-soft);color:var(--primary);
-}
-.acc-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
+/* ---------- Account cards ---------- */
+.acc-card{background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:16px;display:flex;align-items:center;gap:14px;cursor:pointer;}
+.acc-card + .acc-card{margin-top:10px;}
+.acc-ico{width:44px;height:44px;border-radius:16px;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:0 0 auto;}
 .acc-mid{flex:1;min-width:0;}
-.acc-name{font-weight:700;font-size:13.5px;}
+.acc-name{font-weight:700;font-size:14.5px;}
 .acc-flows{font-size:11.5px;color:var(--text-sub);margin-top:2px;}
-.acc-bal{font-weight:800;font-size:14.5px;text-align:right;flex:0 0 auto;}
+.acc-bal{font-weight:800;font-size:16px;text-align:right;flex:0 0 auto;}
 
 /* ---------- Import ---------- */
 .dropzone{
@@ -463,7 +435,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.21.18.03";
+const APP_VERSION = "v 2026.08.21.22.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -499,7 +471,6 @@ const ICONS = {
   refreshCw:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   alertTriangle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
   columns:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M15 4v16"/></svg>',
-  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
 };
 
@@ -599,6 +570,24 @@ function computeTransform(remarque){
   return {mode:"same"};
 }
 
+/* Remarque sans son suffixe de date transformée (YY-MM ou YYYY) — utilisé comme nom de transaction
+   "récurrente" dans l'onglet Récurrent. Repose sur la même détection que computeTransform : si aucun
+   suffixe n'est reconnu, la remarque est retournée telle quelle. */
+function baseRemarque(remarque){
+  const r = String(remarque||"").trim();
+  let m = r.match(/(\d{2})-(\d{2})$/);
+  if(m){
+    const mm = parseInt(m[2],10);
+    if(mm>=1 && mm<=12) return r.slice(0, r.length-5).trim();
+  }
+  m = r.match(/(?:^|[^0-9])(\d{4})$/);
+  if(m){
+    const year = parseInt(m[1],10);
+    if(year>=1990 && year<=2100) return r.slice(0, r.length-4).trim();
+  }
+  return r;
+}
+
 /* ---------------- Type normalization ---------------- */
 function normType(t){
   const n = normalize(t);
@@ -617,49 +606,9 @@ function baseGroupe(str){
   return m ? m[1].trim() : s;
 }
 
-/* Permet de faire défiler horizontalement un conteneur (ex. tableau Évolution / Budget mois par mois) en
-   cliquant-glissant à la souris — sur mobile, le défilement tactile natif fonctionne déjà sans cela. Un
-   glissement effectif (déplacement > 4px) supprime le clic qui suit, pour ne pas déclencher l'ouverture
-   d'une cellule au relâchement. Les tableaux étant reconstruits (innerHTML) à chaque rendu, enableDragScroll
-   est rappelée sur un nouvel élément à chaque fois : seul le listener "mousedown" est posé par conteneur
-   (nettoyé naturellement avec l'élément) ; les listeners globaux "mousemove"/"mouseup" ne sont posés qu'une
-   seule fois pour toute la session, afin de ne jamais s'accumuler au fil des rendus. */
-let __dragScrollState = null; // {el, startX, startScroll, moved}
-let __dragScrollGlobalBound = false;
-function ensureDragScrollGlobalListeners(){
-  if(__dragScrollGlobalBound) return;
-  __dragScrollGlobalBound = true;
-  window.addEventListener("mousemove", (e)=>{
-    const s = __dragScrollState;
-    if(!s) return;
-    const dx = e.pageX - s.startX;
-    if(Math.abs(dx) > 4) s.moved = true;
-    if(s.moved){ s.el.scrollLeft = s.startScroll - dx; s.el.classList.add("drag-scroll-active"); e.preventDefault(); }
-  });
-  window.addEventListener("mouseup", ()=>{
-    const s = __dragScrollState;
-    if(!s) return;
-    s.el.classList.remove("drag-scroll-active");
-    if(s.moved){
-      const suppress = (e)=>{ e.stopPropagation(); e.preventDefault(); };
-      s.el.addEventListener("click", suppress, {capture:true, once:true});
-    }
-    __dragScrollState = null;
-  });
-}
-function enableDragScroll(el){
-  if(!el || el.__dragScrollBound) return;
-  el.__dragScrollBound = true;
-  ensureDragScrollGlobalListeners();
-  el.addEventListener("mousedown", (e)=>{
-    if(e.button !== 0) return;
-    __dragScrollState = {el, startX: e.pageX, startScroll: el.scrollLeft, moved:false};
-  });
-}
-
 window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
-  fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,
-  decimalsToggleBtnHtml,toggleMoneyDecimals,enableDragScroll};
+  fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,baseRemarque,
+  decimalsToggleBtnHtml,toggleMoneyDecimals};
 })();
 (function(){
 "use strict";
@@ -741,6 +690,7 @@ const Store = {
   settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     evolution:{view:"groupe", monthBasis:"reel", merges:{groupe:[], categorie:[], personne:[]}},
+    recurrent:{periodFrom:null, periodTo:null},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
       amortCategories:[], adjustments:[], excludedAccounts:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
@@ -841,18 +791,19 @@ const Store = {
     if(!s.accountTypes || typeof s.accountTypes!=="object") s.accountTypes = {};
     if(!s.accountAcronyms || typeof s.accountAcronyms!=="object") s.accountAcronyms = {};
     if(!Array.isArray(s.accountTypeOrder)) s.accountTypeOrder = [];
-    if(!Array.isArray(s.customBalances)) s.customBalances = [];
     if(!s.evolution || typeof s.evolution!=="object") s.evolution = {};
     if(!["groupe","categorie","personne","compte"].includes(s.evolution.view)) s.evolution.view = "groupe";
     if(s.evolution.monthBasis!=="reel" && s.evolution.monthBasis!=="transformee") s.evolution.monthBasis = "reel";
     if(!s.evolution.merges || typeof s.evolution.merges!=="object") s.evolution.merges = {};
     ["groupe","categorie","personne","compte"].forEach(d=>{ if(!Array.isArray(s.evolution.merges[d])) s.evolution.merges[d] = []; });
+    if(!s.recurrent || typeof s.recurrent!=="object") s.recurrent = {};
+    if(s.recurrent.periodFrom===undefined) s.recurrent.periodFrom = null;
+    if(s.recurrent.periodTo===undefined) s.recurrent.periodTo = null;
     if(!s.budget) s.budget = {};
     const b = s.budget;
     if(b.scope!=="couple" && b.scope!=="perso") b.scope = "perso";
     if(b.mode!=="amorti" && b.mode!=="brut_ajout") b.mode = "amorti";
     if(typeof b.detailView!=="boolean") b.detailView = false;
-    if(typeof b.monthlyView!=="boolean") b.monthlyView = false;
     if(b.startMonth===undefined) b.startMonth = null;
     if(b.endMonth===undefined) b.endMonth = null;
     if(b.mainGroup===undefined) b.mainGroup = null;
@@ -1382,17 +1333,6 @@ function getGroupeDisplay(t){
   // (avec la date entre parenthèses) plutôt que de le remplacer par le nom de base seul.
   return rule ? rule.superGroupe : t.groupe;
 }
-/* Période (= groupe de groupe) d'une transaction, pour le regroupement "Période" de l'onglet Transactions.
-   Contrairement à getGroupeDisplay() ci-dessus — qui replie sur le libellé complet du groupe quand aucune
-   règle ne s'applique, pour ne jamais perdre d'information — celle-ci renvoie un libellé neutre pour les
-   groupes non rattachés à une période, afin de ne pas mélanger "Groupe" et "Période" dans les deux modes
-   d'affichage désormais distincts. */
-function getPeriodeDisplay(t){
-  if(!t.groupe) return "(Non renseigné)";
-  const base = t.groupeBase || U.baseGroupe(t.groupe);
-  const sup = resolvedSuperGroupeForOccurrence(t.groupe, base);
-  return sup || "(Sans période)";
-}
 /* Effective super-groupe(s) for a base name shown in management UI (ignoring date, all matching rules —
    règles "base" classiques ET règles `full` dont l'occurrence partage ce nom de base). Utilisé pour la
    vue base-only groupeHierarchy() ci-dessous ; NE PAS utiliser pour classer une occurrence précise
@@ -1574,16 +1514,6 @@ function getPersonneDisplay(t){
   const rule = findPersonAliasRule(t.personne);
   return rule ? rule.superPersonne : t.personne;
 }
-/* Groupe de personnes d'une transaction, pour le regroupement "Groupe de personnes" de l'onglet
-   Transactions. Contrairement à getPersonneDisplay() ci-dessus — qui replie sur la personne elle-même
-   quand aucune règle ne s'applique — celle-ci renvoie un libellé neutre pour les personnes non rattachées
-   à un groupe de personnes, afin de ne pas mélanger "Personne" et "Groupe de personnes" dans les deux
-   modes d'affichage désormais distincts. */
-function getGroupePersonnesDisplay(t){
-  if(!t.personne) return "(Non renseigné)";
-  const rule = findPersonAliasRule(t.personne);
-  return rule ? rule.superPersonne : "(Sans groupe)";
-}
 function getSuperPersonneForBase(base){
   const rules = Store.settings.personAliasRules || [];
   return rules.filter(r=>r.personne===base);
@@ -1649,21 +1579,13 @@ function distinctValuesCategorieSorted(transactions){
   });
   return withType;
 }
-/* Display value used when grouping/breaking down by a dimension. "groupe" et "personne" renvoient
-   désormais le libellé brut de la transaction (le regroupement par groupe de groupe / groupe de
-   personnes se fait via les dimensions dédiées "periode" / "groupe_personnes" ci-dessous — ces deux
-   paires de modes sont volontairement distinctes dans l'Affichage de l'onglet Transactions). Pour
-   "compte", on regroupe par compte réel (nom exact du compte) — le regroupement par type de compte
-   (Courant/Épargne...) se fait via la dimension dédiée "type_compte".
-   */
+/* Display value used when grouping/breaking down by a dimension (collapses groupe/personne). Pour "compte",
+   on regroupe désormais par compte réel (nom exact du compte) — et non plus seulement par type de compte
+   (Courant/Épargne), qui reste disponible séparément dans l'onglet Comptes. */
 function dimDisplayValue(t, dim){
-  if(dim==="groupe") return t.groupe || "(Non renseigné)";
-  if(dim==="periode") return getPeriodeDisplay(t);
+  if(dim==="groupe") return getGroupeDisplay(t);
   if(dim==="compte") return t.compte || "(Non renseigné)";
-  if(dim==="type_compte") return getAccountTypeDisplay(t.compte);
-  if(dim==="personne") return t.personne || "(Non renseigné)";
-  if(dim==="groupe_personnes") return getGroupePersonnesDisplay(t);
-  if(dim==="type") return TYPE_LABELS_FR[t.type] || t.type || "(Non renseigné)";
+  if(dim==="personne") return getPersonneDisplay(t);
   return t[dim] || "(Non renseigné)";
 }
 
@@ -2013,12 +1935,95 @@ function evolutionYearsList(evoIndex){
   return Array.from(years).sort((a,b)=>a-b);
 }
 
+/* ---------------- Onglet Récurrent ---------------- */
+/* Index des transactions "récurrentes" : uniquement celles dont la Remarque porte un suffixe de date
+   transformée (YY-MM ou YYYY, cf. computeTransform) — les seules dont le mois calculé diffère du mois réel.
+   Regroupées par Catégorie (section) puis par nom de transaction sans la date (item, cf. U.baseRemarque),
+   triées alphabétiquement au sein de chaque catégorie. Les entrées "YY-MM" alimentent un mois précis
+   (item.values, clé "YYYY-MM") ; les entrées "YYYY" restent groupées par année SANS être réparties sur les
+   12 mois (item.yearValues, clé "YYYY") — elles seront affichées dans une colonne spéciale juste après
+   décembre de cette année-là. Seules les transactions dont le mois calculé tombe dans [periodFrom, periodTo]
+   ("YYYY-MM", bornes incluses) sont retenues ; pour une entrée "YYYY", c'est le mois de décembre de cette
+   année qui sert de référence pour ce test (cohérent avec son positionnement juste après décembre). */
+function buildRecurringIndex(periodFrom, periodTo){
+  const sections = new Map();
+  function ensureSection(key, label){
+    if(!sections.has(key)) sections.set(key, {key, label, items: new Map()});
+    return sections.get(key);
+  }
+  function ensureItem(sec, key, label){
+    if(!sec.items.has(key)) sec.items.set(key, {key, label, values: new Map(), yearValues: new Map()});
+    return sec.items.get(key);
+  }
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    const tr = t.transform;
+    if(!tr || tr.mode==="same") return;
+    let ymKey=null, yearKey=null;
+    if(tr.mode==="month"){
+      ymKey = tr.year+"-"+U.pad2(tr.month+1);
+      if(ymKey<periodFrom || ymKey>periodTo) return;
+    } else { // yearsplit
+      yearKey = String(tr.year);
+      const decYM = tr.year+"-12";
+      if(decYM<periodFrom || decYM>periodTo) return;
+    }
+    const catLabel = t.categorie || "(Non renseigné)";
+    const sec = ensureSection(catLabel, catLabel);
+    const label = U.baseRemarque(t.remarque) || "(Sans titre)";
+    const item = ensureItem(sec, label, label);
+    if(tr.mode==="month") item.values.set(ymKey, (item.values.get(ymKey)||0)+t.montant);
+    else item.yearValues.set(yearKey, (item.yearValues.get(yearKey)||0)+t.montant);
+  });
+  let sectionList = Array.from(sections.values()).map(s=>({...s, items: Array.from(s.items.values())}));
+  sectionList.forEach(s=> s.items.sort((a,b)=> a.label.localeCompare(b.label, 'fr', {sensitivity:'base'})));
+  sectionList.sort((a,b)=> Math.abs(recurringSectionTotal(b))-Math.abs(recurringSectionTotal(a)));
+  return {sections: sectionList};
+}
+function recurringItemTotal(item){
+  let s=0; item.values.forEach(v=>s+=v); item.yearValues.forEach(v=>s+=v); return s;
+}
+function recurringSectionTotal(section){
+  let s=0; section.items.forEach(it=>s+=recurringItemTotal(it)); return s;
+}
+function recurringItemMonthValue(item, year, month){
+  return item.values.get(year+"-"+U.pad2(month+1)) || 0;
+}
+function recurringSectionMonthValue(section, year, month){
+  let s=0; section.items.forEach(it=> s+=recurringItemMonthValue(it, year, month)); return s;
+}
+function recurringItemYearLumpValue(item, year){
+  return item.yearValues.get(String(year)) || 0;
+}
+function recurringSectionYearLumpValue(section, year){
+  let s=0; section.items.forEach(it=> s+=recurringItemYearLumpValue(it, year)); return s;
+}
+/* Liste continue des mois "YYYY-MM" de periodFrom à periodTo, en insérant une colonne "année" spéciale
+   juste après décembre pour chaque année qui possède au moins une entrée "YYYY" (yearValues) dans l'index. */
+function recurringColumns(evoIndex, periodFrom, periodTo){
+  const yearsWithLump = new Set();
+  evoIndex.sections.forEach(sec=> sec.items.forEach(it=> it.yearValues.forEach((v,y)=> yearsWithLump.add(y))));
+  const [fy,fm] = periodFrom.split("-").map(Number);
+  const [ty,tm] = periodTo.split("-").map(Number);
+  const cols = [];
+  let y=fy, m=fm, guard=0;
+  while((y<ty || (y===ty && m<=tm)) && guard<1200){
+    cols.push({type:"month", year:y, month:m-1, ym:y+"-"+U.pad2(m)});
+    if(m===12 && yearsWithLump.has(String(y))) cols.push({type:"year", year:y});
+    m++; if(m>12){m=1;y++;}
+    guard++;
+  }
+  return cols;
+}
+
 window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
   getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
-  buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList};
+  buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList,
+  buildRecurringIndex, recurringItemTotal, recurringSectionTotal, recurringItemMonthValue, recurringSectionMonthValue,
+  recurringItemYearLumpValue, recurringSectionYearLumpValue, recurringColumns};
 })();
 (function(){
 "use strict";
@@ -2030,7 +2035,7 @@ const DATA = window.__SF_DATA;
 const ICONS = U.ICONS;
 
 let currentTab = "accounts";
-let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | periode | categorie | compte | type_compte | personne | groupe_personnes | type
+let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | categorie | compte | personne
 let txnGroupsShown = 20; // nombre de groupes affichés (tous modes confondus, chargement automatique au scroll)
 let txnPerGroupShown = {}; // groupKey -> nombre d'éléments affichés au sein de ce groupe
 let txnOpenGroups = new Map(); // clé de groupe -> true/false (dépassement individuel du réglage "tout déplier/replier")
@@ -2039,8 +2044,8 @@ let detailTxnId = null;
 
 const DIM_FIELD = {groupe:"groupe", categorie:"categorie", personne:"personne", compte:"compte"};
 const DIM_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
-const GROUPBY_LABEL = {compte:"Compte", type_compte:"Type de compte", day:"Jour", month_indiquee:"Mois indiqué", month_transformee:"Mois calculé",
-  groupe:"Groupe", periode:"Période", categorie:"Catégorie", personne:"Personne", groupe_personnes:"Groupe de personnes", type:"Type"};
+const GROUPBY_LABEL = {compte:"Compte", day:"Jour", month_indiquee:"Mois indiqué", month_transformee:"Mois calculé",
+  groupe:"Groupe", categorie:"Catégorie", personne:"Personne"};
 const PALETTE = ["#1259D6","#1A9E63","#E4402E","#8A5CF6","#E8A93B","#26A6C9","#D6478B","#6E7A8A","#5FBF7A","#B4772B","#3C6E71","#9B4DCA"];
 
 function resetTxnPagination(){ txnGroupsShown = 20; txnPerGroupShown = {}; txnOpenGroups = new Map(); }
@@ -2074,6 +2079,7 @@ function buildShell(){
     <div class="view" id="view-transactions"></div>
     <div class="view" id="view-budget"></div>
     <div class="view" id="view-evolution"></div>
+    <div class="view" id="view-recurrent"></div>
     <div class="view active" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
@@ -2094,6 +2100,7 @@ function buildShell(){
       <button class="navbtn" data-tab="transactions">${ICONS.list}<span>Transactions</span></button>
       <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
       <button class="navbtn" data-tab="evolution">${ICONS.trend}<span>Évolution</span></button>
+      <button class="navbtn" data-tab="recurrent">${ICONS.refreshCw}<span>Récurrent</span></button>
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
@@ -2225,6 +2232,7 @@ function refreshCurrentTab(){
   if(currentTab==="transactions") V.renderTransactions();
   else if(currentTab==="budget") V.renderBudget && V.renderBudget();
   else if(currentTab==="evolution") V.renderEvolution && V.renderEvolution();
+  else if(currentTab==="recurrent") V.renderRecurrent && V.renderRecurrent();
   else if(currentTab==="accounts") V.renderAccounts();
 }
 
@@ -2405,10 +2413,6 @@ function computeTxnGroups(filtered, groupBy){
       if(ka!==kb) return ka==="Income" ? -1 : 1;
       return a.key.localeCompare(b.key, 'fr');
     });
-  } else if(groupBy==="type"){
-    // Ordre fixe : Revenus, Dépenses, Transferts
-    const rank = {"Revenus":0, "Dépenses":1, "Transferts":2};
-    arr.sort((a,b)=> (rank[a.key]??99) - (rank[b.key]??99));
   } else {
     arr.sort((a,b)=> (Math.abs(b.income)+Math.abs(b.expense)) - (Math.abs(a.income)+Math.abs(a.expense)));
   }
@@ -2856,7 +2860,7 @@ function openTxnForm(id){
     ${fieldPickerBtnHtml("edit-groupe-btn", "Choisir un groupe", state.groupe)}
 
     <div class="field-label">Remarque</div>
-    <input type="text" id="edit-remarque" class="search-mini" style="margin:0;" value="${U.escHtml(t.remarque||"")}">
+    <textarea id="edit-remarque" class="search-mini" style="margin:0;resize:none;overflow:hidden;font-family:inherit;line-height:1.4;" rows="1">${U.escHtml(t.remarque||"")}</textarea>
 
     <div style="display:flex;gap:10px;margin-top:18px;">
       ${!isNew?`<button class="btn btn-ghost" id="edit-delete" style="color:var(--expense);">${ICONS.trash}</button>`:""}
@@ -2872,6 +2876,18 @@ function openTxnForm(id){
     document.getElementById("edit-compte-label").textContent = isTransfer ? "Compte source" : "Compte";
   }
   refreshTypeVisibility();
+
+  // La remarque s'étend verticalement (jusqu'à un plafond) pour rester lisible quand le texte est long,
+  // au lieu de défiler horizontalement dans un champ mono-ligne.
+  const remarqueEl = document.getElementById("edit-remarque");
+  function autoResizeRemarque(){
+    remarqueEl.style.height = "auto";
+    const capped = remarqueEl.scrollHeight > 160;
+    remarqueEl.style.height = Math.min(remarqueEl.scrollHeight, 160) + "px";
+    remarqueEl.style.overflowY = capped ? "auto" : "hidden";
+  }
+  autoResizeRemarque();
+  remarqueEl.addEventListener("input", autoResizeRemarque);
   document.querySelectorAll("#edit-type-seg button").forEach(b=>{
     b.onclick = ()=>{
       state.type = b.dataset.v;
@@ -3074,35 +3090,16 @@ function renderAccounts(){
   });
   const typeGroups = orderAccountTypeGroups(Array.from(byType.values()));
 
-  // Soldes personnalisés (jusqu'à 2), calculés sur la sélection de comptes choisie par l'utilisateur ;
-  // seuls les soldes avec un titre renseigné sont affichés.
-  const customBalancesData = (Store.settings.customBalances||[]).slice(0,2).map(cb=>{
-    const accSet = new Set(cb.accounts||[]);
-    const bal = balances.reduce((s,a)=> accSet.has(a.name) ? s+a.balance : s, 0);
-    return {title:(cb.title||"").trim(), bal};
-  }).filter(cb=>cb.title);
-
   const view_html = [`
     <div class="section" style="padding-top:14px;">
-      <div class="card" style="text-align:center;padding:26px 16px;position:relative;">
-        <button type="button" class="icon-btn" id="acc-balance-edit-btn" title="Configurer les soldes affichés" style="position:absolute;top:10px;right:10px;width:34px;height:34px;box-shadow:none;background:var(--card-alt);">${ICONS.edit||''}</button>
+      <div class="card" style="text-align:center;padding:22px 16px;">
         <div style="font-size:13px;color:var(--text-sub);font-weight:600;">Solde total (tous comptes)</div>
-        <div style="font-size:32px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
-        ${customBalancesData.length ? `
-          <div style="display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--divider);">
-            ${customBalancesData.map(cb=>`
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:11.5px;color:var(--text-sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${U.escHtml(cb.title)}</div>
-                <div style="font-size:19px;font-weight:800;margin-top:3px;color:${cb.bal>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(cb.bal)}</div>
-              </div>
-            `).join("")}
-          </div>
-        ` : ""}
+        <div style="font-size:30px;font-weight:900;margin-top:4px;">${U.fmtMoney(total)}</div>
       </div>
     </div>
-    <div class="section" style="padding-top:14px;display:flex;gap:8px;">
-      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.copy||''} Copie Excel</button>
-      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.list||''} Réorganiser</button>` : ""}
+    <div class="section" style="padding-top:0;display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;justify-content:center;">${ICONS.copy||''} Copier pour Excel</button>
+      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;justify-content:center;">${ICONS.list||''} Réorganiser</button>` : ""}
       ${U.decimalsToggleBtnHtml("acc-decimals-btn")}
     </div>
   `];
@@ -3115,7 +3112,6 @@ function renderAccounts(){
   };
   const reorderBtn = document.getElementById("acc-reorder-btn");
   if(reorderBtn) reorderBtn.onclick = ()=> openAccountTypeReorderSheet(typeGroups.map(g=>g.type));
-  document.getElementById("acc-balance-edit-btn").onclick = ()=> openCustomBalancesSheet(balances);
 
   typeGroups.forEach(g=>{
     const typeSection = document.createElement("div");
@@ -3134,15 +3130,12 @@ function renderAccounts(){
     g.accounts.forEach(a=>{
       const card = document.createElement("div");
       card.className = "acc-card";
-      const acctAcronym = AGG.getAccountAcronym(a.name);
       card.innerHTML = `
-        <div class="acc-band" title="${U.escHtml(a.name||"")}">${U.escHtml(acctAcronym)}</div>
-        <div class="acc-content">
-          <div class="acc-mid">
-            <div class="acc-name">${U.escHtml(a.name)}</div>
-          </div>
-          <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
+        <div class="acc-ico">${U.escHtml((a.name||"?").slice(0,2).toUpperCase())}</div>
+        <div class="acc-mid">
+          <div class="acc-name">${U.escHtml(a.name)}</div>
         </div>
+        <div class="acc-bal" style="color:${a.balance>=0?'var(--text)':'var(--expense)'}">${U.fmtMoney(a.balance)}</div>
       `;
       card.onclick = ()=>{
         window.__SF_FILTERS.comptes = new Set([a.name]);
@@ -3222,75 +3215,6 @@ function openAccountTypeReorderSheet(currentTypes){
         [order[i+1],order[i]] = [order[i],order[i+1]];
         save();
         render();
-      };
-    });
-  }
-  render();
-  APP.openOverlay("overlay-detail");
-}
-
-/* ---------------- Soldes personnalisés : jusqu'à 2 soldes additionnels, calculés sur une sélection de
-   comptes choisie par l'utilisateur, affichés dans le bloc solde en haut de l'onglet Comptes (à côté du
-   solde total). Un titre vide masque le solde correspondant. Réglages persistés dans
-   Store.settings.customBalances (tableau de {title, accounts}). ---------------- */
-function customBalancePillListHtml(accountNames, selectedSet, slot){
-  return `<div class="pill-toggle-wrap">${accountNames.map(a=>`
-    <button type="button" class="pill-toggle custombal-acct-item ${selectedSet.has(a)?'selected':''}" data-slot="${slot}" data-acct="${U.escHtml(a)}">${U.escHtml(a)}</button>
-  `).join("")}</div>`;
-}
-function openCustomBalancesSheet(balances){
-  const accountNames = balances.map(a=>a.name).slice().sort((a,b)=>a.localeCompare(b,'fr'));
-  // Copie de travail : toujours 2 emplacements, même vides.
-  let slots = [0,1].map(i=>{
-    const src = (Store.settings.customBalances||[])[i];
-    return {
-      title: (src && src.title) || "",
-      accounts: (src && Array.isArray(src.accounts)) ? src.accounts.slice() : []
-    };
-  });
-  function persist(){
-    Store.settings.customBalances = slots.map(s=>({title:s.title, accounts:s.accounts.slice()}));
-    Store.saveSettings();
-  }
-  function render(){
-    const modal = document.getElementById("modal-detail");
-    const prevScroll = modal.scrollTop;
-    modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Soldes personnalisés</span>
-        <button class="icon-btn" id="custombal-close">${ICONS.close}</button>
-      </div>
-      <div style="max-height:70vh;overflow-y:auto;">
-        <div style="font-size:11px;color:var(--text-sub);margin-bottom:16px;line-height:1.4;">Affichez jusqu'à 2 soldes supplémentaires, calculés sur une sélection de comptes, à côté du solde total. Laissez le titre vide pour ne pas afficher un solde.</div>
-        ${slots.map((s,i)=>`
-          <div style="${i===0?'margin-bottom:24px;':''}">
-            <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">Solde ${i+1}</div>
-            <input type="text" class="search-mini" maxlength="24" placeholder="Titre (ex. Épargne commune)" data-custombal-title="${i}" value="${U.escHtml(s.title)}">
-            ${accountNames.length ? customBalancePillListHtml(accountNames, new Set(s.accounts), i) : `<div style="font-size:12.5px;color:var(--text-sub);">Aucun compte.</div>`}
-          </div>
-        `).join("")}
-      </div>
-    `;
-    modal.scrollTop = prevScroll;
-    document.getElementById("custombal-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderAccounts(); };
-    modal.querySelectorAll("[data-custombal-title]").forEach(inp=>{
-      inp.oninput = ()=>{
-        const i = Number(inp.dataset.custombalTitle);
-        slots[i].title = inp.value;
-        persist();
-      };
-    });
-    modal.querySelectorAll(".custombal-acct-item[data-slot]").forEach(btn=>{
-      btn.onclick = ()=>{
-        // Bascule uniquement ce bouton (pas de re-rendu complet), pour ne pas réinitialiser le défilement
-        // de la liste de comptes à chaque sélection.
-        const i = Number(btn.dataset.slot);
-        const a = btn.dataset.acct;
-        const set = new Set(slots[i].accounts);
-        if(set.has(a)){ set.delete(a); btn.classList.remove("selected"); }
-        else{ set.add(a); btn.classList.add("selected"); }
-        slots[i].accounts = Array.from(set);
-        persist();
       };
     });
   }
@@ -3404,13 +3328,10 @@ function addMonthsToKey(key, n){
    L'amortissement d'une dépense (quelle que soit sa date d'origine, même antérieure de plusieurs années)
    ne doit se répercuter QUE sur les mois de cette fenêtre — jamais avant ni après — même si la période
    actuellement affichée déborde de cette fenêtre. Sans "Mois de début" configuré, aucune fenêtre n'est
-   définie : on retombe alors sur l'ancien comportement (toute la période affichée reçoit sa part).
-   boundsMonths (optionnel) : période affichée complète à utiliser pour ce "retombe sur..." quand `months`
-   n'en est qu'un sous-ensemble (ex. un seul mois, pour la vue "mois par mois" du Budget) — sans cela, un
-   appel avec un seul mois recevrait à tort 100% du lissage sur ce mois. Omis, comportement inchangé. */
-function amortWindowMonths(months, periodMonths, boundsMonths){
+   définie : on retombe alors sur l'ancien comportement (toute la période affichée reçoit sa part). */
+function amortWindowMonths(months, periodMonths){
   const cfg = Store.settings.budget;
-  if(!cfg.startMonth) return boundsMonths ? months.filter(m=> boundsMonths.includes(m)) : months;
+  if(!cfg.startMonth) return months;
   const windowEnd = addMonthsToKey(cfg.startMonth, periodMonths-1);
   return months.filter(m=> m>=cfg.startMonth && m<=windowEnd);
 }
@@ -3426,9 +3347,8 @@ function amortBoundedMonths(months){
 }
 /* Nombre de mois de la fenêtre d'amortissement, calculé automatiquement à partir de "Mois de début" et
    "Dernier mois" (inclusifs des deux côtés) — plus de saisie manuelle. Sans les deux bornes renseignées,
-   retombe sur le nombre de mois de la période affichée (comportement d'origine). Voir boundsMonths ci-dessus
-   pour amortWindowMonths — même principe ici quand `months` n'est qu'un sous-ensemble de la période affichée. */
-function computeAmortPeriodMonths(months, boundsMonths){
+   retombe sur le nombre de mois de la période affichée (comportement d'origine). */
+function computeAmortPeriodMonths(months){
   const cfg = Store.settings.budget;
   if(cfg.startMonth && cfg.endMonth){
     const [sy,sm] = cfg.startMonth.split("-").map(Number);
@@ -3436,7 +3356,7 @@ function computeAmortPeriodMonths(months, boundsMonths){
     const diff = (ey-sy)*12 + (em-sm) + 1;
     if(diff>0) return diff;
   }
-  return (boundsMonths || months).length;
+  return months.length;
 }
 
 /* ---------------- Moteur de calcul du budget ---------------- */
@@ -3690,12 +3610,9 @@ function computeGroupBudget(superGroupeName, months, opts){
   // où on reste", réinjecté uniquement sur les mois affichés qui tombent DANS la fenêtre d'amortissement
   // [Mois de début → Mois de début + période - 1]. Les mois affichés hors de cette fenêtre (avant ou après)
   // reçoivent 0 — jamais une part de l'amortissement, même si la période affichée les inclut.
-  // opts.boundsMonths (optionnel) : période affichée complète, quand `months` n'en est qu'un sous-ensemble
-  // (ex. un seul mois, pour la vue "mois par mois") — voir amortWindowMonths/computeAmortPeriodMonths.
   if(isAmorti){
-    const boundsMonths = opts.boundsMonths || months;
-    const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
-    const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
+    const periodMonths = computeAmortPeriodMonths(months);
+    const windowN = amortWindowMonths(months, periodMonths).length;
     amortPoolAll.forEach((tot, cat)=>{
       const perMonth = {income: tot.income/periodMonths, expense: tot.expense/periodMonths};
       const o = ensureCat(cat);
@@ -3771,40 +3688,6 @@ function computeGroupBudget(superGroupeName, months, opts){
   const expense = catExpense + voyExpense;
   return {categories, voyages, income, expense, net: income+expense,
     catIncome, catExpense, voyIncome, voyExpense, voyNet: voyIncome+voyExpense};
-}
-
-/* Ventilation "mois par mois" d'un groupe (principal ou additionnel), pour la vue calendrier de l'onglet
-   Budget — net global ET détail par catégorie / par voyage (mêmes lignes que la carte du groupe : le
-   calendrier doit lister les mêmes catégories et voyages, pas seulement un total par groupe). Réutilise
-   directement computeGroupBudget() un mois à la fois (aucune duplication de sa logique
-   réel/amortissement/ajustements/salaire) ; boundsMonths = la période affichée complète, pour que le calcul
-   de la fenêtre d'amortissement (voir amortWindowMonths/computeAmortPeriodMonths) reste exact même appelé
-   sur un seul mois. Les groupes additionnels (forceBrut) suivent leurs mois effectifs habituels
-   (extraGroupEffectiveMonths) : les mois hors de cette borne sont absents des Map retournées (0 pour
-   l'appelant), exactement comme pour leur total agrégé habituel.
-   Retourne {net: Map(mois->net), categories: Map(catKey -> Map(mois->net)), voyages: Map(voyKey ->
-   Map(mois->net))}. */
-function computeGroupBudgetDetailByMonth(groupName, allMonths, opts){
-  opts = opts || {};
-  const effMonths = opts.forceBrut ? extraGroupEffectiveMonths(groupName, allMonths) : allMonths;
-  const effSet = new Set(effMonths);
-  const net = new Map();
-  const categories = new Map();
-  const voyages = new Map();
-  allMonths.forEach(m=>{
-    if(!effSet.has(m)) return;
-    const res = computeGroupBudget(groupName, [m], Object.assign({}, opts, {boundsMonths: allMonths}));
-    net.set(m, res.net);
-    res.categories.forEach(c=>{
-      if(!categories.has(c.key)) categories.set(c.key, new Map());
-      categories.get(c.key).set(m, c.income+c.expense);
-    });
-    res.voyages.forEach(v=>{
-      if(!voyages.has(v.key)) voyages.set(v.key, new Map());
-      voyages.get(v.key).set(m, v.income+v.expense);
-    });
-  });
-  return {net, categories, voyages};
 }
 
 /* ---------------- Comparaison (autre période / budget prédéfini) ---------------- */
@@ -4699,83 +4582,6 @@ function openGroupSwapPicker(groupName, isMain){
   });
 }
 
-const EMPTY_MAP = new Map();
-/* Ligne <tr> de la vue "mois par mois", avec le même style visuel que les lignes de la vue détail à 3
-   colonnes (cf. detailRowHtml plus haut : mêmes tailles/graisses de police, mêmes règles de couleur —
-   .bgm-group-row/.bgm-item-row portent ces tailles via CSS), simplement avec une colonne par mois au lieu
-   de 3 colonnes fixes. Seule différence : la colonne "Total" (comme le libellé) est figée à gauche
-   (.bgm-label-cell/.bgm-total-cell, cf. CSS — même mécanisme que .evo-col-label/.evo-col-total de l'onglet
-   Évolution) pour permettre de faire défiler les mois. clickAttrs (optionnel) rend chaque valeur
-   individuellement cliquable, comme pour les autres vues. */
-function bgmRowHtml(label, total, monthly, months, opts, clickAttrs){
-  opts = opts || {};
-  const rowClass = opts.big ? "bgm-group-row" : "bgm-item-row";
-  function cell(v, cls, extraDataAttrs){
-    const sign = v>0 ? "pos" : (v<0 ? "neg" : "");
-    const text = v ? bgFmtMoneySigned(v) : "—";
-    const clickable = clickAttrs ? " clickable bg-detail-cell" : "";
-    const attrs = clickAttrs ? `${clickAttrs} ${extraDataAttrs||""}` : "";
-    return `<td class="${cls} ${sign}${clickable}" ${attrs}>${text}</td>`;
-  }
-  return `
-    <tr class="${rowClass}">
-      <td class="bgm-label-cell">${U.escHtml(label)}</td>
-      ${cell(total, "bgm-total-cell", "")}
-      ${months.map(m=> cell(monthly.get(m)||0, "bgm-val-cell", `data-month="${m}"`)).join("")}
-    </tr>
-  `;
-}
-function bgmHeaderRowHtml(months){
-  return `
-    <tr class="bgm-head">
-      <th class="bgm-label-cell"></th>
-      <th class="bgm-total-cell">Total</th>
-      ${months.map(m=>{ const [y,mm]=m.split("-").map(Number); return `<th class="bgm-val-cell">${fmtMonthYearShort(y,mm-1)}</th>`; }).join("")}
-    </tr>
-  `;
-}
-/* Construit la vue "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes") : même style
-   que la vue détail à 3 colonnes (cf. bgmRowHtml ci-dessus) et EXACTEMENT les mêmes lignes que la vue par
-   carte habituelle — "Total tous groupes", puis pour chaque groupe (principal puis additionnels) sa ligne
-   Total suivie d'une ligne par catégorie et d'une ligne par voyage (mêmes libellés que dans la carte du
-   groupe, cf. groupCardHtml) — simplement ventilées mois par mois au lieu d'un total unique sur la période.
-   Seule différence avec la vue détail : la colonne "Total" est figée à gauche (comme le libellé) pour
-   permettre de faire défiler les mois vers la droite — via un <table> avec colonnes sticky, le même
-   mécanisme, déjà éprouvé, que celui de l'onglet Évolution. Chaque valeur (Total ou mois) est cliquable et
-   ouvre la liste des transactions correspondante, comme les autres vues. */
-function buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGroupNames){
-  const mainDetail = computeGroupBudgetDetailByMonth(cfg.mainGroup, months, {});
-  const extraDetail = extraResults.map(e=>({name:e.name, res:e.res, detail: computeGroupBudgetDetailByMonth(e.name, months, {forceBrut:true})}));
-
-  const grandMonthly = new Map();
-  months.forEach(m=>{
-    let v = mainDetail.net.get(m) || 0;
-    extraDetail.forEach(e=> v += (e.detail.net.get(m) || 0));
-    grandMonthly.set(m, v);
-  });
-  const grandTotal = mainRes.net + extraResults.reduce((s,e)=>s+e.res.net, 0);
-
-  function groupRowsHtml(name, res, detail){
-    const groupAttr = `data-groups="${U.escHtml(name)}"`;
-    const headerRow = bgmRowHtml(name, res.net, detail.net, months, {big:true}, groupAttr);
-    const catRows = res.categories.map(c=>
-      bgmRowHtml(c.label||c.key, c.income+c.expense, detail.categories.get(c.key)||EMPTY_MAP, months, {},
-        `data-kind="cat" data-group="${U.escHtml(name)}" data-key="${U.escHtml(c.key)}"`)
-    ).join("");
-    const voyRows = res.voyages.map(v=>
-      bgmRowHtml(v.label||v.key, v.income+v.expense, detail.voyages.get(v.key)||EMPTY_MAP, months, {},
-        `data-kind="voy" data-group="${U.escHtml(name)}" data-key="${U.escHtml(v.key)}"`)
-    ).join("");
-    return headerRow + catRows + voyRows;
-  }
-
-  const grandRow = bgmRowHtml("Total tous groupes", grandTotal, grandMonthly, months, {big:true}, `data-groups="${U.escHtml(allGroupNames.join("||"))}"`);
-  const groupRows = groupRowsHtml(cfg.mainGroup, mainRes, mainDetail)
-    + extraDetail.map(e=> groupRowsHtml(e.name, e.res, e.detail)).join("");
-
-  return `<div class="bgm-wrap" id="bg-monthly-table-wrap"><table class="bgm-table"><thead>${bgmHeaderRowHtml(months)}</thead><tbody>${grandRow}${groupRows}</tbody></table></div>`;
-}
-
 function renderBudget(){
   ensurePeriod();
   const view = document.getElementById("view-budget");
@@ -4872,11 +4678,6 @@ function renderBudget(){
       </div>
   ` : "";
 
-  // Vue "mois par mois" (bouton calendrier) : remplace la liste de cartes par un tableau à colonne Total
-  // figée + une colonne par mois défilante — voir buildBudgetMonthlyTableHtml.
-  const monthlyOn = !!cfg.monthlyView;
-  const monthlyTableHtml = monthlyOn ? buildBudgetMonthlyTableHtml(months, cfg, mainRes, extraResults, allGroupNames) : "";
-
   view.innerHTML = `
     <div class="section" style="padding-top:2px;">
       <div class="card" style="margin:0 4px 14px;padding:14px;">
@@ -4885,9 +4686,6 @@ function renderBudget(){
             <button data-m="amorti" class="${cfg.mode==='amorti'?'active':''}">Amort. + ajouts</button>
             <button data-m="brut_ajout" class="${cfg.mode==='brut_ajout'?'active':''}">Ajouts</button>
           </div>
-          <button type="button" id="bg-monthly-toggle-btn" title="${cfg.monthlyView?'Revenir à la vue par groupe':'Voir le budget mois par mois'}" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:40px;border:none;border-radius:100px;cursor:pointer;background:${cfg.monthlyView?'var(--primary)':'var(--card-alt)'};color:${cfg.monthlyView?'#fff':'var(--text-sub)'};">
-            <span style="width:17px;height:17px;display:flex;">${ICONS.calendar}</span>
-          </button>
           <button type="button" id="bg-detail-toggle-btn" title="${cfg.detailView?'Masquer le détail (Réel / Amorti / Ajout)':'Afficher le détail (Réel / Amorti / Ajout)'}" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:40px;border:none;border-radius:100px;cursor:pointer;background:${cfg.detailView?'var(--primary)':'var(--card-alt)'};color:${cfg.detailView?'#fff':'var(--text-sub)'};">
             <span style="width:17px;height:17px;display:flex;">${ICONS.columns}</span>
           </button>
@@ -4910,9 +4708,6 @@ function renderBudget(){
         ${budgetToolButtonHtml("bg-cmp-open-btn", "Comparaison", cmpSublabel)}
         ${budgetToolButtonHtml("bg-acctexcl-open-btn", "Comptes exclus", (cfg.excludedAccounts||[]).length ? (cfg.excludedAccounts.length+" exclu"+(cfg.excludedAccounts.length>1?"s":"")) : "Aucun")}
       </div>
-      ${monthlyOn ? `
-      <div style="padding:0 4px 14px;">${monthlyTableHtml}</div>
-      ` : `
       ${grandHeaderStickyHtml}
       <div class="card" style="margin-bottom:14px;">
         ${compareCtx ? `
@@ -4957,7 +4752,6 @@ function renderBudget(){
       ${mainCard.html}
       ${extraCards.map(c=>c.html).join("")}
       <button type="button" class="btn btn-ghost btn-block" id="bg-newgroup-btn" style="margin:0 4px 14px;">${ICONS.plus} Nouveau groupe</button>
-      `}
       <div style="height:10px;"></div>
     </div>
   `;
@@ -4971,11 +4765,6 @@ function renderBudget(){
   });
   document.getElementById("bg-detail-toggle-btn").onclick = ()=>{
     cfg.detailView = !cfg.detailView;
-    Store.saveSettings();
-    renderBudget();
-  };
-  document.getElementById("bg-monthly-toggle-btn").onclick = ()=>{
-    cfg.monthlyView = !cfg.monthlyView;
     Store.saveSettings();
     renderBudget();
   };
@@ -5001,8 +4790,7 @@ function renderBudget(){
   };
   document.getElementById("bg-cmp-open-btn").onclick = openCompareSheet;
   document.getElementById("bg-acctexcl-open-btn").onclick = openAccountExcludeSheet;
-  const newGroupBtn = document.getElementById("bg-newgroup-btn");
-  if(newGroupBtn) newGroupBtn.onclick = ()=>{
+  document.getElementById("bg-newgroup-btn").onclick = ()=>{
     const exclude = new Set([cfg.mainGroup].concat(selectedExtra));
     PICKER.openPicker({
       title:"Nouveau groupe", hierarchy: groupPickerHierarchy(exclude), value: null,
@@ -5016,29 +4804,6 @@ function renderBudget(){
       }
     });
   };
-  // Vue "mois par mois" : chaque cellule (Total ou mois), qu'elle appartienne à une ligne groupe, catégorie
-  // ou voyage, ouvre la même liste de transactions que le clic correspondant dans la vue par carte ; le
-  // tableau se fait glisser à la souris sur ordinateur (voir enableDragScroll).
-  const monthlyTableWrap = document.getElementById("bg-monthly-table-wrap");
-  if(monthlyTableWrap){
-    U.enableDragScroll(monthlyTableWrap);
-    monthlyTableWrap.querySelectorAll("td.bg-detail-cell").forEach(el=>{
-      el.onclick = ()=>{
-        const kind = el.dataset.kind;
-        const monthOpt = el.dataset.month ? {month: el.dataset.month} : {};
-        if(kind==="cat"){
-          if(isSalaryCategory(el.dataset.key)) openSalaryEditor(el.dataset.group, el.dataset.key);
-          else openCategoryTxnSheet(el.dataset.group, el.dataset.key, monthOpt);
-        } else if(kind==="voy"){
-          openVoyageTxnSheet(el.dataset.group, el.dataset.key, monthOpt);
-        } else if(el.dataset.groups){
-          const groups = el.dataset.groups.split("||");
-          if(el.dataset.month) openGroupMonthTxnSheet(groups, el.dataset.month);
-          else openGroupTypeTxnSheet(groups, null);
-        }
-      };
-    });
-  }
   document.querySelectorAll(".bg-group-swap-btn[data-group]").forEach(el=>{
     el.onclick = ()=> openGroupSwapPicker(el.dataset.group, el.dataset.ismain==="1");
   });
@@ -5109,16 +4874,12 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
   const cfg = Store.settings.budget;
-  // boundsMonths = période affichée complète (pour le calcul de fenêtre d'amortissement, cf.
-  // amortWindowMonths/computeAmortPeriodMonths) ; months = soit cette même période (comportement d'origine),
-  // soit un seul mois quand opts.month est fourni (clic sur une cellule de la vue "mois par mois").
-  const boundsMonths = monthsInRange(periodFrom, periodTo);
-  const months = opts.month ? [opts.month] : boundsMonths;
+  const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
   const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
-  const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
-  const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
+  const periodMonths = computeAmortPeriodMonths(months);
+  const windowN = amortWindowMonths(months, periodMonths).length;
   // Montant "utilisé" par le budget : les transactions réelles sont doublées en vue Couple (comme dans
   // computeGroupBudget) ; les ajustements manuels restent en montant brut, non multipliés (§5.3 doc).
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
@@ -5180,12 +4941,11 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   items.sort((a,b)=> b.date - a.date);
 
   // Totaux cohérents avec ceux affichés sur la carte du groupe (calcul identique à computeGroupBudget).
-  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup, boundsMonths});
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
   const catEntry = budgetRes.categories.find(c=>c.key===catKey);
   const realTotal = catEntry ? (catEntry.realIncome||0)+(catEntry.realExpense||0) : 0;
   const amortTotal = catEntry ? (catEntry.amortIncome||0)+(catEntry.amortExpense||0) : 0;
   const adjTotal = catEntry ? (catEntry.adjIncome||0)+(catEntry.adjExpense||0) : 0;
-  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
 
   const KIND_STYLE = {
     reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
@@ -5201,7 +4961,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
         <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
         <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${shown.length} élément${shown.length>1?"s":""}</div>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <span class="cattxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="cattxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
@@ -5351,10 +5111,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
   const cfg = Store.settings.budget;
-  // boundsMonths = période affichée complète ; months = cette même période, ou un seul mois si opts.month
-  // est fourni (clic sur une cellule de la vue "mois par mois") — voir openCategoryTxnSheet ci-dessus.
-  const boundsMonths = monthsInRange(periodFrom, periodTo);
-  const months = opts.month ? [opts.month] : boundsMonths;
+  const months = monthsInRange(periodFrom, periodTo);
   const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
 
@@ -5362,8 +5119,8 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   if(voyKey === "__ajustement__"){
     const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
     const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
-    const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
-    const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
+    const periodMonths = computeAmortPeriodMonths(months);
+    const windowN = amortWindowMonths(months, periodMonths).length;
     if(applyAdjustments){
       (cfg.adjustments||[]).forEach(adj=>{
         if(adj.groupe !== superGroupeName) return;
@@ -5409,13 +5166,12 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
 
   items.sort((a,b)=> b.date - a.date);
 
-  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup, boundsMonths});
+  const budgetRes = computeGroupBudget(superGroupeName, months, {forceBrut: superGroupeName!==cfg.mainGroup});
   const voyEntry = budgetRes.voyages.find(v=>v.key===voyKey);
   const realTotal = voyEntry ? (voyEntry.realIncome||0)+(voyEntry.realExpense||0) : 0;
   const amortTotal = voyEntry ? (voyEntry.amortIncome||0)+(voyEntry.amortExpense||0) : 0;
   const adjTotal = voyEntry ? (voyEntry.adjIncome||0)+(voyEntry.adjExpense||0) : 0;
   const label = voyEntry ? (voyEntry.label||voyEntry.key) : voyKey;
-  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
 
   const KIND_STYLE = {
     reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
@@ -5431,7 +5187,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
         <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
         <button class="icon-btn" id="voytxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)} · ${shown.length} élément${shown.length>1?"s":""}</div>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <span class="voytxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="voytxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
@@ -5475,14 +5231,14 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
    pour le groupe principal selon le mode budget (Amort. + ajouts ou Ajouts) ; les groupes additionnels restent toujours en brut).
    typeFilter : null (tout, catégories+voyages) | "Income" | "Expense" (catégories/quotidien uniquement) |
    "Voyage" (voyages + ajustements sans catégorie uniquement, quel que soit le signe). */
-function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, boundsMonths){
+function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months){
   const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
   const cfg = Store.settings.budget;
   const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
   const amortSet = new Set(cfg.amortCategories||[]);
-  const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
-  const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
+  const periodMonths = computeAmortPeriodMonths(months);
+  const windowN = amortWindowMonths(months, periodMonths).length;
   const multiName = names.length>1;
   const items = [];
 
@@ -5672,90 +5428,6 @@ function openGroupTypeTxnSheet(superGroupeNames, type, opts){
   APP.openOverlay("overlay-detail");
 }
 
-/* Détail des transactions/ajustements d'un ou plusieurs groupes pour UN SEUL mois — ouvert en cliquant une
-   cellule de la vue "mois par mois" du Budget (bouton calendrier, entre "Ajouts" et "Colonnes"). Même
-   présentation que openGroupTypeTxnSheet() ci-dessus (badges Réel/Amorti/Ajout filtrables, liste
-   cliquable), mais bornée à ce mois précis ; boundsMonths = la période affichée complète, pour que la part
-   d'amortissement de ce mois reste calculée avec la bonne fenêtre/diviseur (même principe que
-   computeGroupBudgetByMonth, cf. plus haut). */
-function openGroupMonthTxnSheet(superGroupeNames, monthKey){
-  const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
-  const boundsMonths = monthsInRange(periodFrom, periodTo);
-  const items = collectGroupTypeItemsDetailed(names, null, [monthKey], boundsMonths);
-  let filterKind = null; // null | "reel" | "amorti" | "ajout"
-
-  const [my, mm] = monthKey.split("-").map(Number);
-  const monthLabel = U.fmtMonthYear(my, mm-1);
-  const label = monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1);
-  const subtitle = names.length>1 ? "Tous les groupes" : names[0];
-
-  const KIND_STYLE = {
-    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
-    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
-    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
-  };
-
-  function renderModal(){
-    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
-    const realTotal = items.filter(x=>x.kind==="reel").reduce((s,x)=>s+x.displayAmount,0);
-    const amortTotal = items.filter(x=>x.kind==="amorti").reduce((s,x)=>s+x.displayAmount,0);
-    const adjTotal = items.filter(x=>x.kind==="ajout").reduce((s,x)=>s+x.displayAmount,0);
-    const total = realTotal+amortTotal+adjTotal;
-    const color = total<0 ? "var(--expense)" : "var(--income)";
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
-        <button class="icon-btn" id="grpmonth-close">${ICONS.close}</button>
-      </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-        <span class="grpmonth-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
-        ${amortTotal!==0 ? `<span class="grpmonth-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
-        ${adjTotal!==0 ? `<span class="grpmonth-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
-        <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:${color};">Total : ${bgFmtMoneySigned(total)}</span>
-      </div>
-      <div style="max-height:56vh;overflow-y:auto;">
-        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur ce mois.</div>` :
-        shown.map(x=>`
-          <div class="detail-row grpmonth-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span style="display:flex;flex-direction:column;min-width:0;">
-              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
-            </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
-              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
-              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
-            </span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    document.getElementById("grpmonth-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-    document.querySelectorAll(".grpmonth-badge[data-kind]").forEach(el=>{
-      el.onclick = ()=>{
-        const k = el.dataset.kind;
-        filterKind = (filterKind===k) ? null : k;
-        renderModal();
-      };
-    });
-    document.querySelectorAll(".grpmonth-row[data-txnid]").forEach(el=>{
-      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-    });
-    document.querySelectorAll(".grpmonth-row[data-adjidx]").forEach(el=>{
-      if(el.dataset.txnid) return;
-      el.onclick = ()=>{
-        const idx = Number(el.dataset.adjidx);
-        const a = Object.assign({__idx:idx}, (Store.settings.budget.adjustments||[])[idx]);
-        openAdjustmentForm(a);
-      };
-    });
-  }
-
-  renderModal();
-  APP.openOverlay("overlay-detail");
-}
-
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderBudget = renderBudget;
 })();
@@ -5920,8 +5592,6 @@ function buildTableHtml(evoIndex, dimension, years){
 
 function wireEvolution(evoIndex, dimension, years){
   const cfg = evoCfg();
-  const tableWrap = document.querySelector("#view-evolution .evo-table-wrap");
-  if(tableWrap) U.enableDragScroll(tableWrap);
 
   document.querySelectorAll("#evo-view-seg button").forEach(b=>{
     b.onclick = ()=>{
@@ -6138,6 +5808,288 @@ function openEvolutionTxnSheet(dimension, opts){
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderEvolution = renderEvolution;
+})();
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const ICONS = U.ICONS;
+
+/* ================= ONGLET RÉCURRENT ================= */
+/* Ne montre que les transactions dont la Remarque porte un suffixe de date transformée (YY-MM ou YYYY,
+   cf. computeTransform) — celles dont le mois calculé diffère du mois réel. Regroupées par Catégorie
+   (repliable/dépliable) puis, au sein de chaque catégorie, par nom de transaction sans la date (ordre
+   alphabétique). Colonnes : Total de la période, puis chaque mois ; les entrées "YYYY" (montant non réparti
+   sur l'année) apparaissent dans une colonne spéciale juste après décembre de cette année-là. Le filtre de
+   période porte uniquement sur le mois calculé (jamais le mois réel). Même format visuel que l'onglet
+   Évolution (tableau à colonnes figées, sections repliables, montants cliquables). */
+let recCollapsedSections = new Set();
+let recSeenSectionKeys = new Set();
+
+function recCfg(){ return Store.settings.recurrent; }
+
+/* Toujours 0 décimale, comme l'onglet Évolution */
+function recFmtVal(n){
+  if(n==null || isNaN(n)) n=0;
+  const sign = n>0 ? "+ " : (n<0 ? "- " : "");
+  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
+}
+function recValClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
+function recFmtYM(ym){
+  const parts = ym.split("-").map(Number);
+  return U.MONTHS_FR_SHORT[parts[1]-1] + " " + String(parts[0]).slice(2);
+}
+function recFmtYMLong(ym){
+  const parts = ym.split("-").map(Number);
+  return U.MONTHS_FR[parts[1]-1] + " " + parts[0];
+}
+
+/* Calcule par défaut la période la plus large couvrant toutes les transactions récurrentes existantes
+   (mois calculé), pour ne rien masquer au premier affichage. Les entrées "YYYY" sont ancrées sur décembre,
+   cohérent avec leur position de colonne juste après ce mois. */
+function ensureRecurrentPeriod(){
+  const cfg = recCfg();
+  if(cfg.periodFrom && cfg.periodTo) return;
+  let minYM=null, maxYM=null;
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    const tr = t.transform;
+    if(!tr || tr.mode==="same") return;
+    const ym = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (tr.year+"-12");
+    if(minYM==null || ym<minYM) minYM = ym;
+    if(maxYM==null || ym>maxYM) maxYM = ym;
+  });
+  const now = new Date();
+  const nowYM = now.getFullYear()+"-"+U.pad2(now.getMonth()+1);
+  cfg.periodFrom = minYM || nowYM;
+  cfg.periodTo = maxYM || nowYM;
+  Store.saveSettings();
+}
+
+function recPeriodPickerHtml(cfg){
+  return `
+    <div style="display:flex;align-items:center;gap:6px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 12px;box-shadow:var(--shadow-1);">
+      <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
+      <input type="month" id="rec-from" value="${cfg.periodFrom}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+      <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
+      <input type="month" id="rec-to" value="${cfg.periodTo}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+    </div>
+  `;
+}
+
+/* ---------------- Rendu principal ---------------- */
+function renderRecurrent(){
+  const view = document.getElementById("view-recurrent");
+  if(Store.transactions.length===0){
+    view.innerHTML = `<div class="section" style="padding-top:14px;"><div class="empty-state">${ICONS.inbox}<h3>Aucune donnée</h3><p>Importez vos données pour voir vos transactions récurrentes.</p></div></div>`;
+    return;
+  }
+  const cfg = recCfg();
+  ensureRecurrentPeriod();
+  const evoIndex = AGG.buildRecurringIndex(cfg.periodFrom, cfg.periodTo);
+  const cols = AGG.recurringColumns(evoIndex, cfg.periodFrom, cfg.periodTo);
+
+  // Toute nouvelle catégorie jamais rencontrée démarre repliée (comportement par défaut de l'onglet
+  // Évolution) ; l'état des catégories déjà vues (dépliées ou non) est conservé d'un rendu à l'autre.
+  evoIndex.sections.forEach(s=>{
+    if(!recSeenSectionKeys.has(s.key)){ recCollapsedSections.add(s.key); recSeenSectionKeys.add(s.key); }
+  });
+
+  const headerHtml = `
+    <div class="section" style="padding-top:14px;">
+      <div style="font-size:12px;color:var(--text-sub);line-height:1.4;margin:0 4px 12px;">
+        Transactions dont la remarque se termine par un mois (AA-MM) ou une année (AAAA) de rattachement — celles dont le mois calculé diffère du mois réel — groupées par catégorie.
+      </div>
+      ${recPeriodPickerHtml(cfg)}
+    </div>
+  `;
+
+  const tableHtml = evoIndex.sections.length===0
+    ? `<div class="empty-state" style="padding:32px 20px;">${ICONS.inbox}<h3>Aucune transaction récurrente</h3><p>Aucune remarque avec suffixe de date sur cette période.</p></div>`
+    : `<div class="evo-table-wrap">${buildRecurringTableHtml(evoIndex, cols)}</div>`;
+
+  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;">${tableHtml}</div><div style="height:10px;"></div>`;
+
+  wireRecurrent(evoIndex, cfg);
+}
+
+function buildRecurringTableHtml(evoIndex, cols){
+  const theadHtml = `
+    <thead><tr>
+      <th class="evo-col-label">Catégorie</th>
+      <th class="evo-col-total">Total</th>
+      ${cols.map(c=> c.type==="year"
+        ? `<th class="evo-col-val recur-year-col">${c.year}</th>`
+        : `<th class="evo-col-val">${recFmtYM(c.ym)}</th>`
+      ).join("")}
+    </tr></thead>
+  `;
+
+  const grandTotal = evoIndex.sections.reduce((s,sec)=> s+AGG.recurringSectionTotal(sec), 0);
+  const totalRowHtml = `
+    <tr class="evo-total-row">
+      <td class="evo-col-label">Total</td>
+      <td class="evo-col-total evo-val-cell ${recValClass(grandTotal)}" data-global="1">${grandTotal ? recFmtVal(grandTotal) : "—"}</td>
+      ${cols.map(c=>{
+        const v = c.type==="year"
+          ? evoIndex.sections.reduce((s,sec)=> s+AGG.recurringSectionYearLumpValue(sec,c.year), 0)
+          : evoIndex.sections.reduce((s,sec)=> s+AGG.recurringSectionMonthValue(sec,c.year,c.month), 0);
+        const colAttrs = c.type==="year" ? `data-col-type="year" data-year="${c.year}"` : `data-col-type="month" data-year="${c.year}" data-month="${c.month}"`;
+        const cls = c.type==="year" ? "recur-year-col" : "";
+        return `<td class="evo-col-val evo-val-cell ${cls} ${recValClass(v)}" data-global="1" ${colAttrs}>${v ? recFmtVal(v) : "—"}</td>`;
+      }).join("")}
+    </tr>
+  `;
+
+  const bodyRows = evoIndex.sections.map(sec=>{
+    const secTotal = AGG.recurringSectionTotal(sec);
+    const collapsed = recCollapsedSections.has(sec.key);
+    const secCells = cols.map(c=>{
+      const v = c.type==="year" ? AGG.recurringSectionYearLumpValue(sec,c.year) : AGG.recurringSectionMonthValue(sec,c.year,c.month);
+      const colAttrs = c.type==="year" ? `data-col-type="year" data-year="${c.year}"` : `data-col-type="month" data-year="${c.year}" data-month="${c.month}"`;
+      const cls = c.type==="year" ? "recur-year-col" : "";
+      return `<td class="evo-col-val evo-val-cell ${cls} ${recValClass(v)}" data-section="${U.escHtml(sec.key)}" ${colAttrs}>${v ? recFmtVal(v) : "—"}</td>`;
+    }).join("");
+    const secRow = `
+      <tr class="evo-section-row" data-section-toggle="${U.escHtml(sec.key)}">
+        <td class="evo-col-label"><span class="evo-chev ${collapsed?'':'open'}">▸</span>${U.escHtml(sec.label)}</td>
+        <td class="evo-col-total evo-val-cell ${recValClass(secTotal)}" data-section="${U.escHtml(sec.key)}">${secTotal ? recFmtVal(secTotal) : "—"}</td>
+        ${secCells}
+      </tr>
+    `;
+    const itemRows = sec.items.map(it=>{
+      const itTotal = AGG.recurringItemTotal(it);
+      const itCells = cols.map(c=>{
+        const v = c.type==="year" ? AGG.recurringItemYearLumpValue(it,c.year) : AGG.recurringItemMonthValue(it,c.year,c.month);
+        const colAttrs = c.type==="year" ? `data-col-type="year" data-year="${c.year}"` : `data-col-type="month" data-year="${c.year}" data-month="${c.month}"`;
+        const cls = c.type==="year" ? "recur-year-col" : "";
+        return `<td class="evo-col-val evo-val-cell ${cls} ${recValClass(v)}" data-section="${U.escHtml(sec.key)}" data-item="${U.escHtml(it.key)}" ${colAttrs}>${v ? recFmtVal(v) : "—"}</td>`;
+      }).join("");
+      return `
+      <tr class="evo-item-row${collapsed?' hidden':''}" data-section-key="${U.escHtml(sec.key)}">
+        <td class="evo-col-label" style="padding-left:22px;">${U.escHtml(it.label)}</td>
+        <td class="evo-col-total evo-val-cell ${recValClass(itTotal)}" data-section="${U.escHtml(sec.key)}" data-item="${U.escHtml(it.key)}">${itTotal ? recFmtVal(itTotal) : "—"}</td>
+        ${itCells}
+      </tr>`;
+    }).join("");
+    return secRow + itemRows;
+  }).join("");
+
+  return `<table class="evo-table">${theadHtml}<tbody>${totalRowHtml}${bodyRows}</tbody></table>`;
+}
+
+function wireRecurrent(evoIndex, cfg){
+  const fromInput = document.getElementById("rec-from");
+  const toInput = document.getElementById("rec-to");
+  if(fromInput) fromInput.onchange = (e)=>{
+    cfg.periodFrom = e.target.value || cfg.periodFrom;
+    if(cfg.periodFrom>cfg.periodTo) cfg.periodTo = cfg.periodFrom;
+    Store.saveSettings();
+    renderRecurrent();
+  };
+  if(toInput) toInput.onchange = (e)=>{
+    cfg.periodTo = e.target.value || cfg.periodTo;
+    if(cfg.periodTo<cfg.periodFrom) cfg.periodFrom = cfg.periodTo;
+    Store.saveSettings();
+    renderRecurrent();
+  };
+
+  document.querySelectorAll(".evo-section-row[data-section-toggle]").forEach(row=>{
+    row.querySelector(".evo-col-label").onclick = ()=>{
+      const key = row.dataset.sectionToggle;
+      if(recCollapsedSections.has(key)) recCollapsedSections.delete(key); else recCollapsedSections.add(key);
+      renderRecurrent();
+    };
+  });
+
+  document.querySelectorAll(".evo-val-cell").forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const opts = {};
+      if(el.dataset.global!=null) opts.global = true;
+      if(el.dataset.section!=null) opts.sectionKey = el.dataset.section;
+      if(el.dataset.item!=null) opts.itemKey = el.dataset.item;
+      if(el.dataset.colType!=null) opts.colType = el.dataset.colType;
+      if(el.dataset.year!=null) opts.year = Number(el.dataset.year);
+      if(el.dataset.month!=null) opts.month = Number(el.dataset.month);
+      openRecurringTxnSheet(opts);
+    };
+  });
+}
+
+/* ---------------- Feuille de détail transactions ---------------- */
+function txnMatchesRecurringTarget(t, opts, cfg){
+  if(t.type==="Transfer") return false;
+  const tr = t.transform;
+  if(!tr || tr.mode==="same") return false;
+  if(!opts.global){
+    const cat = t.categorie || "(Non renseigné)";
+    if(opts.sectionKey!=null && cat!==opts.sectionKey) return false;
+    if(opts.itemKey!=null){
+      const label = U.baseRemarque(t.remarque) || "(Sans titre)";
+      if(label!==opts.itemKey) return false;
+    }
+  }
+  if(opts.colType==="month") return tr.mode==="month" && tr.year===opts.year && tr.month===opts.month;
+  if(opts.colType==="year") return tr.mode==="yearsplit" && tr.year===opts.year;
+  // Colonne "Total" : même filtre de période que l'agrégation (mois calculé dans [periodFrom, periodTo])
+  if(tr.mode==="month"){
+    const ym = tr.year+"-"+U.pad2(tr.month+1);
+    return ym>=cfg.periodFrom && ym<=cfg.periodTo;
+  }
+  if(tr.mode==="yearsplit"){
+    const decYM = tr.year+"-12";
+    return decYM>=cfg.periodFrom && decYM<=cfg.periodTo;
+  }
+  return false;
+}
+function openRecurringTxnSheet(opts){
+  const cfg = recCfg();
+  const rows = [];
+  Store.transactions.forEach(t=>{
+    if(txnMatchesRecurringTarget(t, opts, cfg)) rows.push(t);
+  });
+  rows.sort((a,b)=> b.date-a.date);
+  const total = rows.reduce((s,t)=>s+t.montant,0);
+  const label = opts.itemKey || opts.sectionKey || "Total";
+  const periodLabel = opts.colType==="month" ? recFmtYMLong(opts.year+"-"+U.pad2(opts.month+1))
+    : opts.colType==="year" ? ("Année "+opts.year+" (montant non réparti)")
+    : (cfg.periodFrom===cfg.periodTo ? recFmtYMLong(cfg.periodFrom) : recFmtYM(cfg.periodFrom)+" → "+recFmtYM(cfg.periodTo));
+
+  const modal = document.getElementById("modal-detail");
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+      <button class="icon-btn" id="rectxn-close">${ICONS.close}</button>
+    </div>
+    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${recFmtVal(total)}</span>
+    </div>
+    <div style="max-height:56vh;overflow-y:auto;">
+      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
+      rows.map(t=>`
+        <div class="detail-row rectxn-row" data-txnid="${U.escHtml(t.id)}" style="align-items:center;cursor:pointer;">
+          <span style="display:flex;flex-direction:column;min-width:0;">
+            <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||"—")}</span>
+            <span style="font-size:11px;color:var(--text-sub);">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
+          </span>
+          <span style="font-weight:700;font-size:13.5px;color:${t.montant<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${recFmtVal(t.montant)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("rectxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.querySelectorAll(".rectxn-row[data-txnid]").forEach(el=>{
+    el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+  });
+  APP.openOverlay("overlay-detail");
+}
+
+window.__SF_VIEWS = window.__SF_VIEWS || {};
+window.__SF_VIEWS.renderRecurrent = renderRecurrent;
 })();
 (function(){
 "use strict";
