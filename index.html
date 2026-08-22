@@ -210,8 +210,6 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 @keyframes popin{from{transform:scale(.92);opacity:0;}to{transform:scale(1);opacity:1;}}
 
 /* ---------- Filter sheet content ---------- */
-.filter-group{margin-bottom:22px;}
-.filter-group h4{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sub);margin:0 0 10px;font-weight:700;}
 .chiprow{display:flex;flex-wrap:wrap;gap:8px;}
 .chip-opt{
   border:1.5px solid var(--divider);background:var(--card);color:var(--text);
@@ -257,13 +255,6 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:100px;font-size:13px;font-weight:700;color:var(--text-sub);cursor:pointer;}
 .seg-sm{padding:3px;}
 .seg-sm button{padding:6px 4px;font-size:11px;}
-.oneui-pill{
-  display:inline-flex;align-items:center;gap:6px;border:none;border-radius:100px;
-  padding:8px 14px 8px 16px;background:var(--primary);color:#fff;font-weight:800;
-  font-size:14px;cursor:pointer;max-width:100%;
-}
-.oneui-pill .pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.oneui-pill .pill-chev{flex:0 0 auto;opacity:.85;width:13px;height:13px;}
 .pill-toggle-wrap{display:flex;flex-wrap:wrap;gap:8px;}
 .pill-toggle{
   display:inline-flex;align-items:center;border:none;border-radius:100px;
@@ -284,7 +275,6 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .txn-view-pill .tvp-chev{width:12px;height:12px;color:var(--text-faint);}
 
 /* ---------- Transactions list ---------- */
-.txn-date-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:14px 4px 6px;text-transform:capitalize;}
 .txn-item{
   display:flex;align-items:stretch;background:var(--card);
   border-radius:var(--radius-md);box-shadow:var(--shadow-1);cursor:pointer;
@@ -299,26 +289,15 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .txn-band.inc{background:var(--income-soft);color:var(--income);}
 .txn-band.exp{background:var(--expense-soft);color:var(--expense);}
 .txn-band.trf{background:var(--transfer-soft);color:var(--transfer);}
-/* Icône ronde — utilisée uniquement par la fiche détail d'une transaction (la liste utilise .txn-band) */
-.txn-ico{
-  width:40px;height:40px;border-radius:50%;flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;
-}
-.txn-ico.inc{background:var(--income-soft);color:var(--income);}
-.txn-ico.exp{background:var(--expense-soft);color:var(--expense);}
-.txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
 .txn-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
 .txn-mid{flex:1;min-width:0;}
 .txn-title{font-size:13px;font-weight:700;line-height:1.3;white-space:normal;overflow-wrap:break-word;}
 .txn-sub{font-size:11px;line-height:1.25;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
 .txn-line{font-size:10.5px;line-height:1.25;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
-.txn-line .txn-line-tag{opacity:.6;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;margin-right:4px;}
 .txn-amt{font-size:13.5px;font-weight:800;flex:0 0 auto;text-align:right;}
 .txn-amt.inc{color:var(--income);}
 .txn-amt.exp{color:var(--expense);}
 .txn-amt.trf{color:var(--transfer);}
-
-.loadmore-wrap{display:flex;justify-content:center;margin-top:16px;}
 
 /* ---------- Onglet Évolution : tableau à colonnes figées (libellé + total) ---------- */
 .evo-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-lg);box-shadow:var(--shadow-1);background:var(--card);cursor:grab;user-select:none;}
@@ -370,7 +349,6 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .bg-detail-cell.clickable{cursor:pointer;}
 .evo-merge-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:100px;background:var(--card-alt);color:var(--text);}
 .evo-merge-chip button{border:none;background:none;padding:0;display:flex;color:var(--text-sub);cursor:pointer;}
-.evo-section-check{width:18px;height:18px;flex:0 0 auto;}
 
 /* ---------- Onglet Récurrent : colonne "année" spéciale (montant non réparti, placée après décembre) ---------- */
 .evo-col-val.recur-year-col{background:var(--primary-soft);}
@@ -385,31 +363,10 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .recur-table .evo-col-label{width:150px;min-width:150px;max-width:150px;white-space:normal;line-height:1.28;}
 .recur-table .evo-col-total{position:static;box-shadow:none;}
 
-/* ---------- Breakdown / evolution lists ---------- */
-.bd-row{display:flex;align-items:center;gap:12px;padding:11px 4px;}
-.bd-row + .bd-row{border-top:1px solid var(--divider);}
-.bd-dot{width:11px;height:11px;border-radius:4px;flex:0 0 auto;}
-.bd-name{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.bd-bar-wrap{position:relative;height:6px;background:var(--card-alt);border-radius:6px;margin-top:6px;overflow:hidden;}
-.bd-bar{position:absolute;left:0;top:0;bottom:0;border-radius:6px;}
-.bd-val{font-size:13.5px;font-weight:800;flex:0 0 auto;min-width:76px;text-align:right;}
-.bd-item{padding:6px 4px;}
-.bd-item + .bd-item{border-top:1px solid var(--divider);}
-
-.dimtabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;}
-.dimtabs button{
-  white-space:nowrap;border:none;background:var(--card-alt);color:var(--text-sub);
-  font-weight:700;font-size:13px;padding:9px 16px;border-radius:100px;cursor:pointer;flex:0 0 auto;
-}
-.dimtabs button.active{background:var(--primary);color:#fff;}
-
 details.card summary{list-style:none;}
 details.card summary::-webkit-details-marker{display:none;}
 details.card summary::after{content:"";width:9px;height:9px;border-right:2px solid var(--text-faint);border-bottom:2px solid var(--text-faint);transform:rotate(-45deg);transition:transform .15s;flex:0 0 auto;margin-left:4px;}
 details.card[open] summary::after{transform:rotate(45deg);}
-
-.chart-wrap{position:relative;height:230px;margin-top:6px;}
-.chart-wrap.tall{height:260px;}
 
 /* ---------- Account cards (même format que les lignes de l'onglet Transactions : bandeau
    acronyme + contenu compact, cf. .txn-item/.txn-band) ---------- */
@@ -428,7 +385,6 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .acc-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
 .acc-mid{flex:1;min-width:0;}
 .acc-name{font-weight:700;font-size:13.5px;}
-.acc-flows{font-size:11.5px;color:var(--text-sub);margin-top:2px;}
 .acc-bal{font-weight:800;font-size:14.5px;text-align:right;flex:0 0 auto;}
 
 /* ---------- Import ---------- */
@@ -471,6 +427,26 @@ details.card[open] summary::after{transform:rotate(45deg);}
   .app-title{font-size:26px;}
   .balance-hero .amount{font-size:33px;}
 }
+
+/* ---------- Classes utilitaires (factorisation de styles inline répétés — audit 2026.08.22) ---------- */
+.u-title-lg{font-weight:800;font-size:17px;}
+.u-row-between-sm{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.u-empty-note{padding:14px;color:var(--text-sub);font-size:13.5px;}
+.u-row-label{display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;}
+.u-subtitle{color:var(--text-sub);font-size:12.5px;margin-bottom:12px;}
+.u-scroll-56{max-height:56vh;overflow-y:auto;}
+.u-col-shrink{display:flex;flex-direction:column;min-width:0;}
+.u-tab-btn{flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;}
+.u-badge-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.u-row-gap10{display:flex;gap:10px;}
+.u-faint-fixed{color:var(--text-faint);flex:0 0 auto;}
+.u-row-between-md{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.u-title-md{margin:0 0 8px;font-size:18px;}
+.u-desc{font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;}
+.u-scroll-70{max-height:70vh;overflow-y:auto;}
+.u-note-11{font-size:11px;color:var(--text-sub);}
+.u-row-gap8-fixed{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
+.u-desc-sm{font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -479,7 +455,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.22.13.14";
+const APP_VERSION = "v 2026.08.22.09.50";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -505,7 +481,6 @@ const ICONS = {
   inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
   arrowLeft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>',
-  more:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
   budget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
@@ -2397,9 +2372,9 @@ function openOverlay(id){ document.getElementById(id).classList.add("open"); }
 function confirmAction(opts){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 style="margin:0 0 8px;font-size:18px;">${U.escHtml(opts.title||"Confirmer ?")}</h3>
-    ${opts.text ? `<p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">${U.escHtml(opts.text)}</p>` : `<div style="margin-bottom:10px;"></div>`}
-    <div style="display:flex;gap:10px;">
+    <h3 class="u-title-md">${U.escHtml(opts.title||"Confirmer ?")}</h3>
+    ${opts.text ? `<p class="u-desc">${U.escHtml(opts.text)}</p>` : `<div style="margin-bottom:10px;"></div>`}
+    <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="confirmaction-cancel">${U.escHtml(opts.cancelLabel||"Annuler")}</button>
       <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="confirmaction-ok">${U.escHtml(opts.confirmLabel||"Supprimer")}</button>
     </div>
@@ -2547,14 +2522,6 @@ function wireEmptyState(container){
 
 /* Classe couleur (inc/exp/trf) du bandeau vertical / montant, selon le type de transaction */
 function txnTypeClass(t){ return t.type==="Income"?"inc":(t.type==="Transfer"?"trf":"exp"); }
-function txnAmtClass(t){ return txnTypeClass(t); }
-/* Icône lettre + classe — utilisée par la fiche détail d'une transaction (pas par la liste, qui utilise
-   désormais le bandeau vertical avec l'acronyme du compte). */
-function txnIconInfo(t){
-  if(t.type==="Income") return {cls:"inc", letter:(t.categorie||"R")[0].toUpperCase()};
-  if(t.type==="Transfer") return {cls:"trf", letter:"⇄"};
-  return {cls:"exp", letter:(t.categorie||"D")[0].toUpperCase()};
-}
 function txnTitle(t){
   if(t.remarque) return t.remarque;
   if(t.type==="Transfer") return "Transfert "+t.compte+" → "+t.compteCible;
@@ -2848,7 +2815,6 @@ const TAP_CHEVRON = `<span style="color:var(--text-faint);display:inline-flex;ve
 
 function openTxnDetail(id){ renderTxnDetail(id, null); }
 function openTxnNew(){ renderTxnDetail(null, null); }
-function openTxnForm(id){ renderTxnDetail(id, null); } // alias conservé (compat)
 function openTxnEdit(id){ renderTxnDetail(id, null); } // alias conservé (compat)
 
 function renderTxnDetail(id, seed){
@@ -2910,7 +2876,7 @@ function renderTxnDetail(id, seed){
 
     modal.innerHTML = `
       <div style="display:flex;justify-content:${isNew?'space-between':'flex-end'};align-items:center;margin-bottom:2px;">
-        ${isNew?`<span style="font-weight:800;font-size:17px;">Nouvelle transaction</span>`:""}
+        ${isNew?`<span class="u-title-lg">Nouvelle transaction</span>`:""}
         <button class="icon-btn" id="td-close">${ICONS.close}</button>
       </div>
 
@@ -3254,12 +3220,6 @@ function openInlineEditor(opts){
   APP.openOverlay("overlay-confirm");
 }
 
-function categorieList(){
-  const items = AGG.distinctValuesCategorieSorted(Store.transactions); // [{value,count,kind}]
-  const inc = items.filter(i=>i.kind==="Income").map(i=>i.value);
-  const exp = items.filter(i=>i.kind==="Expense").map(i=>i.value);
-  return inc.concat(exp); // Revenus d'abord, puis Dépenses (groupement déjà assuré par le tri)
-}
 /* Hiérarchie pour le picker Catégorie de la fiche transaction : groupée par type (Revenus/Dépenses),
    toujours dans cet ordre (jamais alphabétique) — d'où `preSorted`, cf. renderPickerList. Une catégorie a
    toujours un type, il n'y a donc jamais d'entrée "dégroupée" (flat vide). */
@@ -3276,7 +3236,7 @@ function categoriePickerHierarchy(){
 function fieldPickerBtnHtml(id, label, currentValue){
   return `<button type="button" class="search-mini" id="${id}" style="margin:0;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">
     <span id="${id}-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${currentValue?'':'color:var(--text-faint);'}">${U.escHtml(currentValue||label)}</span>
-    <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(-90deg);width:15px;height:15px;" ')}</span>
+    <span class="u-faint-fixed">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(-90deg);width:15px;height:15px;" ')}</span>
   </button>`;
 }
 
@@ -3476,8 +3436,8 @@ function openAccountTypeReorderSheet(currentTypes){
   function render(){
     const modal = document.getElementById("modal-detail");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Réorganiser les groupes</span>
+      <div class="u-row-between-md">
+        <span class="u-title-lg">Réorganiser les groupes</span>
         <button class="icon-btn" id="acctreorder-close">${ICONS.close}</button>
       </div>
       <div style="max-height:60vh;overflow-y:auto;">
@@ -3549,11 +3509,11 @@ function openCustomBalancesSheet(balances){
     const modal = document.getElementById("modal-detail");
     const prevScroll = modal.scrollTop;
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Soldes personnalisés</span>
+      <div class="u-row-between-md">
+        <span class="u-title-lg">Soldes personnalisés</span>
         <button class="icon-btn" id="custombal-close">${ICONS.close}</button>
       </div>
-      <div style="max-height:70vh;overflow-y:auto;">
+      <div class="u-scroll-70">
         <div style="font-size:11px;color:var(--text-sub);margin-bottom:16px;line-height:1.4;">Affichez jusqu'à 2 soldes supplémentaires, calculés sur une sélection de comptes, à côté du solde total. Laissez le titre vide pour ne pas afficher un solde.</div>
         ${slots.map((s,i)=>`
           <div style="${i===0?'margin-bottom:24px;':''}">
@@ -3805,14 +3765,6 @@ function salaryEntryFor(monthKey){
     moi: (e && e.moi!=null && e.moi!=="") ? Number(e.moi) : null,
     femme: (e && e.femme!=null && e.femme!=="") ? Number(e.femme) : null
   };
-}
-/* Montant total "utilisé" pour la catégorie Salaire sur un mois donné, selon le scope courant :
-   - Couple : salaire de ma femme (saisi, 0 par défaut si rien saisi) + le mien.
-   - Perso : le mien uniquement. Pas de multiplication ×2 : le total couple additionne déjà les deux
-     salaires réels. */
-function salaryMonthTotal(superGroupeName, catKey, monthKey){
-  const b = salaryMonthBreakdown(superGroupeName, catKey, monthKey);
-  return b.total;
 }
 /* Décomposition Brut / Ajout du montant "utilisé" pour la catégorie Salaire sur un mois donné :
    - Le salaire de "Ma femme" (saisie manuelle, 0 par défaut si rien saisi) est entièrement considéré
@@ -4302,9 +4254,9 @@ function periodPickerHtml(){
   return `
     <div style="display:flex;align-items:center;gap:6px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 14px;box-shadow:var(--shadow-1);">
       <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
-      <input type="month" id="bg-from" value="${periodFrom}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
-      <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
-      <input type="month" id="bg-to" value="${periodTo}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+      <input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
+      <span class="u-faint-fixed">→</span>
+      <input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
     </div>
   `;
 }
@@ -4329,9 +4281,9 @@ function compareSettingsHtml(){
       <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Même groupe(s), même mode, même vue et mêmes réglages d'amortissement que le scénario principal — seule la période ci-dessous change librement. ${cfg.displayMode==='moyenne'?'Vue Moyenne/mois : les deux périodes sont comparées en moyenne mensuelle.':'Vue Total : les deux périodes sont comparées en totaux.'}</div>
       <div style="display:flex;align-items:center;gap:6px;background:var(--card-alt);border-radius:100px;padding:7px 8px 7px 16px;">
         <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période comparée</span>
-        <input type="month" id="bg-cmp-from" value="${cmp.periodFrom||''}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
-        <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
-        <input type="month" id="bg-cmp-to" value="${cmp.periodTo||''}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+        <input type="month" id="bg-cmp-from" value="${cmp.periodFrom||''}" class="u-tab-btn">
+        <span class="u-faint-fixed">→</span>
+        <input type="month" id="bg-cmp-to" value="${cmp.periodTo||''}" class="u-tab-btn">
       </div>
     ` : `
       <div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Montants mensuels saisis à la main, par catégorie et pour l'ensemble des voyages. ${cfg.displayMode==='moyenne'?'Vue Moyenne/mois : utilisés tels quels.':'Vue Total : multipliés par le nombre de mois effectifs de chaque groupe sur la période affichée.'}</div>
@@ -4385,11 +4337,11 @@ function openCompareSheet(){
     const modal = document.getElementById("modal-detail");
     const prevScroll = modal.scrollTop;
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Comparaison</span>
+      <div class="u-row-between-md">
+        <span class="u-title-lg">Comparaison</span>
         <button class="icon-btn" id="cmpsheet-close">${ICONS.close}</button>
       </div>
-      <div style="max-height:70vh;overflow-y:auto;">${compareSettingsHtml()}</div>
+      <div class="u-scroll-70">${compareSettingsHtml()}</div>
     `;
     modal.scrollTop = prevScroll;
     document.getElementById("cmpsheet-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
@@ -4428,15 +4380,15 @@ function openPredefinedBudgetSheet(){
         </div>`;
     }).join("");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">Budget prédéfini</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">Budget prédéfini</span>
         <button class="icon-btn" id="pbf-close">${ICONS.close}</button>
       </div>
       <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
         Montant mensuel par catégorie, et un montant mensuel unique "Voyages" couvrant l'ensemble des voyages du groupe (sans distinction entre eux). Les totaux du groupe, de Revenus/Dépenses/Voyages et du grand total sont toujours la somme de ces lignes. Laisser vide pour ne pas comparer cette ligne (0 €).
       </div>
       <div style="max-height:60vh;overflow-y:auto;">
-        ${groupsHtml || `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Choisissez d'abord un groupe principal.</div>`}
+        ${groupsHtml || `<div class="u-empty-note">Choisissez d'abord un groupe principal.</div>`}
       </div>
     `;
     document.getElementById("pbf-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
@@ -4464,7 +4416,7 @@ function amortSettingsHtml(){
   const months = monthsInRange(periodFrom, periodTo);
   const computedPeriod = computeAmortPeriodMonths(months);
   return `
-    <div style="display:flex;gap:10px;">
+    <div class="u-row-gap10">
       <div style="flex:1;min-width:0;">
         <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Mois de début</div>
         <input type="month" class="search-mini" id="bg-startmonth" value="${U.escHtml(cfg.startMonth||'')}" style="margin:0;">
@@ -4518,11 +4470,11 @@ function openAmortSheet(){
     const modal = document.getElementById("modal-detail");
     const prevScroll = modal.scrollTop;
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Amortissement</span>
+      <div class="u-row-between-md">
+        <span class="u-title-lg">Amortissement</span>
         <button class="icon-btn" id="amortsheet-close">${ICONS.close}</button>
       </div>
-      <div style="max-height:70vh;overflow-y:auto;">${amortSettingsHtml()}</div>
+      <div class="u-scroll-70">${amortSettingsHtml()}</div>
     `;
     modal.scrollTop = prevScroll;
     document.getElementById("amortsheet-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
@@ -4539,7 +4491,7 @@ function accountExcludeHtml(){
   const cfg = Store.settings.budget;
   const accounts = AGG.distinctValues(Store.transactions, "compte").map(a=>a.value).sort((a,b)=>a.localeCompare(b,'fr'));
   const excluded = new Set(cfg.excludedAccounts||[]);
-  if(!accounts.length) return `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun compte.</div>`;
+  if(!accounts.length) return `<div class="u-empty-note">Aucun compte.</div>`;
   return `
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:10px;line-height:1.4;">Les transactions des comptes sélectionnés sont totalement ignorées dans le Budget (cartes, catégories, voyages, amortissement, salaire).</div>
     ${pillToggleListHtml(accounts, excluded, "a", "bg-acctexcl-item")}
@@ -4565,11 +4517,11 @@ function openAccountExcludeSheet(){
     const modal = document.getElementById("modal-detail");
     const prevScroll = modal.scrollTop;
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <span style="font-weight:800;font-size:17px;">Comptes exclus</span>
+      <div class="u-row-between-md">
+        <span class="u-title-lg">Comptes exclus</span>
         <button class="icon-btn" id="acctsheet-close">${ICONS.close}</button>
       </div>
-      <div style="max-height:70vh;overflow-y:auto;">${accountExcludeHtml()}</div>
+      <div class="u-scroll-70">${accountExcludeHtml()}</div>
     `;
     modal.scrollTop = prevScroll;
     document.getElementById("acctsheet-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
@@ -4589,42 +4541,20 @@ function adjustmentsInPeriod(){
   // mois d'origine tombe dans la période affichée.
   return (cfg.adjustments||[]).map((a,i)=>Object.assign({__idx:i}, a)).filter(a=>monthSet.has(a.month) || a.amorti);
 }
-function adjustmentsSectionHtml(){
-  const inPeriod = adjustmentsInPeriod();
-  if(inPeriod.length){
-    return `
-      <button type="button" class="btn btn-ghost btn-block" id="bg-adj-btn" style="margin:0 4px 14px;display:flex;justify-content:center;align-items:center;gap:8px;">
-        <span>${inPeriod.length} ajustement${inPeriod.length>1?"s":""}</span>
-        <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--primary-soft);color:var(--primary);font-weight:900;font-size:14px;">+</span>
-      </button>`;
-  }
-  return `
-    <button type="button" class="btn btn-ghost btn-block" id="bg-adj-btn" style="margin:0 4px 14px;">${ICONS.plus} Ajouter un ajustement</button>`;
-}
-function wireAdjustmentsSection(){
-  const btn = document.getElementById("bg-adj-btn");
-  if(!btn) return;
-  btn.onclick = ()=>{
-    const inPeriod = adjustmentsInPeriod();
-    if(inPeriod.length) openAdjustmentsListSheet();
-    else openAdjustmentForm(null);
-  };
-}
-
 /* Liste des ajustements de la période, au format transaction */
 function openAdjustmentsListSheet(){
   const items = adjustmentsInPeriod().sort((a,b)=> (b.month||"").localeCompare(a.month||""));
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <span style="font-weight:800;font-size:17px;">Ajustements</span>
+    <div class="u-row-between-sm">
+      <span class="u-title-lg">Ajustements</span>
       <button class="icon-btn" id="adjlist-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${items.length} élément${items.length>1?"s":""} (période affichée + amortis sur toute la période)</div>
-    <div style="max-height:56vh;overflow-y:auto;">
+    <div class="u-subtitle">${items.length} élément${items.length>1?"s":""} (période affichée + amortis sur toute la période)</div>
+    <div class="u-scroll-56">
       ${items.map(a=>`
         <div class="detail-row bg-adjlist-row" data-idx="${a.__idx}" style="align-items:center;cursor:pointer;">
-          <span style="display:flex;flex-direction:column;min-width:0;">
+          <span class="u-col-shrink">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(a.remarque||"Ajustement")}</span>
             <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(a.groupe||"")}${a.categorie?" · "+U.escHtml(a.categorie):""} · ${U.escHtml(a.month||"")}${a.amorti?" · amorti":""} · saisi ${a.montantScope==="both"?"Les deux":(a.montantScope==="couple"?"Couple":"Perso")}${a.montantViewOnly&&a.montantScope!=="both"?" (uniquement cette vue)":""}</span>
           </span>
@@ -4658,7 +4588,7 @@ function openAdjustmentForm(adj, prefill){
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <span style="font-weight:800;font-size:17px;">${isEdit?"Modifier l'ajustement":"Nouvel ajustement"}</span>
+      <span class="u-title-lg">${isEdit?"Modifier l'ajustement":"Nouvel ajustement"}</span>
       <button class="icon-btn" id="adjf-close">${ICONS.close}</button>
     </div>
     <div class="daterange" style="margin-bottom:10px;">
@@ -4697,7 +4627,7 @@ function openAdjustmentForm(adj, prefill){
     <div style="font-size:12px;color:var(--text-sub);margin-bottom:18px;line-height:1.4;">
       Si activé : le montant saisi est ajouté tel quel sur le mois choisi (ex. +1000 € pour annuler une dépense ponctuelle de 1000 €), et son opposé (ex. -1000 €) est lissé sur chaque mois de la période d'amortissement définie dans les paramètres du budget.
     </div>
-    <div style="display:flex;gap:10px;">
+    <div class="u-row-gap10">
       ${isEdit ? `<button class="btn btn-ghost" id="adjf-delete" style="color:var(--expense);">${ICONS.trash}</button>` : ""}
       <button class="btn btn-primary" id="adjf-save" style="flex:1;">Enregistrer</button>
     </div>
@@ -5490,25 +5420,25 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
     const modal = document.getElementById("modal-detail");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${U.escHtml(catKey)}</span>
         <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="u-subtitle">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div class="u-badge-row">
         <span class="cattxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="cattxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
         ${adjTotal!==0 ? `<span class="cattxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
       </div>
-      <div style="max-height:56vh;overflow-y:auto;">
-        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
+      <div class="u-scroll-56">
+        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
         shown.map((x,i)=>`
           <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span style="display:flex;flex-direction:column;min-width:0;">
+            <span class="u-col-shrink">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · "+windowN+"/"+periodMonths+" mois":""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
+              <span class="u-note-11">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · "+windowN+"/"+periodMonths+" mois":""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+            <span class="u-row-gap8-fixed">
               ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
               <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
               <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
@@ -5587,8 +5517,8 @@ function openSalaryEditor(superGroupeName, catKey){
         </div>`;
     }).join("");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${U.escHtml(catKey)}</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${U.escHtml(catKey)}</span>
         <button class="icon-btn" id="salf-close">${ICONS.close}</button>
       </div>
       <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:10px;">${U.escHtml(superGroupeName)} · saisie manuelle · vue ${cfg.scope==="couple"?"Couple":"Perso"}</div>
@@ -5720,25 +5650,25 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
     const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
     const modal = document.getElementById("modal-detail");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${U.escHtml(label)}</span>
         <button class="icon-btn" id="voytxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="u-subtitle">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div class="u-badge-row">
         <span class="voytxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="voytxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
         ${adjTotal!==0 ? `<span class="voytxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
       </div>
-      <div style="max-height:56vh;overflow-y:auto;">
-        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
+      <div class="u-scroll-56">
+        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
         shown.map((x,i)=>`
           <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
-            <span style="display:flex;flex-direction:column;min-width:0;">
+            <span class="u-col-shrink">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);">${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
+              <span class="u-note-11">${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+            <span class="u-row-gap8-fixed">
               <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
               <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
             </span>
@@ -5898,26 +5828,26 @@ function openGroupTypeTxnSheet(superGroupeNames, type, opts){
     const bg = type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)";
     const modal = document.getElementById("modal-detail");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${label}</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${label}</span>
         <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="u-subtitle">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div class="u-badge-row">
         <span class="grptxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="grptxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
         ${adjTotal!==0 ? `<span class="grptxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
         <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${bgFmtMoneySigned(total)}</span>
       </div>
-      <div style="max-height:56vh;overflow-y:auto;">
-        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
+      <div class="u-scroll-56">
+        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
         shown.map(x=>`
           <div class="detail-row grptxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span style="display:flex;flex-direction:column;min-width:0;">
+            <span class="u-col-shrink">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
               <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+            <span class="u-row-gap8-fixed">
               ${(x.kind==="reel" && x.catKey && x.matchedName===mainGroup) ? `<button type="button" class="btn btn-ghost btn-sm grptxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-groupe="${U.escHtml(x.matchedName)}" data-cat="${U.escHtml(x.catKey)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
               <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
               <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
@@ -5997,26 +5927,26 @@ function openGroupMonthTxnSheet(superGroupeNames, monthKey){
     const color = total<0 ? "var(--expense)" : "var(--income)";
     const modal = document.getElementById("modal-detail");
     modal.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${U.escHtml(label)}</span>
         <button class="icon-btn" id="grpmonth-close">${ICONS.close}</button>
       </div>
-      <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="u-subtitle">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div class="u-badge-row">
         <span class="grpmonth-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
         ${amortTotal!==0 ? `<span class="grpmonth-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
         ${adjTotal!==0 ? `<span class="grpmonth-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
         <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:${color};">Total : ${bgFmtMoneySigned(total)}</span>
       </div>
-      <div style="max-height:56vh;overflow-y:auto;">
-        ${shown.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucun élément${filterKind?" pour ce filtre":""} sur ce mois.</div>` :
+      <div class="u-scroll-56">
+        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur ce mois.</div>` :
         shown.map(x=>`
           <div class="detail-row grpmonth-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span style="display:flex;flex-direction:column;min-width:0;">
+            <span class="u-col-shrink">
               <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
               <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
             </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;">
+            <span class="u-row-gap8-fixed">
               <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
               <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
             </span>
@@ -6078,12 +6008,6 @@ function fmtVal(n){
   const sign = n>0 ? "+ " : (n<0 ? "- " : "");
   return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
 }
-function fmtValPlain(n){
-  if(n==null || isNaN(n)) n=0;
-  const sign = n<0 ? "-" : "";
-  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
-}
-
 function valClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
 
 /* ---------------- Rendu principal ---------------- */
@@ -6401,21 +6325,21 @@ function openEvolutionTxnSheet(dimension, opts){
 
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+    <div class="u-row-between-sm">
+      <span class="u-title-lg">${U.escHtml(label)}</span>
       <button class="icon-btn" id="evotxn-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <div class="u-subtitle">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
+    <div class="u-badge-row">
       <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${fmtVal(total)}</span>
     </div>
-    <div style="max-height:56vh;overflow-y:auto;">
-      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
+    <div class="u-scroll-56">
+      ${rows.length===0 ? `<div class="u-empty-note">Aucune transaction.</div>` :
       rows.map(({t,amt})=>`
         <div class="detail-row evotxn-row" data-txnid="${U.escHtml(t.id)}" style="align-items:center;cursor:pointer;">
-          <span style="display:flex;flex-direction:column;min-width:0;">
+          <span class="u-col-shrink">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||(t.type==="Transfer"?(t.compte+" → "+t.compteCible):"—"))}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
+            <span class="u-note-11">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
           </span>
           <span style="font-weight:700;font-size:13.5px;color:${amt<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${fmtVal(amt)}</span>
         </div>
@@ -6498,9 +6422,9 @@ function recPeriodPickerHtml(cfg){
   return `
     <div style="display:flex;align-items:center;gap:6px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 12px;box-shadow:var(--shadow-1);">
       <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
-      <input type="month" id="rec-from" value="${cfg.periodFrom}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
-      <span style="color:var(--text-faint);flex:0 0 auto;">→</span>
-      <input type="month" id="rec-to" value="${cfg.periodTo}" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;">
+      <input type="month" id="rec-from" value="${cfg.periodFrom}" class="u-tab-btn">
+      <span class="u-faint-fixed">→</span>
+      <input type="month" id="rec-to" value="${cfg.periodTo}" class="u-tab-btn">
     </div>
   `;
 }
@@ -6711,21 +6635,21 @@ function openRecurringTxnSheet(opts){
 
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <span style="font-weight:800;font-size:17px;">${U.escHtml(label)}</span>
+    <div class="u-row-between-sm">
+      <span class="u-title-lg">${U.escHtml(label)}</span>
       <button class="icon-btn" id="rectxn-close">${ICONS.close}</button>
     </div>
-    <div style="color:var(--text-sub);font-size:12.5px;margin-bottom:12px;">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <div class="u-subtitle">${U.escHtml(periodLabel)} · ${rows.length} transaction${rows.length>1?"s":""}</div>
+    <div class="u-badge-row">
       <span style="font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:var(--primary);">Total : ${recFmtVal(total)}</span>
     </div>
-    <div style="max-height:56vh;overflow-y:auto;">
-      ${rows.length===0 ? `<div style="padding:14px;color:var(--text-sub);font-size:13.5px;">Aucune transaction.</div>` :
+    <div class="u-scroll-56">
+      ${rows.length===0 ? `<div class="u-empty-note">Aucune transaction.</div>` :
       rows.map(t=>`
         <div class="detail-row rectxn-row" data-txnid="${U.escHtml(t.id)}" style="align-items:center;cursor:pointer;">
-          <span style="display:flex;flex-direction:column;min-width:0;">
+          <span class="u-col-shrink">
             <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--divider);">${U.escHtml(t.remarque||t.categorie||"—")}</span>
-            <span style="font-size:11px;color:var(--text-sub);">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
+            <span class="u-note-11">${U.fmtDateShort(t.date)}${t.groupe?" · "+U.escHtml(t.groupe):""}</span>
           </span>
           <span style="font-weight:700;font-size:13.5px;color:${t.montant<0?'var(--expense)':'var(--income)'};flex:0 0 auto;">${recFmtVal(t.montant)}</span>
         </div>
@@ -7961,9 +7885,9 @@ function openExportScopeChoice(title, onConfirm){
 function confirmResetAll(){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 style="margin:0 0 8px;font-size:18px;">Réinitialiser toutes les données ?</h3>
-    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Cette action supprimera définitivement les ${Store.transactions.length.toLocaleString('fr-FR')} transactions enregistrées sur cet appareil. Pensez à exporter une sauvegarde avant si besoin.</p>
-    <div style="display:flex;gap:10px;">
+    <h3 class="u-title-md">Réinitialiser toutes les données ?</h3>
+    <p class="u-desc">Cette action supprimera définitivement les ${Store.transactions.length.toLocaleString('fr-FR')} transactions enregistrées sur cet appareil. Pensez à exporter une sauvegarde avant si besoin.</p>
+    <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="reset-cancel">Annuler</button>
       <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="reset-confirm">Supprimer</button>
     </div>
@@ -7988,34 +7912,34 @@ function renderMenuSheet(){
     <div class="sheet-body">
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-import" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.upload} Importer des données</span>
+          <span class="u-row-label">${ICONS.upload} Importer des données</span>
         </div>
         <div class="rowline" id="menu-export-xlsx" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.download} Exporter en Excel (.xlsx)</span>
+          <span class="u-row-label">${ICONS.download} Exporter en Excel (.xlsx)</span>
         </div>
         <div class="rowline" id="menu-export" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.download} Exporter une sauvegarde (.json)</span>
+          <span class="u-row-label">${ICONS.download} Exporter une sauvegarde (.json)</span>
         </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Synchronisation</div>
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-sync" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.cloud} Sauvegarde GitHub Gist</span>
+          <span class="u-row-label">${ICONS.cloud} Sauvegarde GitHub Gist</span>
         </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Paramètres</div>
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-groupmgr" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.pie} Gérer les groupes</span>
+          <span class="u-row-label">${ICONS.pie} Gérer les groupes</span>
         </div>
         <div class="rowline" id="menu-personmgr" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.list} Gérer les personnes</span>
+          <span class="u-row-label">${ICONS.list} Gérer les personnes</span>
         </div>
         <div class="rowline" id="menu-catmgr" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.trend} Gérer les catégories</span>
+          <span class="u-row-label">${ICONS.trend} Gérer les catégories</span>
         </div>
         <div class="rowline" id="menu-accttype" style="cursor:pointer;">
-          <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;">${ICONS.wallet} Gérer les types de compte</span>
+          <span class="u-row-label">${ICONS.wallet} Gérer les types de compte</span>
         </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Données</div>
@@ -8325,8 +8249,8 @@ function showConflictModal(c, localPayload, localHash, remotePayload){
   const rd = remotePayload.exportedAt ? new Date(remotePayload.exportedAt) : null;
   const remoteTxt = rd ? (U.fmtDateShort(rd)+" à "+U.pad2(rd.getHours())+":"+U.pad2(rd.getMinutes())) : "date inconnue";
   modal.innerHTML = `
-    <h3 style="margin:0 0 8px;font-size:18px;">Modifications des deux côtés</h3>
-    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Cet appareil et le Gist ont chacun des changements depuis la dernière synchronisation (dernière écriture du Gist : ${remoteTxt}). Choisissez lequel garder — l'autre sera écrasé.</p>
+    <h3 class="u-title-md">Modifications des deux côtés</h3>
+    <p class="u-desc">Cet appareil et le Gist ont chacun des changements depuis la dernière synchronisation (dernière écriture du Gist : ${remoteTxt}). Choisissez lequel garder — l'autre sera écrasé.</p>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn btn-primary btn-block" id="conflict-keep-local">Garder cet appareil</button>
       <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser le Gist</button>
@@ -8371,9 +8295,9 @@ function showConflictModal(c, localPayload, localHash, remotePayload){
 function confirmPull(){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 style="margin:0 0 8px;font-size:18px;">Forcer la récupération depuis GitHub Gist ?</h3>
-    <p style="font-size:13.5px;color:var(--text-sub);line-height:1.5;margin:0 0 18px;">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt le bouton "Synchroniser" ci-dessus, qui gère les deux sens automatiquement.</p>
-    <div style="display:flex;gap:10px;">
+    <h3 class="u-title-md">Forcer la récupération depuis GitHub Gist ?</h3>
+    <p class="u-desc">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt le bouton "Synchroniser" ci-dessus, qui gère les deux sens automatiquement.</p>
+    <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="syncpull-cancel">Annuler</button>
       <button class="btn btn-primary" style="flex:1;" id="syncpull-confirm">Récupérer</button>
     </div>
@@ -8395,11 +8319,6 @@ function statusMeta(){
     synced: {label:"Synchronisé", color:"var(--income)"},
     unsynced: {label:"Modifications non synchronisées", color:"var(--expense)"}
   }[st];
-}
-
-function maskToken(t){
-  if(!t) return "";
-  return t.length<=6 ? "••••••" : t.slice(0,4) + "•".repeat(Math.max(4,t.length-8)) + t.slice(-4);
 }
 
 function renderSyncSheet(){
@@ -8424,7 +8343,7 @@ function renderSyncSheet(){
       <button class="btn btn-primary btn-block" id="sync-smart" style="margin-top:16px;">${ICONS.refreshCw} Synchroniser</button>
       ${!c.gistId ? `<div class="import-summary" style="margin-top:10px;">Aucun Gist enregistré pour l'instant : "Synchroniser" en créera un nouveau (secret) et mémorisera son ID automatiquement.</div>` : `
       <div class="field-label" style="margin-top:18px;">Actions manuelles (forcent un sens sans vérifier l'autre)</div>
-      <div style="display:flex;gap:10px;">
+      <div class="u-row-gap10">
         <button class="btn btn-ghost" style="flex:1;" id="sync-pull">${ICONS.download} Forcer récupération</button>
         <button class="btn btn-ghost" style="flex:1;" id="sync-push">${ICONS.upload} Forcer sauvegarde</button>
       </div>`}` : ""}
@@ -8548,7 +8467,7 @@ function createAliasManager(cfg){
     }
     return `<div class="check-item groupe-child-item" data-base="${U.escHtml(realBase)}" data-full="${U.escHtml(b.base)}" style="cursor:pointer;">
       <span class="lbl">${kindIconHtml(b.base)}${U.escHtml(b.base)} <span class="cnt" style="margin-left:6px;">${b.count}</span></span>
-      <span style="color:var(--text-faint);flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
+      <span class="u-faint-fixed">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);width:16px;height:16px;" ')}</span>
     </div>`;
   }
 
@@ -8599,7 +8518,7 @@ function createAliasManager(cfg){
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
       <div class="sheet-body">
-        <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">${cfg.helpText}</div>
+        <div class="u-desc-sm">${cfg.helpText}</div>
         ${viewToggleHtml()}
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <input type="text" class="search-mini" id="am-search" style="margin-bottom:0;flex:1;" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
@@ -8927,7 +8846,7 @@ function createAliasManager(cfg){
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
       <div class="sheet-body">
-        <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+        <div class="u-desc-sm">
           Toutes les règles enregistrées. Modifiez ou supprimez librement, ou ajoutez-en de nouvelles, puis enregistrez.
           ${occurrenceRulesCount ? ` ${occurrenceRulesCount} règle${occurrenceRulesCount>1?"s":""} propre${occurrenceRulesCount>1?"s":""} à une occurrence datée précise ${occurrenceRulesCount>1?"ne sont":"n'est"} pas modifiable${occurrenceRulesCount>1?"s":""} ici (pour ne jamais risquer de la transformer en règle globale) — utilisez « Par ${cfg.superLabel} » pour ces occurrences.` : ""}
         </div>
@@ -9033,7 +8952,7 @@ function renderAcctType(){
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Types de compte</h2><button class="icon-btn" id="at-close">${ICONS.close}</button></div>
     <div class="sheet-body">
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+      <div class="u-desc-sm">
         Indiquez le type de chaque compte (Courant, Épargne, ou un autre type de votre choix) — utilisé pour regrouper vos comptes dans les listes — ainsi qu'un acronyme court, affiché en badge sur chaque transaction dans l'onglet Transactions (par défaut, dérivé automatiquement des initiales du nom).
       </div>
       <datalist id="at-type-list">${typeOptions.map(t=>`<option value="${U.escHtml(t)}">`).join("")}</datalist>
@@ -9138,7 +9057,7 @@ function renderCatMgr(){
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Gérer les catégories</h2><button class="icon-btn" id="cm-close">${ICONS.close}</button></div>
     <div class="sheet-body">
-      <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:10px;line-height:1.5;">
+      <div class="u-desc-sm">
         Une catégorie est classée Revenus ou Dépenses automatiquement selon vos transactions. Sélectionnez-en plusieurs pour forcer manuellement leur classement (utile pour l'affichage groupé Revenus/Dépenses).
       </div>
       <div style="display:flex;gap:8px;margin-bottom:10px;">
