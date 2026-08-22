@@ -455,7 +455,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.22.09.50";
+const APP_VERSION = "v 2026.08.22.10.34";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2223,7 +2223,7 @@ function recurringColumns(evoIndex, periodFrom, periodTo){
 }
 
 window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
-  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
+  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, distinctFullGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
   getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
@@ -8416,11 +8416,10 @@ function createAliasManager(cfg){
   const APP = window.__SF_APP;
   const ICONS = U.ICONS;
 
-  let view = "list"; // "list" | "edit" | "all" | "bulk"
+  let view = "list"; // "list" | "edit" | "bulk"
   let editingBase = null;
   let editingFull = null;
   let searchTerm = "";
-  let rowSeq = 0;
   let selectMode = false;
   let selected = new Set();
 
@@ -8432,6 +8431,15 @@ function createAliasManager(cfg){
   function existingBaseNames(){
     return cfg.distinctBaseFn(Store.transactions).map(b=>b.base).sort((a,b)=>a.localeCompare(b,'fr'));
   }
+  /* Règles devenues obsolètes : le groupe/la personne visé·e n'apparaît plus dans aucune transaction
+     actuelle (transactions supprimées, ou libellé renommé lors d'un ré-import). Une règle "base" est
+     obsolète si son nom de base ne figure plus parmi existingBaseNames() ; une règle `full` (occurrence
+     datée précise, groupes uniquement) est obsolète si son libellé complet exact n'apparaît plus. */
+  function obsoleteRules(){
+    const bases = new Set(existingBaseNames());
+    const fulls = cfg.hasDates ? new Set(AGG.distinctFullGroupes(Store.transactions).map(f=>f.full)) : null;
+    return rules().filter(r=> r.full ? (fulls && !fulls.has(r.full)) : !bases.has(r[cfg.baseField]));
+  }
   /* Identifiant réel utilisé pour les règles (nom de base, sans le suffixe de date entre parenthèses) —
      l'affichage, lui, montre toujours le libellé complet (avec la date) tel que fourni par hierarchyFn. */
   function trueBase(val){ return U.baseGroupe(val); }
@@ -8442,18 +8450,6 @@ function createAliasManager(cfg){
     const icon = (kind==="voyage" ? ICONS.plane : ICONS.home).replace('<svg ', '<svg style="width:14px;height:14px;" ');
     const title = kind==="voyage" ? "Voyage" : "Vie quotidienne";
     return `<span title="${title}" style="display:inline-flex;align-items:center;margin-right:7px;color:var(--text-faint);vertical-align:-3px;">${icon}</span>`;
-  }
-
-  function viewToggleHtml(){
-    return `<div class="seg" id="am-viewtoggle" style="margin-bottom:12px;">
-      <button data-v="list" class="${view==='list'||view==='edit'?'active':''}">Par ${cfg.superLabel}</button>
-      <button data-v="all" class="${view==='all'?'active':''}">Toutes les règles</button>
-    </div>`;
-  }
-  function wireViewToggle(){
-    document.querySelectorAll("#am-viewtoggle button").forEach(b=>{
-      b.onclick = ()=>{ view = b.dataset.v==='all' ? 'all' : 'list'; render(); };
-    });
   }
 
   function childRowHtml(b){
@@ -8513,13 +8509,14 @@ function createAliasManager(cfg){
     }).join("");
 
     const flatFiltered = flat.filter(b=> !q || U.normalize(b.base).includes(q)).sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+    const obsolete = obsoleteRules();
 
     sheet.innerHTML = `
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
       <div class="sheet-body">
         <div class="u-desc-sm">${cfg.helpText}</div>
-        ${viewToggleHtml()}
+        ${obsolete.length ? `<button class="btn btn-ghost btn-block" id="am-clean-obsolete" style="margin-bottom:12px;color:var(--expense);">${ICONS.trash} ${obsolete.length} règle${obsolete.length>1?"s":""} obsolète${obsolete.length>1?"s":""} · Nettoyer</button>` : ""}
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <input type="text" class="search-mini" id="am-search" style="margin-bottom:0;flex:1;" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
           ${cfg.hasDates ? "" : `<button class="btn btn-ghost btn-sm" id="am-selectmode-btn" style="white-space:nowrap;">${selectMode ? "Terminer" : "Sélectionner"}</button>`}
@@ -8538,7 +8535,22 @@ function createAliasManager(cfg){
       </div>` : ""}
     `;
     document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    wireViewToggle();
+    const cleanBtn = document.getElementById("am-clean-obsolete");
+    if(cleanBtn) cleanBtn.onclick = ()=>{
+      const n = obsolete.length;
+      APP.confirmAction({
+        title:"Supprimer "+n+" règle"+(n>1?"s":"")+" obsolète"+(n>1?"s":"")+" ?",
+        text:"Ces règles concernent des "+cfg.itemLabelPlural+" qui n'apparaissent plus dans vos transactions actuelles. Cette action est définitive.",
+        confirmLabel:"Supprimer",
+        onConfirm:()=>{
+          const stillObsolete = new Set(obsoleteRules());
+          Store.settings[cfg.settingsKey] = rules().filter(r=>!stillObsolete.has(r));
+          Store.saveSettings();
+          APP.showToast(n+" règle"+(n>1?"s supprimées":" supprimée"));
+          renderList();
+        }
+      });
+    };
     document.getElementById("am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
     const selModeBtn = document.getElementById("am-selectmode-btn");
     if(selModeBtn) selModeBtn.onclick = ()=>{
@@ -8613,29 +8625,6 @@ function createAliasManager(cfg){
     };
   }
 
-  function ruleRowHtml(rule, editableBase){
-    const id = "amrow"+(rowSeq++);
-    return `<div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px;margin-bottom:10px;" data-rowid="${id}">
-      ${editableBase ? `<input type="text" class="search-mini" style="margin-bottom:8px;" placeholder="${cfg.itemLabel} (nom exact)" list="am-base-list" data-field="base" value="${U.escHtml(rule.base||'')}">` : ""}
-      <input type="text" class="search-mini" placeholder="Nom du ${cfg.superLabel}" list="am-super-list" data-field="super" value="${U.escHtml(rule.superName||'')}">
-      <button class="btn btn-ghost btn-sm" data-del="${id}" style="margin-top:8px;color:var(--expense);">${ICONS.trash} Supprimer cette règle</button>
-    </div>`;
-  }
-  function wireRowDeletes(){
-    document.querySelectorAll("[data-del]").forEach(btn=>{
-      btn.onclick = ()=>{
-        APP.confirmAction({
-          title:"Supprimer cette règle ?",
-          text:"Cette action est définitive une fois enregistrée.",
-          confirmLabel:"Supprimer",
-          onConfirm:()=>{
-            const card = document.querySelector(`[data-rowid="${btn.dataset.del}"]`);
-            if(card) card.remove();
-          }
-        });
-      };
-    });
-  }
   function datalistsHtml(){
     return `<datalist id="am-super-list">${existingSuperNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>
       <datalist id="am-base-list">${existingBaseNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>`;
@@ -8837,60 +8826,8 @@ function createAliasManager(cfg){
     };
   }
 
-  /* "Toutes les règles" : édition libre de toutes les règles à la fois (réorganisation manuelle complète) */
-  function renderAll(){
-    const sheet = document.getElementById(cfg.sheetId);
-    const rls = rules().filter(r=>!r.full).map(r=>({base:r[cfg.baseField], superName:r[cfg.superField]}));
-    const occurrenceRulesCount = rules().filter(r=>r.full).length;
-    sheet.innerHTML = `
-      <div class="sheet-handle"></div>
-      <div class="sheet-head"><h2>${cfg.title}</h2><button class="icon-btn" id="am-close">${ICONS.close}</button></div>
-      <div class="sheet-body">
-        <div class="u-desc-sm">
-          Toutes les règles enregistrées. Modifiez ou supprimez librement, ou ajoutez-en de nouvelles, puis enregistrez.
-          ${occurrenceRulesCount ? ` ${occurrenceRulesCount} règle${occurrenceRulesCount>1?"s":""} propre${occurrenceRulesCount>1?"s":""} à une occurrence datée précise ${occurrenceRulesCount>1?"ne sont":"n'est"} pas modifiable${occurrenceRulesCount>1?"s":""} ici (pour ne jamais risquer de la transformer en règle globale) — utilisez « Par ${cfg.superLabel} » pour ces occurrences.` : ""}
-        </div>
-        ${viewToggleHtml()}
-        ${datalistsHtml()}
-        <div id="am-rows">${rls.length ? rls.map(r=>ruleRowHtml(r,true)).join("") : ""}</div>
-        <button class="btn btn-ghost btn-block" id="am-add-row">+ Ajouter une règle</button>
-      </div>
-      <div class="sheet-foot">
-        <button class="btn btn-ghost" id="am-cancel">Annuler</button>
-        <button class="btn btn-primary" id="am-save">Enregistrer tout</button>
-      </div>
-    `;
-    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    wireViewToggle();
-    wireRowDeletes();
-    document.getElementById("am-add-row").onclick = ()=>{
-      document.getElementById("am-rows").insertAdjacentHTML("beforeend", ruleRowHtml({base:"",superName:""}, true));
-      wireRowDeletes();
-    };
-    document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
-    document.getElementById("am-save").onclick = ()=>{
-      const rows = Array.from(document.querySelectorAll("#am-rows > .card"));
-      const newRules = [];
-      rows.forEach(row=>{
-        const baseInput = row.querySelector('[data-field="base"]');
-        const bs = baseInput ? baseInput.value.trim() : "";
-        const sg = row.querySelector('[data-field="super"]').value.trim();
-        const entry = {[cfg.baseField]:bs, [cfg.superField]:sg};
-        if(bs && sg) newRules.push(entry);
-      });
-      // Les règles propres à une occurrence datée précise (`full`) ne passent jamais par ce tableau brut :
-      // on les préserve telles quelles pour ne jamais les rétrograder silencieusement en règle globale.
-      const preserved = rules().filter(r=>r.full);
-      Store.settings[cfg.settingsKey] = newRules.concat(preserved);
-      Store.saveSettings();
-      APP.showToast("Règles enregistrées ("+newRules.length+")");
-      renderAll();
-    };
-  }
-
   function render(){
-    if(view==="all") renderAll();
-    else if(view==="edit") renderEdit();
+    if(view==="edit") renderEdit();
     else if(view==="bulk") renderBulk();
     else renderList();
   }
