@@ -447,7 +447,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.22.14.30";
+const APP_VERSION = "v 2026.08.22.15.58";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2276,6 +2276,7 @@ let currentTab = "accounts";
 let txnGroupBy = "day"; // day | month_indiquee | month_transformee | groupe | periode | categorie | compte | type_compte | personne | groupe_personnes | type
 let txnGroupsShown = 20; // nombre de groupes affichés (tous modes confondus, chargement automatique au scroll)
 let txnPerGroupShown = {}; // groupKey -> nombre d'éléments affichés au sein de ce groupe
+let txnFullyShownGroup = null; // clé du groupe actuellement en "Afficher tout" (un seul à la fois, perf)
 let txnOpenGroups = new Map(); // clé de groupe -> true/false (dépassement individuel du réglage "tout déplier/replier")
 let pendingImport = null; // {txns, skipped, total, fileName, isJson}
 let detailTxnId = null;
@@ -2286,7 +2287,7 @@ const GROUPBY_LABEL = {compte:"Compte", type_compte:"Type de compte", day:"Jour"
   groupe:"Groupe", periode:"Période", categorie:"Catégorie", personne:"Personne", groupe_personnes:"Groupe de personnes", type:"Type"};
 const PALETTE = ["#1259D6","#1A9E63","#E4402E","#8A5CF6","#E8A93B","#26A6C9","#D6478B","#6E7A8A","#5FBF7A","#B4772B","#3C6E71","#9B4DCA"];
 
-function resetTxnPagination(){ txnGroupsShown = 20; txnPerGroupShown = {}; txnOpenGroups = new Map(); }
+function resetTxnPagination(){ txnGroupsShown = 20; txnPerGroupShown = {}; txnFullyShownGroup = null; txnOpenGroups = new Map(); }
 
 function showToast(msg){
   const el = document.getElementById("toast");
@@ -2490,6 +2491,7 @@ window.__SF_APP = {
          get txnGroupBy(){return txnGroupBy;}, set txnGroupBy(v){txnGroupBy=v;},
          get txnGroupsShown(){return txnGroupsShown;}, set txnGroupsShown(v){txnGroupsShown=v;},
          get txnPerGroupShown(){return txnPerGroupShown;},
+         get txnFullyShownGroup(){return txnFullyShownGroup;}, set txnFullyShownGroup(v){txnFullyShownGroup=v;},
          get txnOpenGroups(){return txnOpenGroups;},
          get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;}},
   DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE,
@@ -2715,6 +2717,7 @@ function renderTxnGroupCards(listSection, arr){
     const net = g.income + g.expense;
     const details = document.createElement("details");
     details.className = "card txn-group-card";
+    details.dataset.gkey = g.key;
     details.style.padding = "0";
     details.style.marginBottom = "10px";
     const isOpen = openGroups.has(g.key) ? openGroups.get(g.key) : allExpanded;
@@ -2748,8 +2751,24 @@ function renderTxnGroupCards(listSection, arr){
       const more = document.createElement("button");
       more.className = "btn btn-ghost btn-sm";
       more.style.cssText = "display:block;width:calc(100% - 12px);margin:8px 6px 0;";
-      more.textContent = "Afficher plus ("+(g.items.length-perShown)+" restantes)";
-      more.onclick = (ev)=>{ ev.preventDefault(); perGroupMap[g.key] = perShown + 15; renderTransactions(); };
+      more.textContent = "Afficher tout ("+(g.items.length-perShown)+" restantes)";
+      more.onclick = (ev)=>{
+        ev.preventDefault();
+        const rectBefore = details.getBoundingClientRect().top;
+        const prevKey = APP.state.txnFullyShownGroup;
+        if(prevKey && prevKey!==g.key) delete perGroupMap[prevKey]; // un seul groupe "Afficher tout" à la fois (perf)
+        perGroupMap[g.key] = g.items.length;
+        APP.state.txnFullyShownGroup = g.key;
+        renderTransactions();
+        // Le groupe cliqué doit rester au même endroit à l'écran, même si un autre groupe s'est
+        // replié au-dessus entre-temps (repli croisé ci-dessus) et a fait glisser tout le reste.
+        const newListSection = document.getElementById("txn-list-section");
+        const newDetails = newListSection && Array.from(newListSection.children).find(el=>el.dataset && el.dataset.gkey===g.key);
+        if(newDetails){
+          const delta = newDetails.getBoundingClientRect().top - rectBefore;
+          if(delta) window.scrollBy(0, delta);
+        }
+      };
       body.appendChild(more);
     }
     details.appendChild(body);
