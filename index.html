@@ -309,7 +309,7 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .txn-ico.trf{background:var(--transfer-soft);color:var(--transfer);}
 .txn-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 10px;}
 .txn-mid{flex:1;min-width:0;}
-.txn-title{font-size:13px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-title{font-size:13px;font-weight:700;line-height:1.3;white-space:normal;overflow-wrap:break-word;}
 .txn-sub{font-size:11px;line-height:1.25;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
 .txn-line{font-size:10.5px;line-height:1.25;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
 .txn-line .txn-line-tag{opacity:.6;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;margin-right:4px;}
@@ -463,6 +463,9 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .detail-row{display:flex;justify-content:space-between;padding:10px 2px;font-size:14px;}
 .detail-row span:first-child{color:var(--text-sub);}
 .detail-row span:last-child{font-weight:700;}
+.txn-tap-row{border-radius:10px;transition:background .1s;margin:0 -8px;padding-left:8px;padding-right:8px;width:calc(100% + 16px);}
+.txn-tap-row:active{background:var(--card);}
+[data-theme="dark"] .txn-tap-row:active{background:rgba(255,255,255,.06);}
 
 @media (max-width:360px){
   .app-title{font-size:26px;}
@@ -476,7 +479,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.22.00.16";
+const APP_VERSION = "v 2026.08.22.13.14";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1076,8 +1079,16 @@ function parseParametresSheet(wb){
       }
       if(groupeStr && daysFrom && daysTo){
         const dFrom = U.parseDateValue(daysFrom);
-        const dTo = U.parseDateValue(daysTo);
-        if(dFrom && dTo) groupDateRange[groupeStr] = {dateFrom: U.toISO(dFrom), dateTo: U.toISO(dTo)};
+        // "Aujourd'hui" (ou "today") dans la colonne "Date fin (jours)" est le marqueur d'une date de fin
+        // dynamique (cf. GROUP_DATE_TODAY_SENTINEL) plutôt qu'une vraie date — accès en différé à AGG
+        // (window.__SF_AGG) car ce module s'exécute avant que l'agrégation ne soit chargée.
+        const todayMarker = ["aujourd'hui","today"].includes(U.normalize(daysTo));
+        if(dFrom && todayMarker){
+          groupDateRange[groupeStr] = {dateFrom: U.toISO(dFrom), dateTo: window.__SF_AGG.GROUP_DATE_TODAY_SENTINEL};
+        } else {
+          const dTo = U.parseDateValue(daysTo);
+          if(dFrom && dTo) groupDateRange[groupeStr] = {dateFrom: U.toISO(dFrom), dateTo: U.toISO(dTo)};
+        }
       }
       if(catForced && catForcedType){
         categoryTypeOverride[String(catForced).trim()] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
@@ -1606,11 +1617,20 @@ function getGroupDateRange(key){
   const map = Store.settings.groupDateRange || {};
   return map[key] || null;
 }
+/* Valeur spéciale de "date de fin" signifiant "toujours aujourd'hui" (dynamique) plutôt qu'une date figée —
+   utile pour un groupe/voyage encore en cours, dont le nombre de jours et les moyennes doivent continuer à
+   évoluer au fil du temps sans repasser manuellement modifier la date à chaque fois. Stockée telle quelle
+   (chaîne "today", jamais une vraie date ISO) dans Store.settings.groupDateRange[key].dateTo ; résolue à la
+   volée par resolveGroupDateToValue() partout où un calcul de jours est nécessaire. */
+const GROUP_DATE_TODAY_SENTINEL = "today";
+function resolveGroupDateToValue(dateTo){
+  return dateTo===GROUP_DATE_TODAY_SENTINEL ? U.toISO(new Date()) : dateTo;
+}
 function getGroupDayStats(key){
   const range = getGroupDateRange(key);
   if(!range || !range.dateFrom || !range.dateTo) return null;
   const from = new Date(range.dateFrom+"T00:00:00");
-  const to = new Date(range.dateTo+"T00:00:00");
+  const to = new Date(resolveGroupDateToValue(range.dateTo)+"T00:00:00");
   const days = Math.round((to-from)/86400000) + 1;
   if(days<=0) return null;
   let income=0, expense=0;
@@ -2230,7 +2250,7 @@ function recurringColumns(evoIndex, periodFrom, periodTo){
 window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
+  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
   buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList,
   buildRecurringIndex, recurringItemTotal, recurringSectionTotal, recurringItemMonthValue, recurringSectionMonthValue,
@@ -2815,55 +2835,254 @@ function openDisplayMenu(){
 
 
 /* ================= TRANSACTION DETAIL ================= */
-function openTxnDetail(id){
-  APP.state.detailTxnId = id;
-  const t = Store.transactions.find(x=>x.id===id);
-  if(!t) return;
-  const modal = document.getElementById("modal-detail");
-  const info = txnIconInfo(t);
-  modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <div class="txn-ico ${info.cls}" style="width:48px;height:48px;font-size:19px;">${info.letter}</div>
-      <button class="icon-btn" id="detail-close">${ICONS.close}</button>
-    </div>
-    <div style="font-size:22px;font-weight:900;">${t.type==="Transfer"?U.fmtMoney(t.montant):U.fmtMoneySigned(t.montant)}</div>
-    <div style="color:var(--text-sub);font-size:13.5px;margin-top:2px;">${U.fmtDateLong(t.date)}</div>
-    <div style="font-weight:700;font-size:16px;margin-top:14px;">${U.escHtml(t.remarque || "(Sans titre)")}</div>
-    <div class="field-label">Détails</div>
-    <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
-      ${t.type==="Transfer" ? `
-        <div class="detail-row"><span>Compte source</span><span>${U.escHtml(t.compte)}</span></div>
-        <div class="detail-row"><span>Compte cible</span><span>${U.escHtml(t.compteCible)}</span></div>
-      ` : `
-        <div class="detail-row"><span>Compte</span><span>${U.escHtml(t.compte)}</span></div>
-        <div class="detail-row"><span>Catégorie</span><span>${U.escHtml(t.categorie||"—")}</span></div>
-        <div class="detail-row"><span>Personne</span><span>${U.escHtml(t.personne||"—")}</span></div>
-      `}
-      <div class="detail-row"><span>Groupe</span><span>${U.escHtml(t.groupe||"—")}</span></div>
-      <div class="detail-row"><span>Type</span><span>${t.type==="Income"?"Revenu":t.type==="Expense"?"Dépense":"Transfert"}</span></div>
-    </div>
-    <div style="display:flex;gap:10px;margin-top:16px;">
-      <button class="btn btn-ghost" id="detail-edit" style="flex:1;">${ICONS.edit||""}Modifier</button>
-      <button class="btn btn-ghost" id="detail-delete" style="flex:1;color:var(--expense);">${ICONS.trash}Supprimer</button>
-    </div>
-  `;
-  document.getElementById("detail-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-  document.getElementById("detail-edit").onclick = ()=> openTxnEdit(id);
-  document.getElementById("detail-delete").onclick = ()=>{
-    APP.confirmAction({
-      title:"Supprimer cette transaction ?",
-      text:"Cette action est définitive.",
-      confirmLabel:"Supprimer",
-      onConfirm:()=>{
-        Store.transactions = Store.transactions.filter(x=>x.id!==id);
+/* ================= FICHE TRANSACTION (détail + édition unifiées) =================
+   Chaque champ se modifie au tap direct — plus de mode "Modifier" séparé : toucher Catégorie ouvre le
+   picker Catégorie, toucher Montant ouvre un éditeur compact, etc. (cf. openInlineEditor / openPicker).
+   Pour une transaction existante, chaque changement de champ est enregistré immédiatement ; l'id étant
+   dérivé du contenu (cf. buildTxnId), il change à chaque édition — suivi via `currentId` le temps que la
+   fiche reste ouverte. Pour une nouvelle transaction (id=null, y compris "Dupliquer"), les champs sont
+   d'abord accumulés dans un brouillon local puis validés en un seul geste via "Enregistrer". */
+const TYPE_LABEL_FR = {Income:"Revenu", Expense:"Dépense", Transfer:"Transfert"};
+const TYPE_LABEL_FR_TO_CODE = {"Revenu":"Income", "Dépense":"Expense", "Transfert":"Transfer"};
+const TAP_CHEVRON = `<span style="color:var(--text-faint);display:inline-flex;vertical-align:middle;margin-left:4px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:12px;height:12px;transform:rotate(180deg);" ')}</span>`;
+
+function openTxnDetail(id){ renderTxnDetail(id, null); }
+function openTxnNew(){ renderTxnDetail(null, null); }
+function openTxnForm(id){ renderTxnDetail(id, null); } // alias conservé (compat)
+function openTxnEdit(id){ renderTxnDetail(id, null); } // alias conservé (compat)
+
+function renderTxnDetail(id, seed){
+  const isNew = !id;
+  let currentId = id;
+  const draft = !isNew ? null : Object.assign({
+    type:"Expense", categorie:"", personne:"", compte:"", compteCible:"", groupe:"", remarque:"",
+    montant:0, montantSet:false, dateISO:U.toISO(new Date())
+  }, seed ? {
+    type:seed.type, categorie:seed.categorie||"", personne:seed.personne||"", compte:seed.compte||"",
+    compteCible:seed.compteCible||"", groupe:seed.groupe||"", remarque:seed.remarque||"",
+    montant:seed.montant, montantSet:true, dateISO:seed.dateISO
+  } : {});
+
+  function current(){ return isNew ? draft : Store.transactions.find(x=>x.id===currentId); }
+
+  /* Fusionne `patch` (un ou plusieurs champs) dans la transaction et enregistre. Pour une transaction
+     existante, reconstruit une ligne complète (rowToTxn a besoin de tous les champs à la fois) et remplace
+     l'entrée dans Store.transactions — son id change forcément (dérivé du contenu). */
+  function commit(patch){
+    if(isNew){ Object.assign(draft, patch); render(); return; }
+    const cur = current();
+    if(!cur) return;
+    const nextType = patch.type || cur.type;
+    const row = {
+      date: patch.dateISO!=null ? patch.dateISO : cur.dateISO,
+      montant: patch.montant!=null ? patch.montant : cur.montant,
+      type: nextType,
+      categorie: nextType==="Transfer" ? "" : (patch.categorie!=null ? patch.categorie : cur.categorie),
+      personne: nextType==="Transfer" ? "" : (patch.personne!=null ? patch.personne : cur.personne),
+      compte: patch.compte!=null ? patch.compte : cur.compte,
+      "compte cible": nextType==="Transfer" ? (patch.compteCible!=null ? patch.compteCible : cur.compteCible) : "",
+      groupe: patch.groupe!=null ? patch.groupe : cur.groupe,
+      remarque: patch.remarque!=null ? patch.remarque : cur.remarque,
+    };
+    const updated = DATA.rowToTxn(row);
+    if(!updated){ APP.showToast("Valeur invalide"); return; }
+    const idx = Store.transactions.findIndex(x=>x.id===currentId);
+    if(idx===-1) return;
+    Store.transactions[idx] = updated;
+    currentId = updated.id;
+    APP.state.detailTxnId = currentId;
+    render();
+    APP.refreshCurrentTab();
+    Store.saveTransactions().then(ok=>{
+      if(!ok) APP.showToast("Modifiée, mais la sauvegarde a échoué");
+    });
+  }
+
+  function render(){
+    const cur = current();
+    if(!cur){ APP.closeOverlay("overlay-detail"); return; }
+    APP.state.detailTxnId = currentId;
+    const modal = document.getElementById("modal-detail");
+    const isTransfer = cur.type==="Transfer";
+    const hasMontant = !isNew || cur.montantSet;
+    const montantDisplay = hasMontant ? (isTransfer ? U.fmtMoney(cur.montant) : U.fmtMoneySigned(cur.montant)) : null;
+    const dateObj = isNew ? new Date(cur.dateISO+"T00:00:00") : cur.date;
+
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:${isNew?'space-between':'flex-end'};align-items:center;margin-bottom:2px;">
+        ${isNew?`<span style="font-weight:800;font-size:17px;">Nouvelle transaction</span>`:""}
+        <button class="icon-btn" id="td-close">${ICONS.close}</button>
+      </div>
+
+      <div id="td-remarque" class="txn-tap-row" style="cursor:pointer;padding:8px 2px 16px;">
+        <div style="font-weight:800;font-size:19px;line-height:1.3;${cur.remarque?'':'color:var(--text-faint);'}">${U.escHtml(cur.remarque||"(Sans titre)")}</div>
+      </div>
+
+      <div class="field-label" style="margin-top:0;">Détails</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+        <div id="td-montant" class="detail-row txn-tap-row" style="cursor:pointer;padding:14px 2px;">
+          <span>Montant</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:21px;font-weight:900;${montantDisplay?`color:${isTransfer?'var(--text)':(cur.montant<0?'var(--expense)':'var(--income)')};`:'color:var(--text-faint);font-weight:700;font-size:15px;'}">${montantDisplay || "Toucher pour ajouter"}</span>
+            ${TAP_CHEVRON}
+          </span>
+        </div>
+        <div id="td-date" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Date</span><span>${U.escHtml(U.fmtDateLong(dateObj))}${TAP_CHEVRON}</span></div>
+        <div id="td-type" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Type</span><span>${TYPE_LABEL_FR[cur.type]}${TAP_CHEVRON}</span></div>
+        ${isTransfer ? `
+          <div id="td-compte" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Compte source</span><span>${U.escHtml(cur.compte||"—")}${TAP_CHEVRON}</span></div>
+          <div id="td-compte-cible" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Compte cible</span><span>${U.escHtml(cur.compteCible||"—")}${TAP_CHEVRON}</span></div>
+        ` : `
+          <div id="td-compte" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Compte</span><span>${U.escHtml(cur.compte||"—")}${TAP_CHEVRON}</span></div>
+          <div id="td-categorie" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Catégorie</span><span>${U.escHtml(cur.categorie||"—")}${TAP_CHEVRON}</span></div>
+          <div id="td-personne" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Personne</span><span>${U.escHtml(cur.personne||"—")}${TAP_CHEVRON}</span></div>
+        `}
+        <div id="td-groupe" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Groupe</span><span>${U.escHtml(cur.groupe||"—")}${TAP_CHEVRON}</span></div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        ${isNew ? `
+          <button class="btn btn-ghost" id="td-cancel" style="flex:1;">Annuler</button>
+          <button class="btn btn-primary" id="td-save" style="flex:1;">Enregistrer</button>
+        ` : `
+          <button class="btn btn-ghost" id="td-duplicate" style="flex:1;">${ICONS.copy}Dupliquer</button>
+          <button class="btn btn-ghost" id="td-delete" style="flex:1;color:var(--expense);">${ICONS.trash}Supprimer</button>
+        `}
+      </div>
+    `;
+
+    document.getElementById("td-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+
+    document.getElementById("td-montant").onclick = ()=>{
+      openInlineEditor({
+        title:"Montant", inputType:"number", min:0, step:0.01,
+        value: hasMontant ? Math.abs(cur.montant) : "",
+        placeholder:"0,00",
+        onSave:(v)=>{
+          const abs = Math.abs(Number(v));
+          if(v===""||isNaN(abs)||abs<=0){ APP.showToast("Merci de renseigner un montant valide"); return; }
+          const montant = cur.type==="Expense" ? -abs : abs;
+          commit({montant, montantSet:true});
+        }
+      });
+    };
+
+    document.getElementById("td-date").onclick = ()=>{
+      openInlineEditor({
+        title:"Date", inputType:"date", value:cur.dateISO,
+        onSave:(v)=>{
+          if(!v){ APP.showToast("Merci de renseigner une date valide"); return; }
+          commit({dateISO:v});
+        }
+      });
+    };
+
+    document.getElementById("td-remarque").onclick = ()=>{
+      openInlineEditor({
+        title:"Remarque", multiline:true, value:cur.remarque||"", placeholder:"Ex. Lieu (25-01)",
+        onSave:(v)=> commit({remarque:v.trim()})
+      });
+    };
+
+    document.getElementById("td-type").onclick = ()=>{
+      openPicker({
+        title:"Type", options:["Revenu","Dépense","Transfert"], value:TYPE_LABEL_FR[cur.type], noEmpty:true,
+        onSelect:(v)=>{
+          const newType = TYPE_LABEL_FR_TO_CODE[v];
+          const abs = hasMontant ? Math.abs(cur.montant) : 0;
+          const montant = newType==="Expense" ? -abs : abs;
+          commit({type:newType, montant, montantSet:hasMontant});
+        }
+      });
+    };
+
+    const comptes = AGG.distinctValues(Store.transactions, "compte").map(x=>x.value);
+    document.getElementById("td-compte").onclick = ()=> openPicker({
+      title: isTransfer?"Compte source":"Compte", options:comptes, value:cur.compte, allowNew:true,
+      newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
+      onSelect:(v)=> commit({compte:v})
+    });
+    if(isTransfer){
+      document.getElementById("td-compte-cible").onclick = ()=> openPicker({
+        title:"Compte cible", options:comptes, value:cur.compteCible, allowNew:true,
+        newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
+        onSelect:(v)=> commit({compteCible:v})
+      });
+    } else {
+      document.getElementById("td-categorie").onclick = ()=> openPicker({
+        title:"Catégorie", hierarchy: categoriePickerHierarchy(), value:cur.categorie, allowNew:true,
+        newLabel:"+ Nouvelle catégorie…", newPlaceholder:"Nom de la catégorie",
+        onSelect:(v)=> commit({categorie:v})
+      });
+      document.getElementById("td-personne").onclick = ()=> openPicker({
+        title:"Personne", hierarchy: AGG.personneHierarchy(Store.transactions), value:cur.personne, allowNew:true,
+        newLabel:"+ Nouvelle personne…", newPlaceholder:"Nom de la personne",
+        onSelect:(v)=> commit({personne:v})
+      });
+    }
+    document.getElementById("td-groupe").onclick = ()=> openPicker({
+      title:"Groupe", hierarchy: AGG.groupeHierarchyChrono(Store.transactions), value:cur.groupe, allowNew:true,
+      newLabel:"+ Nouveau groupe…", newPlaceholder:"Nom du groupe (ex. Lieu (25-01))",
+      onSelect:(v)=> commit({groupe:v})
+    });
+
+    if(isNew){
+      document.getElementById("td-cancel").onclick = ()=>APP.closeOverlay("overlay-detail");
+      document.getElementById("td-save").onclick = ()=>{
+        const montantAbs = draft.montantSet ? Math.abs(Number(draft.montant)) : NaN;
+        if(!draft.dateISO || isNaN(montantAbs) || montantAbs<=0){
+          APP.showToast("Merci de renseigner une date et un montant valides");
+          return;
+        }
+        const row = {
+          date: draft.dateISO, montant: draft.montant, type: draft.type,
+          categorie: draft.type==="Transfer" ? "" : draft.categorie,
+          personne: draft.type==="Transfer" ? "" : draft.personne,
+          compte: draft.compte,
+          "compte cible": draft.type==="Transfer" ? draft.compteCible : "",
+          groupe: draft.groupe, remarque: (draft.remarque||"").trim(),
+        };
+        const updated = DATA.rowToTxn(row);
+        if(!updated){ APP.showToast("Impossible d'enregistrer : données invalides"); return; }
+        let toAdd = updated;
+        if(Store.transactions.some(x=>x.id===toAdd.id)){
+          // Évite toute collision d'id (peu probable : id dérivé des champs) si une transaction strictement
+          // identique existe déjà — l'id doit rester unique pour que recherche/édition/suppression ciblent
+          // la bonne ligne.
+          toAdd = Object.assign({}, updated, {id: updated.id+"|"+U.uid()});
+        }
+        Store.transactions.push(toAdd);
         APP.closeOverlay("overlay-detail");
         APP.refreshCurrentTab();
         Store.saveTransactions().then(ok=>{
-          APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+          APP.showToast(ok ? "Transaction ajoutée" : "Ajoutée, mais la sauvegarde a échoué");
         });
-      }
-    });
-  };
+      };
+    } else {
+      document.getElementById("td-duplicate").onclick = ()=>{
+        const source = current();
+        APP.closeOverlay("overlay-detail");
+        renderTxnDetail(null, source);
+      };
+      document.getElementById("td-delete").onclick = ()=>{
+        APP.confirmAction({
+          title:"Supprimer cette transaction ?",
+          text:"Cette action est définitive.",
+          confirmLabel:"Supprimer",
+          onConfirm:()=>{
+            Store.transactions = Store.transactions.filter(x=>x.id!==currentId);
+            APP.closeOverlay("overlay-detail");
+            APP.refreshCurrentTab();
+            Store.saveTransactions().then(ok=>{
+              APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
+            });
+          }
+        });
+      };
+    }
+  }
+
+  render();
   APP.openOverlay("overlay-detail");
 }
 
@@ -2917,9 +3136,10 @@ function renderPickerList(opts){
     <div class="sheet-body">
       ${(hasHierarchy || options.length>6) ? `<input type="text" class="search-mini" id="pk-search" placeholder="Rechercher…">` : ""}
       <div class="check-list" style="max-height:none;" id="pk-list">
+        ${opts.noEmpty ? "" : `
         <div class="check-item ${!opts.value?'selected':''}" data-pv="">
           <span class="lbl" style="color:var(--text-faint);">— Aucun(e) —</span>
-        </div>
+        </div>`}
         ${hasHierarchy ? hierarchyListHtml() : options.map(v=>`
           <div class="check-item ${v===opts.value?'selected':''}" data-pv="${U.escHtml(v)}">
             <span class="lbl">${U.escHtml(v)}</span>
@@ -3002,6 +3222,38 @@ function openPicker(opts){
   APP.openOverlay("overlay-picker");
 }
 
+/* Éditeur compact (popup centrée, réutilise modal-confirm/overlay-confirm — même mécanisme que
+   openMergeNameModal) pour un champ à valeur libre (Montant, Date, Remarque) : un seul input, Annuler /
+   Enregistrer. opts: {title, inputType:'text'|'number'|'date', multiline, value, placeholder, min, step,
+   onSave(value)}. Utilisé par la fiche transaction pour éditer un champ au simple tap, sans passer par un
+   mode "Modifier" séparé. */
+function openInlineEditor(opts){
+  const modal = document.getElementById("modal-confirm");
+  const inputHtml = opts.multiline
+    ? `<textarea class="search-mini" id="ie-input" style="margin:0 0 16px;min-height:90px;resize:vertical;font-family:inherit;" placeholder="${U.escHtml(opts.placeholder||'')}">${U.escHtml(opts.value||'')}</textarea>`
+    : `<input type="${opts.inputType||'text'}" class="search-mini" id="ie-input" style="margin:0 0 16px;" value="${U.escHtml(opts.value||'')}" placeholder="${U.escHtml(opts.placeholder||'')}" ${opts.min!=null?`min="${opts.min}"`:''} ${opts.step!=null?`step="${opts.step}"`:''}>`;
+  modal.innerHTML = `
+    <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">${U.escHtml(opts.title)}</div>
+    ${inputHtml}
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="ie-cancel">Annuler</button>
+      <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="ie-confirm">Enregistrer</button>
+    </div>
+  `;
+  document.getElementById("ie-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  const input = document.getElementById("ie-input");
+  input.focus();
+  if(!opts.multiline && input.select) input.select();
+  const confirm = ()=>{
+    const v = input.value;
+    APP.closeOverlay("overlay-confirm");
+    opts.onSave(v);
+  };
+  document.getElementById("ie-confirm").onclick = confirm;
+  if(!opts.multiline) input.onkeydown = (e)=>{ if(e.key==="Enter") confirm(); };
+  APP.openOverlay("overlay-confirm");
+}
+
 function categorieList(){
   const items = AGG.distinctValuesCategorieSorted(Store.transactions); // [{value,count,kind}]
   const inc = items.filter(i=>i.kind==="Income").map(i=>i.value);
@@ -3028,207 +3280,6 @@ function fieldPickerBtnHtml(id, label, currentValue){
   </button>`;
 }
 
-function openTxnForm(id){
-  const isNew = !id;
-  const t = isNew
-    ? {type:"Expense", categorie:"", personne:"", compte:"", compteCible:"", groupe:"", remarque:"", montant:0, dateISO:U.toISO(new Date())}
-    : Store.transactions.find(x=>x.id===id);
-  if(!t) return;
-  const modal = document.getElementById("modal-detail");
-  const comptes = AGG.distinctValues(Store.transactions, "compte").map(x=>x.value);
-
-  // État local du formulaire (les champs remplacent les <select> natifs par des pickers plein écran à sélection immédiate)
-  const state = {
-    type: t.type,
-    categorie: t.categorie || "",
-    personne: t.personne || "",
-    compte: t.compte || "",
-    compteCible: t.compteCible || "",
-    groupe: t.groupe || "",
-  };
-
-  modal.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <span style="font-weight:800;font-size:17px;">${isNew?"Nouvelle transaction":"Modifier la transaction"}</span>
-      <button class="icon-btn" id="edit-close">${ICONS.close}</button>
-    </div>
-
-    <div class="field-label" style="margin-top:0;">Type</div>
-    <div class="seg" id="edit-type-seg">
-      <button data-v="Income" class="${state.type==='Income'?'active':''}">Revenu</button>
-      <button data-v="Expense" class="${state.type==='Expense'?'active':''}">Dépense</button>
-      <button data-v="Transfer" class="${state.type==='Transfer'?'active':''}">Transfert</button>
-    </div>
-
-    <div class="field-label">Montant</div>
-    <input type="number" step="0.01" min="0" id="edit-montant" class="search-mini" style="margin:0;" value="${isNew?"":Math.abs(t.montant)}">
-
-    <div class="field-label">Date</div>
-    <input type="date" id="edit-date" class="search-mini" style="margin:0;" value="${t.dateISO}">
-
-    <div id="edit-block-normal">
-      <div class="field-label">Catégorie</div>
-      ${fieldPickerBtnHtml("edit-categorie-btn", "Choisir une catégorie", state.categorie)}
-
-      <div class="field-label">Personne</div>
-      ${fieldPickerBtnHtml("edit-personne-btn", "Choisir une personne", state.personne)}
-    </div>
-
-    <div class="field-label" id="edit-compte-label">Compte${t.type==="Transfer"?" source":""}</div>
-    ${fieldPickerBtnHtml("edit-compte-btn", "Choisir un compte", state.compte)}
-
-    <div id="edit-block-cible">
-      <div class="field-label">Compte cible</div>
-      ${fieldPickerBtnHtml("edit-compte-cible-btn", "Choisir un compte", state.compteCible)}
-    </div>
-
-    <div class="field-label">Groupe</div>
-    ${fieldPickerBtnHtml("edit-groupe-btn", "Choisir un groupe", state.groupe)}
-
-    <div class="field-label">Remarque</div>
-    <textarea id="edit-remarque" class="search-mini" style="margin:0;resize:none;overflow:hidden;font-family:inherit;line-height:1.4;" rows="1">${U.escHtml(t.remarque||"")}</textarea>
-
-    <div style="display:flex;gap:10px;margin-top:18px;">
-      ${!isNew?`<button class="btn btn-ghost" id="edit-delete" style="color:var(--expense);">${ICONS.trash}</button>`:""}
-      <button class="btn btn-ghost" id="edit-cancel" style="flex:1;">Annuler</button>
-      <button class="btn btn-primary" id="edit-save" style="flex:1;">Enregistrer</button>
-    </div>
-  `;
-
-  function refreshTypeVisibility(){
-    const isTransfer = state.type==="Transfer";
-    document.getElementById("edit-block-normal").style.display = isTransfer ? "none" : "block";
-    document.getElementById("edit-block-cible").style.display = isTransfer ? "block" : "none";
-    document.getElementById("edit-compte-label").textContent = isTransfer ? "Compte source" : "Compte";
-  }
-  refreshTypeVisibility();
-
-  // La remarque s'étend verticalement (jusqu'à un plafond) pour rester lisible quand le texte est long,
-  // au lieu de défiler horizontalement dans un champ mono-ligne.
-  const remarqueEl = document.getElementById("edit-remarque");
-  function autoResizeRemarque(){
-    remarqueEl.style.height = "auto";
-    const capped = remarqueEl.scrollHeight > 160;
-    remarqueEl.style.height = Math.min(remarqueEl.scrollHeight, 160) + "px";
-    remarqueEl.style.overflowY = capped ? "auto" : "hidden";
-  }
-  autoResizeRemarque();
-  remarqueEl.addEventListener("input", autoResizeRemarque);
-  document.querySelectorAll("#edit-type-seg button").forEach(b=>{
-    b.onclick = ()=>{
-      state.type = b.dataset.v;
-      document.querySelectorAll("#edit-type-seg button").forEach(x=>x.classList.toggle("active", x===b));
-      refreshTypeVisibility();
-    };
-  });
-
-  function updateFieldLabel(btnId, value, placeholder){
-    const lbl = document.getElementById(btnId+"-label");
-    lbl.textContent = value || placeholder;
-    lbl.style.color = value ? "" : "var(--text-faint)";
-  }
-
-  document.getElementById("edit-categorie-btn").onclick = ()=> openPicker({
-    title:"Catégorie", hierarchy: categoriePickerHierarchy(), value:state.categorie, allowNew:true,
-    newLabel:"+ Nouvelle catégorie…", newPlaceholder:"Nom de la catégorie",
-    onSelect:(v)=>{ state.categorie=v; updateFieldLabel("edit-categorie-btn", v, "Choisir une catégorie"); }
-  });
-  document.getElementById("edit-personne-btn").onclick = ()=> openPicker({
-    title:"Personne", hierarchy: AGG.personneHierarchy(Store.transactions), value:state.personne, allowNew:true,
-    newLabel:"+ Nouvelle personne…", newPlaceholder:"Nom de la personne",
-    onSelect:(v)=>{ state.personne=v; updateFieldLabel("edit-personne-btn", v, "Choisir une personne"); }
-  });
-  document.getElementById("edit-compte-btn").onclick = ()=> openPicker({
-    title:"Compte", options:comptes, value:state.compte, allowNew:true,
-    newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
-    onSelect:(v)=>{ state.compte=v; updateFieldLabel("edit-compte-btn", v, "Choisir un compte"); }
-  });
-  document.getElementById("edit-compte-cible-btn").onclick = ()=> openPicker({
-    title:"Compte cible", options:comptes, value:state.compteCible, allowNew:true,
-    newLabel:"+ Nouveau compte…", newPlaceholder:"Nom du compte",
-    onSelect:(v)=>{ state.compteCible=v; updateFieldLabel("edit-compte-cible-btn", v, "Choisir un compte"); }
-  });
-  document.getElementById("edit-groupe-btn").onclick = ()=> openPicker({
-    title:"Groupe", hierarchy: AGG.groupeHierarchyChrono(Store.transactions), value:state.groupe, allowNew:true,
-    newLabel:"+ Nouveau groupe…", newPlaceholder:"Nom du groupe (ex. Lieu (25-01))",
-    onSelect:(v)=>{ state.groupe=v; updateFieldLabel("edit-groupe-btn", v, "Choisir un groupe"); }
-  });
-
-  document.getElementById("edit-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-  document.getElementById("edit-cancel").onclick = isNew ? (()=>APP.closeOverlay("overlay-detail")) : (()=> openTxnDetail(id));
-  if(!isNew){
-    document.getElementById("edit-delete").onclick = ()=>{
-      APP.confirmAction({
-        title:"Supprimer cette transaction ?",
-        text:"Cette action est définitive.",
-        confirmLabel:"Supprimer",
-        onConfirm:()=>{
-          Store.transactions = Store.transactions.filter(x=>x.id!==id);
-          APP.closeOverlay("overlay-detail");
-          APP.refreshCurrentTab();
-          Store.saveTransactions().then(ok=>{
-            APP.showToast(ok ? "Transaction supprimée" : "Supprimée, mais la sauvegarde a échoué");
-          });
-        }
-      });
-    };
-  }
-
-  document.getElementById("edit-save").onclick = ()=>{
-    const type = state.type;
-    const montantAbs = Math.abs(Number(document.getElementById("edit-montant").value));
-    const dateVal = document.getElementById("edit-date").value;
-    if(!dateVal || isNaN(montantAbs) || montantAbs<=0){
-      APP.showToast("Merci de renseigner une date et un montant valides");
-      return;
-    }
-    const montant = type==="Expense" ? -montantAbs : montantAbs;
-    const row = {
-      date: dateVal,
-      montant: montant,
-      type: type,
-      categorie: type==="Transfer" ? "" : state.categorie,
-      personne: type==="Transfer" ? "" : state.personne,
-      compte: state.compte,
-      "compte cible": type==="Transfer" ? state.compteCible : "",
-      groupe: state.groupe,
-      remarque: document.getElementById("edit-remarque").value.trim(),
-    };
-    const updated = DATA.rowToTxn(row);
-    if(!updated){
-      APP.showToast("Impossible d'enregistrer : données invalides");
-      return;
-    }
-    if(isNew){
-      // Évite toute collision d'id (peu probable : id dérivé des champs) si une transaction strictement
-      // identique existe déjà — l'id doit rester unique pour que recherche/édition/suppression ciblent
-      // la bonne ligne.
-      let toAdd = updated;
-      if(Store.transactions.some(x=>x.id===toAdd.id)){
-        toAdd = Object.assign({}, updated, {id: updated.id+"|"+U.uid()});
-      }
-      Store.transactions.push(toAdd);
-      APP.closeOverlay("overlay-detail");
-      APP.refreshCurrentTab();
-      Store.saveTransactions().then(ok=>{
-        APP.showToast(ok ? "Transaction ajoutée" : "Ajoutée, mais la sauvegarde a échoué");
-      });
-      return;
-    }
-    const idx = Store.transactions.findIndex(x=>x.id===id);
-    if(idx===-1){ APP.closeOverlay("overlay-detail"); return; }
-    Store.transactions[idx] = updated;
-    APP.closeOverlay("overlay-detail");
-    APP.refreshCurrentTab();
-    Store.saveTransactions().then(ok=>{
-      APP.showToast(ok ? "Transaction modifiée" : "Modifiée, mais la sauvegarde a échoué");
-    });
-  };
-
-  APP.openOverlay("overlay-detail");
-}
-function openTxnEdit(id){ openTxnForm(id); }
-function openTxnNew(){ openTxnForm(null); }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderTransactions = renderTransactions;
@@ -7325,6 +7376,7 @@ const U = window.__SF_UTILS;
 const Store = window.__SF_STORE;
 const DATA = window.__SF_DATA;
 const APP = window.__SF_APP;
+const AGG = window.__SF_AGG;
 const ICONS = U.ICONS;
 
 let parsedResult = null; // {txns, skipped, total, fileName, params}
@@ -7805,7 +7857,8 @@ function exportExcel(scope){
       pData.push([
         g?g.groupe:"", g?g.superGroupe:"",
         g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", g?g.voyageMonth:"",
-        (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"", (g&&g.daysTo)?isoToDateObj(g.daysTo):"",
+        (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"",
+        (g&&g.daysTo)?(g.daysTo===AGG.GROUP_DATE_TODAY_SENTINEL ? "Aujourd'hui" : isoToDateObj(g.daysTo)):"",
         a?a[0]:"", a?a[1]:"", a?a[2]:"",
         p?p.personne:"", p?p.superPersonne:"",
         co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):""
@@ -8742,36 +8795,53 @@ function createAliasManager(cfg){
     if(!cfg.showKind) return "";
     const key = editingFull || editingBase;
     const range = AGG.getGroupDateRange(key) || {};
-    const stats = dayStatsPreview(key, range.dateFrom||"", range.dateTo||"");
+    const isToday = range.dateTo === AGG.GROUP_DATE_TODAY_SENTINEL;
+    const dateToDisplay = isToday ? AGG.resolveGroupDateToValue(range.dateTo) : (range.dateTo||"");
+    const stats = dayStatsPreview(key, range.dateFrom||"", dateToDisplay);
     return `
       <div class="field-label" style="margin-top:0;">Dates de début et de fin</div>
       <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:8px;line-height:1.4;">Disponibles pour tous les groupes. Utilisées pour calculer le nombre de jours et les moyennes par jour (dépenses, revenus, total).</div>
-      <div class="daterange" style="margin-bottom:10px;">
+      <div class="daterange" style="margin-bottom:8px;">
         <input type="date" class="search-mini" id="am-daterange-from" value="${U.escHtml(range.dateFrom||'')}">
-        <input type="date" class="search-mini" id="am-daterange-to" value="${U.escHtml(range.dateTo||'')}">
+        <input type="date" class="search-mini" id="am-daterange-to" value="${U.escHtml(dateToDisplay)}" ${isToday?'disabled':''}>
       </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-sub);margin-bottom:10px;cursor:pointer;">
+        <input type="checkbox" id="am-datefin-today-toggle" ${isToday?'checked':''} style="width:17px;height:17px;flex:0 0 auto;">
+        Date de fin dynamique — toujours aujourd'hui
+      </label>
       <div id="am-daystats" style="margin-bottom:18px;">${dayStatsHtml(stats)}</div>
     `;
   }
   function wireDateRangeSection(){
     if(!cfg.showKind) return;
     const key = editingFull || editingBase;
+    const fromEl = document.getElementById("am-daterange-from");
+    const toEl = document.getElementById("am-daterange-to");
+    const toggle = document.getElementById("am-datefin-today-toggle");
     const update = ()=>{
-      const df = document.getElementById("am-daterange-from").value;
-      const dt = document.getElementById("am-daterange-to").value;
+      const df = fromEl.value;
+      const dt = toggle.checked ? AGG.resolveGroupDateToValue(AGG.GROUP_DATE_TODAY_SENTINEL) : toEl.value;
       const stats = dayStatsPreview(key, df, dt);
       document.getElementById("am-daystats").innerHTML = dayStatsHtml(stats);
     };
-    const fromEl = document.getElementById("am-daterange-from");
-    const toEl = document.getElementById("am-daterange-to");
     if(fromEl) fromEl.onchange = update;
     if(toEl) toEl.onchange = update;
+    if(toggle) toggle.onchange = ()=>{
+      if(toggle.checked){
+        toEl.value = AGG.resolveGroupDateToValue(AGG.GROUP_DATE_TODAY_SENTINEL);
+        toEl.disabled = true;
+      } else {
+        toEl.disabled = false;
+      }
+      update();
+    };
   }
   function saveDateRangeSection(){
     if(!cfg.showKind) return;
     const key = editingFull || editingBase;
     const df = document.getElementById("am-daterange-from").value || null;
-    const dt = document.getElementById("am-daterange-to").value || null;
+    const toggle = document.getElementById("am-datefin-today-toggle");
+    const dt = (toggle && toggle.checked) ? AGG.GROUP_DATE_TODAY_SENTINEL : (document.getElementById("am-daterange-to").value || null);
     Store.settings.groupDateRange = Store.settings.groupDateRange || {};
     if(df && dt) Store.settings.groupDateRange[key] = {dateFrom: df, dateTo: dt};
     else delete Store.settings.groupDateRange[key];
