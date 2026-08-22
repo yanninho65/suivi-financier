@@ -89,13 +89,6 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .icon-btn svg{width:20px;height:20px;}
 .sync-spin svg{animation:sf-spin 1s linear infinite;}
 @keyframes sf-spin{to{transform:rotate(360deg);}}
-.balance-hero{margin-top:18px;}
-.balance-hero .label{font-size:14px;color:var(--text-sub);font-weight:500;}
-.balance-hero .amount{font-size:40px;font-weight:900;letter-spacing:-1px;margin-top:2px;}
-.balance-hero .sub{display:flex;gap:16px;margin-top:10px;}
-.balance-hero .sub .chip{font-size:13px;font-weight:700;padding:6px 12px;border-radius:100px;}
-.chip-in{background:var(--income-soft);color:var(--income);}
-.chip-out{background:var(--expense-soft);color:var(--expense);}
 
 /* ---------- Sections / Cards ---------- */
 .section{padding:6px 20px 0;}
@@ -425,7 +418,6 @@ details.card[open] summary::after{transform:rotate(45deg);}
 
 @media (max-width:360px){
   .app-title{font-size:26px;}
-  .balance-hero .amount{font-size:33px;}
 }
 
 /* ---------- Classes utilitaires (factorisation de styles inline répétés — audit 2026.08.22) ---------- */
@@ -454,8 +446,8 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <div class="toast" id="toast"></div>
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
-   À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.22.10.34";
+   À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
+const APP_VERSION = "v 2026.08.22.14.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -519,9 +511,7 @@ function fmtMoneySigned(n){
   const dec = moneyDecimals();
   return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + " €";
 }
-/* Petit bouton pilule "0,00" qui bascule l'affichage global des montants entre 0 et 2 décimales
-   (Store.settings.decimals). Utilisé dans les onglets Transactions et Comptes — le réglage est global,
-   donc l'activer dans un onglet s'applique aussi immédiatement à l'autre. */
+
 function decimalsToggleBtnHtml(id){
   const active = moneyDecimals()===2;
   return `<button type="button" id="${escHtml(id)}" title="${active?'Afficher les montants sans décimales':'Afficher les montants avec 2 décimales'}" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:4px 10px;border:none;border-radius:100px;font-size:11px;font-weight:800;cursor:pointer;background:${active?'var(--primary)':'var(--card-alt)'};color:${active?'#fff':'var(--text-sub)'};">0,00</button>`;
@@ -568,7 +558,6 @@ function parseDateValue(val){
   return null;
 }
 
-/* remarque -> transformed date info */
 function computeTransform(remarque){
   const r = String(remarque||"").trim();
   let m = r.match(/(\d{2})-(\d{2})$/);
@@ -677,7 +666,6 @@ const U = window.__SF_UTILS;
 const LS_SETTINGS = "sf_settings_v1";
 const LS_KEY_LEGACY = "sf_transactions_v1"; // ancien emplacement (localStorage), migré automatiquement
 
-/* Traduit une erreur de stockage (IndexedDB ou localStorage) en message compréhensible */
 function describeStorageError(e, byteLen){
   const name = e && e.name ? e.name : "";
   const sizeMb = byteLen ? (byteLen/1048576).toFixed(1)+" Mo" : "";
@@ -898,7 +886,7 @@ const Store = {
     }
     return idbDelete("transactions").catch(e=>{ console.warn(e); return false; });
   },
-  /* Estimation de l'espace de stockage utilisé/disponible (si le navigateur le permet) */
+
   async estimateUsage(){
     if(navigator.storage && navigator.storage.estimate){
       try{ return await navigator.storage.estimate(); }catch(e){ return null; }
@@ -1229,7 +1217,58 @@ function importTxns(newTxns, mode){
   return {added, skippedDup:dup, mode};
 }
 
-/* Generate randomized demo dataset for quick testing */
+/* Aligne automatiquement les valeurs qui ne diffèrent que par la casse/accents sur la valeur déjà
+   existante (ex. "restauration" importé -> "Restauration" existant), et détecte les valeurs
+   véritablement nouvelles (aucune correspondance, même insensible à la casse). Regroupe compte/compte
+   cible dans un même espace de noms (un compte existant côté source vaut aussi côté cible, et vice versa).
+   Mute txns en place. Retourne {autoAligned:[{field,label,from,to}], newValues:[{field,fields,label,value,count}]}. */
+function buildReconciliation(txns){
+  const autoAligned = [];
+  const newValues = [];
+  function existingCanonMap(fields){
+    const m = new Map();
+    Store.transactions.forEach(t=>{
+      fields.forEach(f=>{
+        const v = t[f];
+        if(v){ const n = U.normalize(v); if(!m.has(n)) m.set(n, v); }
+      });
+    });
+    return m;
+  }
+  function reconcileGroup(fields, label, groupKey){
+    const existingCanon = existingCanonMap(fields);
+    const newCanon = new Map();
+    txns.forEach(t=>{
+      fields.forEach(f=>{
+        const v = t[f];
+        if(!v || existingCanon.has(U.normalize(v))) return;
+        const n = U.normalize(v);
+        if(!newCanon.has(n)) newCanon.set(n, {value:v, count:0});
+        newCanon.get(n).count++;
+      });
+    });
+    txns.forEach(t=>{
+      fields.forEach(f=>{
+        const v = t[f];
+        if(!v) return;
+        const n = U.normalize(v);
+        const canon = existingCanon.has(n) ? existingCanon.get(n) : newCanon.get(n).value;
+        if(canon !== v){
+          autoAligned.push({field:f, label, from:v, to:canon});
+          t[f] = canon;
+          if(f==="groupe") t.groupeBase = U.baseGroupe(canon);
+        }
+      });
+    });
+    newCanon.forEach(({value,count})=>{ newValues.push({field:groupKey, fields, label, value, count}); });
+  }
+  reconcileGroup(["categorie"], "Catégorie", "categorie");
+  reconcileGroup(["personne"], "Personne", "personne");
+  reconcileGroup(["compte","compteCible"], "Compte", "compte");
+  reconcileGroup(["groupe"], "Groupe", "groupe");
+  return {autoAligned, newValues};
+}
+
 function generateDemoData(n){
   n = n||250;
   const comptes = ["Compte courant","Livret A","Compte joint","Espèces"];
@@ -1272,7 +1311,7 @@ function generateDemoData(n){
   return out;
 }
 
-window.__SF_DATA = {parseFile, importTxns, generateDemoData, rowToTxn, buildTxnId};
+window.__SF_DATA = {parseFile, importTxns, generateDemoData, rowToTxn, buildTxnId, buildReconciliation};
 })();
 (function(){
 "use strict";
@@ -1297,7 +1336,7 @@ const Filters = {
     this.comptes.clear(); this.groupes.clear();
     this.moisIndiques.clear(); this.moisCalcules.clear();
   },
-  /* Sauvegarde les filtres actuels pour qu'ils soient retrouvés à la prochaine ouverture de l'application. */
+
   persist(){
     Store.settings.filters = {
       search: this.search,
@@ -1317,7 +1356,7 @@ const Filters = {
     }
     return ok;
   },
-  /* Recharge les filtres sauvegardés au démarrage de l'application. */
+
   restore(){
     const saved = Store.settings.filters;
     if(!saved) return;
@@ -1749,7 +1788,7 @@ function classifyCategoryTypes(transactions){
   stats.forEach((o,cat)=> map.set(cat, overrides[cat] || (o.inc>=o.exp ? "Income" : "Expense")));
   return map;
 }
-/* Distinct catégorie list ordered: Income (A→Z), then Expense (A→Z) */
+
 function distinctValuesCategorieSorted(transactions){
   const items = distinctValues(transactions, "categorie");
   const typeMap = classifyCategoryTypes(transactions);
@@ -1760,13 +1799,7 @@ function distinctValuesCategorieSorted(transactions){
   });
   return withType;
 }
-/* Display value used when grouping/breaking down by a dimension. "groupe" et "personne" renvoient
-   désormais le libellé brut de la transaction (le regroupement par groupe de groupe / groupe de
-   personnes se fait via les dimensions dédiées "periode" / "groupe_personnes" ci-dessous — ces deux
-   paires de modes sont volontairement distinctes dans l'Affichage de l'onglet Transactions). Pour
-   "compte", on regroupe par compte réel (nom exact du compte) — le regroupement par type de compte
-   (Courant/Épargne...) se fait via la dimension dédiée "type_compte".
-   */
+
 function dimDisplayValue(t, dim){
   if(dim==="groupe") return t.groupe || "(Non renseigné)";
   if(dim==="periode") return getPeriodeDisplay(t);
@@ -1780,7 +1813,6 @@ function dimDisplayValue(t, dim){
 
 const TYPE_LABELS_FR = {Income:"Revenus", Expense:"Dépenses", Transfer:"Transferts"};
 
-/* "AAAA-MM" -> libellé lisible ("Mai 2024"), pour les puces de filtre actif. */
 function monthKeyLabel(key){
   const parts = String(key).split("-");
   const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1;
@@ -1809,7 +1841,7 @@ function removeChip(chip){
   else Filters[chip.kind].delete(chip.value);
   Filters.persist();
 }
-/* Renders the removable active-filter chip row into containerId. Calls onchange() after any removal. */
+
 function renderChipsBar(containerId, onchange){
   const container = document.getElementById(containerId);
   if(!container) return;
@@ -2279,7 +2311,7 @@ function buildShell(){
           <button class="icon-btn" id="btn-menu" title="Menu">${ICONS.settings}</button>
         </div>
       </div>
-      <div class="balance-hero" id="hero"></div>
+      <div style="font-size:10.5px;color:var(--text-faint);margin-top:-6px;">${APP_VERSION.replace(/^v\s*/,'')}</div>
     </div>
 
     <div class="view" id="view-transactions"></div>
@@ -2373,7 +2405,7 @@ function confirmAction(opts){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
     <h3 class="u-title-md">${U.escHtml(opts.title||"Confirmer ?")}</h3>
-    ${opts.text ? `<p class="u-desc">${U.escHtml(opts.text)}</p>` : `<div style="margin-bottom:10px;"></div>`}
+    ${opts.text ? `<p class="u-desc">${U.escHtml(opts.text).replace(/\n/g,'<br>')}</p>` : `<div style="margin-bottom:10px;"></div>`}
     <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="confirmaction-cancel">${U.escHtml(opts.cancelLabel||"Annuler")}</button>
       <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="confirmaction-ok">${U.escHtml(opts.confirmLabel||"Supprimer")}</button>
@@ -2406,8 +2438,7 @@ function applyThemeToDom(){
   }
   updateThemeColorMeta();
 }
-/* Garde la couleur de la barre d'état Android/du navigateur synchronisée avec le thème réellement affiché
-   (clair ou sombre), plutôt que la couleur par défaut du navigateur. */
+
 function updateThemeColorMeta(){
   const meta = document.getElementById("theme-color-meta");
   if(!meta) return;
@@ -2430,7 +2461,6 @@ function switchTab(tab){
 }
 
 function refreshCurrentTab(){
-  renderHero();
   updateFilterBadge();
   if(window.__SF_SYNC) window.__SF_SYNC.updateIndicator();
   const V = window.__SF_VIEWS;
@@ -2452,27 +2482,6 @@ function updateFilterBadge(){
   else { badge.style.display="none"; btn.classList.remove("active-filter"); }
   const searchBtn = document.getElementById("btn-search-toggle");
   if(searchBtn) searchBtn.classList.toggle("active-filter", !!F.search);
-}
-
-/* ================= HERO ================= */
-function renderHero(){
-  const hero = document.getElementById("hero");
-  const showOnTab = (currentTab==="transactions");
-  if(!showOnTab || Store.transactions.length===0){ hero.innerHTML=""; hero.style.display="none"; return; }
-  hero.style.display="";
-  const balances = AGG.computeAccountBalances(Store.transactions);
-  const total = balances.reduce((s,a)=>s+a.balance,0);
-  const now = new Date();
-  const monthTxns = Store.transactions.filter(t=>t.date.getFullYear()===now.getFullYear() && t.date.getMonth()===now.getMonth());
-  const totals = AGG.computeTotals(monthTxns);
-  hero.innerHTML = `
-    <div class="label">Solde total</div>
-    <div class="amount">${U.fmtMoney(total)}</div>
-    <div class="sub">
-      <span class="chip chip-in">↑ ${U.fmtMoney(totals.income)} ce mois</span>
-      <span class="chip chip-out">↓ ${U.fmtMoney(Math.abs(totals.expense))} ce mois</span>
-    </div>
-  `;
 }
 
 window.__SF_APP = {
@@ -2520,14 +2529,13 @@ function wireEmptyState(container){
   };
 }
 
-/* Classe couleur (inc/exp/trf) du bandeau vertical / montant, selon le type de transaction */
 function txnTypeClass(t){ return t.type==="Income"?"inc":(t.type==="Transfer"?"trf":"exp"); }
 function txnTitle(t){
   if(t.remarque) return t.remarque;
   if(t.type==="Transfer") return "Transfert "+t.compte+" → "+t.compteCible;
   return t.categorie || (t.type==="Income"?"Revenu":"Dépense");
 }
-/* Ligne 2 : Catégorie · Personne (ou Compte → Compte cible pour un transfert) */
+
 function txnLine2(t){
   if(t.type==="Transfer") return t.compte+" → "+t.compteCible;
   const parts=[];
@@ -2535,7 +2543,7 @@ function txnLine2(t){
   if(t.personne) parts.push(AGG.getPersonneDisplay(t));
   return parts.length ? parts.join(" · ") : "—";
 }
-/* Ligne 3 : Date · Groupe */
+
 function txnLine3(t){
   const parts=[U.fmtDateShort(t.date)];
   if(t.groupe) parts.push(t.groupe);
@@ -2749,8 +2757,6 @@ function renderTxnGroupCards(listSection, arr){
   });
 }
 
-/* Chargement automatique au scroll : dévoile davantage de groupes quand la sentinelle en bas de
-   liste approche du viewport, sans bouton "Charger plus" à cliquer. */
 function setupTxnInfiniteScroll(sentinel, arr){
   if(txnScrollObserver){ txnScrollObserver.disconnect(); txnScrollObserver=null; }
   const groupsShown = APP.state.txnGroupsShown;
@@ -2768,8 +2774,6 @@ function setupTxnInfiniteScroll(sentinel, arr){
   txnScrollObserver.observe(sentinel);
 }
 
-/* Sheet "Affichage" : sélection du mode de regroupement (remplace l'ancienne rangée d'onglets
-   toujours visible en haut de la liste des transactions). */
 function openDisplayMenu(){
   const sheet = document.getElementById("sheet-dispmenu");
   const groupBy = APP.state.txnGroupBy;
@@ -2798,8 +2802,6 @@ function openDisplayMenu(){
   });
   APP.openOverlay("overlay-dispmenu");
 }
-
-
 
 /* ================= TRANSACTION DETAIL ================= */
 /* ================= FICHE TRANSACTION (détail + édition unifiées) =================
@@ -3240,7 +3242,6 @@ function fieldPickerBtnHtml(id, label, currentValue){
   </button>`;
 }
 
-
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderTransactions = renderTransactions;
 window.__SF_VIEWS.openTxnDetail = openTxnDetail;
@@ -3282,7 +3283,7 @@ async function copyTextToClipboard(text){
       await navigator.clipboard.writeText(text);
       return true;
     }
-  }catch(e){ /* repli ci-dessous */ }
+  }catch(e){  }
   try{
     const ta = document.createElement("textarea");
     ta.value = text;
@@ -3429,8 +3430,7 @@ function orderAccountTypeGroups(groups){
     return ra-rb;
   });
 }
-/* Pop-up de réorganisation des groupes de comptes : boutons haut/bas (pas de drag, plus fiable au toucher
-   et sans dépendance). L'ordre choisi est mémorisé dans Store.settings.accountTypeOrder. */
+
 function openAccountTypeReorderSheet(currentTypes){
   let order = currentTypes.slice();
   function render(){
@@ -3482,10 +3482,6 @@ function openAccountTypeReorderSheet(currentTypes){
   APP.openOverlay("overlay-detail");
 }
 
-/* ---------------- Soldes personnalisés : jusqu'à 2 soldes additionnels, calculés sur une sélection de
-   comptes choisie par l'utilisateur, affichés dans le bloc solde en haut de l'onglet Comptes (à côté du
-   solde total). Un titre vide masque le solde correspondant. Réglages persistés dans
-   Store.settings.customBalances (tableau de {title, accounts}). ---------------- */
 function customBalancePillListHtml(accountNames, selectedSet, slot){
   return `<div class="pill-toggle-wrap">${accountNames.map(a=>`
     <button type="button" class="pill-toggle custombal-acct-item ${selectedSet.has(a)?'selected':''}" data-slot="${slot}" data-acct="${U.escHtml(a)}">${U.escHtml(a)}</button>
@@ -3576,16 +3572,15 @@ function bgFmtMoneySigned(n){
   if(n==null || isNaN(n)) n=0;
   return (n>0? "+ " : (n<0? "- " : "")) + Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}) + " €";
 }
-/* Mois en format court ("sept. 2026" plutôt que "septembre 2026"), utilisé partout dans cet onglet. */
+
 function fmtMonthYearShort(y,m){ return U.MONTHS_FR_SHORT[m]+" "+String(y).slice(2); }
-/* Liste de pilules One UI cliquables (sélection multiple, plusieurs par ligne) pour remplacer les listes à
-   cases à cocher dans cet onglet (comptes exclus, catégories amorties). */
+
 function pillToggleListHtml(items, selectedSet, dataAttr, extraClass){
   return `<div class="pill-toggle-wrap">${items.map(it=>`
     <button type="button" class="pill-toggle ${extraClass||''} ${selectedSet.has(it)?'selected':''}" data-${dataAttr}="${U.escHtml(it)}">${U.escHtml(it)}</button>
   `).join("")}</div>`;
 }
-/* Bouton "outil" toujours visible (Amortissement / Ajustements / Comparaison), ouvrant un pop-up dédié. */
+
 function budgetToolButtonHtml(id, label, sublabel){
   return `
     <button type="button" class="btn btn-ghost" id="${id}" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px 4px;min-width:0;">
@@ -3595,7 +3590,6 @@ function budgetToolButtonHtml(id, label, sublabel){
   `;
 }
 
-/* état local de la vue (période affichée) */
 let periodFrom = null, periodTo = null; // "YYYY-MM"
 /* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
    amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
@@ -3645,7 +3639,7 @@ function yearsplitMonthsInPeriod(year, monthSet){
   for(let m=1;m<=12;m++){ if(monthSet.has(year+"-"+U.pad2(m))) c++; }
   return c;
 }
-/* Ajoute n mois (peut être négatif) à une clé "AAAA-MM". */
+
 function addMonthsToKey(key, n){
   let [y,m] = key.split("-").map(Number);
   m += n;
@@ -3728,9 +3722,7 @@ function adjustmentScopedAmount(adj){
 }
 
 /* ---------------- Salaire : saisie manuelle Moi / Ma femme par mois ---------------- */
-/* La catégorie "Salaire" (nom normalisé, insensible à la casse/accents) peut être pilotée manuellement
-   mois par mois plutôt que déduite des transactions : utile si le salaire de la conjointe n'est pas
-   suivi dans les transactions, ou pour corriger une valeur ponctuelle. */
+
 function isSalaryCategory(catKey){
   return U.normalize(catKey) === "salaire";
 }
@@ -3757,7 +3749,7 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
   });
   return total;
 }
-/* Entrée manuelle Moi/Ma femme pour un mois donné ({moi:null, femme:null} si rien saisi ce mois-là). */
+
 function salaryEntryFor(monthKey){
   const cfg = Store.settings.budget;
   const e = (cfg.salaryEntries||{})[monthKey];
@@ -4229,7 +4221,6 @@ function detailRowHtml(label, mode, real, amort, adj, opts, clickAttrs){
   `;
 }
 
-
 /* ---------------- Rendu ---------------- */
 function candidateSuperGroupes(){
   return AGG.distinctValuesGroupeDisplay(Store.transactions).map(v=>v.value).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -4262,8 +4253,7 @@ function periodPickerHtml(){
 }
 
 /* ---------------- Réglages de comparaison : autre période ou budget prédéfini ---------------- */
-/* Contenu (sans habillage carte/popup) des réglages de comparaison — affiché dans le pop-up dédié
-   (openCompareSheet). */
+
 function compareSettingsHtml(){
   const cfg = Store.settings.budget;
   const cmp = cfg.compare;
@@ -4331,7 +4321,7 @@ function wireCompareSettings(afterChange){
   const editBtn = document.getElementById("bg-cmp-edit-predefined");
   if(editBtn) editBtn.onclick = openPredefinedBudgetSheet;
 }
-/* Pop-up dédié : Comparaison (activation, mode, période comparée / budget prédéfini). */
+
 function openCompareSheet(){
   function render(){
     const modal = document.getElementById("modal-detail");
@@ -4351,9 +4341,6 @@ function openCompareSheet(){
   APP.openOverlay("overlay-detail");
 }
 
-/* Feuille d'édition du budget prédéfini : un montant mensuel par groupe (principal + additionnels) et,
-   sous chacun, un montant mensuel par catégorie de ce groupe. Champ vide = 0 (aucun budget défini pour
-   cette ligne). Sauvegarde en direct à chaque changement de champ. */
 function openPredefinedBudgetSheet(){
   const cfg = Store.settings.budget;
   const cmp = cfg.compare;
@@ -4407,8 +4394,7 @@ function openPredefinedBudgetSheet(){
 }
 
 /* ---------------- Réglages d'amortissement : mois de début, période, catégories amorties ---------------- */
-/* Contenu (sans habillage carte/popup) des réglages d'amortissement — affiché dans le pop-up dédié
-   (openAmortSheet), plus visible en permanence dans la page principale. */
+
 function amortSettingsHtml(){
   const cfg = Store.settings.budget;
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
@@ -4464,7 +4450,7 @@ function wireAmortSettings(afterChange){
     };
   });
 }
-/* Pop-up dédié : Amortissement (mois de début, fenêtre, catégories amorties en pilules). */
+
 function openAmortSheet(){
   function render(){
     const modal = document.getElementById("modal-detail");
@@ -4485,8 +4471,7 @@ function openAmortSheet(){
 }
 
 /* ---------------- Comptes exclus : ignorés par tous les calculs du Budget ---------------- */
-/* Contenu (sans habillage carte/popup) de la sélection des comptes exclus — affiché dans le pop-up dédié
-   (openAccountExcludeSheet). */
+
 function accountExcludeHtml(){
   const cfg = Store.settings.budget;
   const accounts = AGG.distinctValues(Store.transactions, "compte").map(a=>a.value).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -4511,7 +4496,7 @@ function wireAccountExclude(afterChange){
     };
   });
 }
-/* Pop-up dédié : Comptes exclus (pilules One UI). */
+
 function openAccountExcludeSheet(){
   function render(){
     const modal = document.getElementById("modal-detail");
@@ -4541,7 +4526,7 @@ function adjustmentsInPeriod(){
   // mois d'origine tombe dans la période affichée.
   return (cfg.adjustments||[]).map((a,i)=>Object.assign({__idx:i}, a)).filter(a=>monthSet.has(a.month) || a.amorti);
 }
-/* Liste des ajustements de la période, au format transaction */
+
 function openAdjustmentsListSheet(){
   const items = adjustmentsInPeriod().sort((a,b)=> (b.month||"").localeCompare(a.month||""));
   const modal = document.getElementById("modal-detail");
@@ -4577,7 +4562,6 @@ function openAdjustmentsListSheet(){
   APP.openOverlay("overlay-detail");
 }
 
-/* Formulaire d'ajout / modification d'un ajustement (pop-up plein) */
 function openAdjustmentForm(adj, prefill){
   const cfg = Store.settings.budget;
   const groups = candidateSuperGroupes();
@@ -4766,7 +4750,7 @@ function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv, click
    des lignes affichées dans la carte — utilisé par renderBudget pour construire le grand total, qui est
    lui-même toujours une somme (jamais une valeur indépendante). Les voyages ne sont jamais comparés voyage
    par voyage : un seul total "Voyages" pour l'ensemble de la section, sans distinction entre eux. */
-/* Formate une borne "YYYY-MM" en format court ("sept. 26"). */
+
 function fmtBoundMonth(ym){
   if(!ym) return null;
   const parts = ym.split("-").map(Number);
@@ -4840,9 +4824,7 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
     adj: (incomeBreak?incomeBreak.adj:0)+(expenseBreak?expenseBreak.adj:0)+(voyBreak?voyBreak.adj:0)
   } : null;
   const headerHtml = compareCtx ? compareHeaderRowHtml() : detailOn ? detailHeaderRowHtml(mode) : "";
-  /* En-tête de carte : sélecteur de groupe (clic sur le nom → changer ce groupe), et pour un groupe
-     additionnel, en plus : bouton de suppression. Plus de bornage de période propre au groupe additionnel
-     — il suit toujours les mêmes mois que le principal (bornes d'amortissement, cf. extraGroupEffectiveMonths). */
+
   const groupSelectorHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
       <button type="button" class="bg-group-swap-btn" data-group="${U.escHtml(title)}" data-ismain="${isMain?1:0}" style="display:flex;align-items:center;gap:4px;background:none;border:none;padding:0;cursor:pointer;min-width:0;flex:1;">
@@ -4892,8 +4874,6 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   return {html, cmp};
 }
 
-/* Sélecteur pour changer le groupe principal, ou le groupe occupant un slot de groupe additionnel (le nom
-   choisi remplace celui-ci ; les bornes de période propres à l'ancien nom sont oubliées). */
 function openGroupSwapPicker(groupName, isMain){
   const cfg = Store.settings.budget;
   if(isMain){
@@ -5569,7 +5549,6 @@ function openSalaryEditor(superGroupeName, catKey){
   APP.openOverlay("overlay-detail");
 }
 
-
 function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
@@ -5991,7 +5970,7 @@ const APP = window.__SF_APP;
 const ICONS = U.ICONS;
 
 /* ================= ONGLET ÉVOLUTION ================= */
-/* État d'écran (non persisté, réinitialisé à chaque changement de vue/dimension) */
+
 let drillYear = null;              // null = colonnes "années" ; sinon année dont on affiche les 12 mois
 let collapsedSections = new Set(); // clés de section repliées (par défaut : tout replié)
 let sectionsInitialized = false;   // pour ne "tout replier" par défaut qu'au premier rendu
@@ -6986,8 +6965,6 @@ function applyAndClose(){
 const CHIP_KIND_LABEL = {dateFrom:"Période", dateTo:"Période", moisIndiques:"Mois indiqué", moisCalcules:"Mois calculé", types:"Type", comptes:"Compte", groupes:"Groupe", categories:"Catégorie", personnes:"Personne", search:"Recherche"};
 const CHIP_KIND_ORDER = ["Période","Mois indiqué","Mois calculé","Type","Compte","Groupe","Catégorie","Personne","Recherche"];
 
-/* Filtres actuellement actifs, regroupés par type, affichés dans la sheet de filtres (sous la liste
-   des catégories) plutôt qu'en permanence au-dessus de la liste des transactions. */
 function activeFiltersSectionHtml(){
   const chips = F.getActiveChips();
   if(chips.length===0) return "";
@@ -7301,11 +7278,13 @@ const Store = window.__SF_STORE;
 const DATA = window.__SF_DATA;
 const APP = window.__SF_APP;
 const AGG = window.__SF_AGG;
+const PICKER = window.__SF_PICKER;
 const ICONS = U.ICONS;
 
 let parsedResult = null; // {txns, skipped, total, fileName, params}
 let chosenMode = "merge";
 let chosenParamsMode = "merge";
+let reconcileChoices = {};
 
 function renderImportStep1(){
   const sheet = document.getElementById("sheet-import");
@@ -7358,10 +7337,24 @@ function handleFile(file){
   }
   DATA.parseFile(file).then(res=>{
     parsedResult = {...res, fileName: file.name};
-    renderImportSummary();
+    proceedAfterParse();
   }).catch(err=>{
     statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Impossible de lire ce fichier : ${U.escHtml(err.message)}</div>`;
   });
+}
+
+/* Après analyse d'un fichier Excel/CSV : si des données existent déjà, aligne automatiquement les valeurs
+   ne différant que par la casse/accents (Catégorie/Personne/Compte/Groupe) et détecte les valeurs
+   véritablement nouvelles. S'il y en a, propose de les valider ou de les faire correspondre à un élément
+   existant avant de continuer. Sans données existantes (premier import), tout serait "nouveau" par
+   définition : on saute directement au résumé habituel. */
+function proceedAfterParse(){
+  if(Store.transactions.length>0 && parsedResult.txns && parsedResult.txns.length){
+    const reconcile = DATA.buildReconciliation(parsedResult.txns);
+    parsedResult.reconcile = reconcile;
+    if(reconcile.newValues.length>0){ renderImportReconcile(); return; }
+  }
+  renderImportSummary();
 }
 
 function mergeRuleList(existing, incoming, sigFn){
@@ -7497,6 +7490,108 @@ function applyParamsImport(params, mode){
 
 let chosenImportScope = "both"; // "both" | "transactions" | "params"
 
+function reconcileKey(nv){ return nv.field+"::"+U.normalize(nv.value); }
+
+/* Écran affiché uniquement s'il existe des valeurs (Catégorie/Personne/Compte/Groupe) qui n'apparaissent
+   dans aucune transaction déjà enregistrée, même en ignorant casse/accents (cf. buildReconciliation). Pour
+   chacune, l'utilisateur choisit "Nouveau" (par défaut, créée telle quelle) ou "Remplacer par…" un élément
+   déjà existant (faute de frappe, variante). Les choix sont appliqués à parsedResult.txns avant de passer
+   à l'écran de résumé habituel. */
+function renderImportReconcile(){
+  const statusEl = document.getElementById("import-status");
+  const r = parsedResult;
+  reconcileChoices = {};
+  r.reconcile.newValues.forEach(nv=>{ reconcileChoices[reconcileKey(nv)] = {action:"new", target:null}; });
+
+  function existingValuesFor(fields){
+    const set = new Set();
+    Store.transactions.forEach(t=>{ fields.forEach(f=>{ if(t[f]) set.add(t[f]); }); });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
+  }
+
+  function rowHtml(nv){
+    const key = reconcileKey(nv);
+    const choice = reconcileChoices[key];
+    return `<div class="card" style="padding:12px 14px;margin-bottom:8px;box-shadow:none;background:var(--card-alt);" data-key="${U.escHtml(key)}">
+      <div class="u-row-between-sm" style="margin-bottom:0;">
+        <div style="font-weight:700;font-size:14px;">${U.escHtml(nv.value)}</div>
+        <div style="color:var(--text-sub);font-size:12px;flex:0 0 auto;">${nv.count} occurrence${nv.count>1?"s":""}</div>
+      </div>
+      <div class="seg seg-sm" style="margin-top:8px;">
+        <button type="button" data-choice="new" class="${choice.action==='new'?'active':''}">Nouveau</button>
+        <button type="button" data-choice="existing" class="${choice.action==='existing'?'active':''}">Remplacer par…</button>
+      </div>
+      <div class="reconcile-target" style="margin-top:6px;font-size:12.5px;color:var(--primary);${choice.action==='existing'?'':'display:none;'}">→ ${U.escHtml(choice.target||"")}</div>
+    </div>`;
+  }
+
+  function sectionsHtml(){
+    const byField = {};
+    r.reconcile.newValues.forEach(nv=>{ (byField[nv.field] = byField[nv.field]||[]).push(nv); });
+    return Object.keys(byField).map(field=>{
+      const group = byField[field];
+      return `<div class="field-label" style="margin-top:14px;">${U.escHtml(group[0].label)} (${group.length} nouveau${group.length>1?"x":""})</div>
+        ${group.map(rowHtml).join("")}`;
+    }).join("");
+  }
+
+  const alignedCount = r.reconcile.autoAligned.length;
+  statusEl.innerHTML = `
+    <div class="u-desc-sm">
+      Ces éléments n'apparaissent dans aucune de vos transactions actuelles. Laissez « Nouveau » pour les créer tels quels, ou choisissez « Remplacer par… » s'il s'agit en fait d'un élément déjà existant.
+      ${alignedCount ? ` Par ailleurs, ${alignedCount} valeur${alignedCount>1?"s":""} ne différant que par la casse ou les accents ${alignedCount>1?"ont":"a"} déjà été aligné${alignedCount>1?"es":"e"} automatiquement sur l'existant.` : ""}
+    </div>
+    ${sectionsHtml()}
+    <button class="btn btn-primary btn-block" id="reconcile-continue" style="margin-top:18px;">Continuer</button>
+  `;
+
+  function refreshRow(card, nv){
+    const choice = reconcileChoices[reconcileKey(nv)];
+    card.querySelector('[data-choice="new"]').classList.toggle("active", choice.action==="new");
+    card.querySelector('[data-choice="existing"]').classList.toggle("active", choice.action==="existing");
+    const targetEl = card.querySelector(".reconcile-target");
+    if(choice.action==="existing"){ targetEl.style.display=""; targetEl.textContent = "→ "+choice.target; }
+    else targetEl.style.display = "none";
+  }
+  statusEl.querySelectorAll("[data-key]").forEach(card=>{
+    const key = card.dataset.key;
+    const nv = r.reconcile.newValues.find(x=>reconcileKey(x)===key);
+    card.querySelector('[data-choice="new"]').onclick = ()=>{
+      reconcileChoices[key] = {action:"new", target:null};
+      refreshRow(card, nv);
+    };
+    card.querySelector('[data-choice="existing"]').onclick = ()=>{
+      PICKER.openPicker({
+        title: "Remplacer « "+nv.value+" » par…",
+        options: existingValuesFor(nv.fields),
+        noEmpty: true,
+        onSelect:(v)=>{
+          reconcileChoices[key] = {action:"existing", target:v};
+          refreshRow(card, nv);
+        }
+      });
+    };
+  });
+
+  document.getElementById("reconcile-continue").onclick = ()=>{
+    r.reconcile.newValues.forEach(nv=>{
+      const choice = reconcileChoices[reconcileKey(nv)];
+      if(choice.action==="existing" && choice.target){
+        const n = U.normalize(nv.value);
+        r.txns.forEach(t=>{
+          nv.fields.forEach(f=>{
+            if(t[f] && U.normalize(t[f])===n){
+              t[f] = choice.target;
+              if(f==="groupe") t.groupeBase = U.baseGroupe(choice.target);
+            }
+          });
+        });
+      }
+    });
+    renderImportSummary();
+  };
+}
+
 function renderImportSummary(){
   const statusEl = document.getElementById("import-status");
   const r = parsedResult;
@@ -7540,10 +7635,12 @@ function renderImportSummary(){
 
   function txnSectionHtml(){
     if(!hasTxns) return "";
+    const aligned = r.reconcile ? r.reconcile.autoAligned.length : 0;
     return `
       <div class="import-summary" style="margin-top:14px;">
         ${r.txns.length.toLocaleString('fr-FR')} transaction(s) valide(s) sur ${r.total.toLocaleString('fr-FR')} ligne(s)${r.skipped?` · ${r.skipped} ignorée(s)`:""}<br>
         Période : ${U.fmtDateShort(dMin)} – ${U.fmtDateShort(dMax)}
+        ${aligned ? `<br>${aligned} valeur${aligned>1?"s":""} de casse/accents différente${aligned>1?"s":""} aligné${aligned>1?"es":"e"} automatiquement sur l'existant.` : ""}
       </div>
       ${hasExisting ? `
       <div class="field-label">Que faire de ces transactions ?</div>
@@ -7948,9 +8045,6 @@ function renderMenuSheet(){
           <span style="display:flex;align-items:center;gap:12px;font-weight:600;font-size:14.5px;color:var(--expense);">${ICONS.trash} Réinitialiser les données</span>
         </div>
       </div>
-      <div class="import-summary" style="margin-top:16px;">
-        ${Store.transactions.length.toLocaleString('fr-FR')} transaction(s) enregistrée(s) localement sur cet appareil (${Store.storageMode==="localstorage"?"stockage navigateur":"base de données locale"}). Exportez une sauvegarde pour transférer vos données vers un autre appareil.
-      </div>
       ${Store.lastSaveError ? `
       <div class="import-summary" style="margin-top:10px;border:1.5px solid var(--expense);">
         <b style="color:var(--expense);">Dernier enregistrement en échec</b><br>${U.escHtml(Store.lastSaveError)}
@@ -7961,8 +8055,6 @@ function renderMenuSheet(){
         <b style="color:var(--expense);">Paramètres/filtres non mémorisés</b><br>${U.escHtml(Store.lastSettingsSaveError)}
         <div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="menu-retry-settings">Réessayer</button></div>
       </div>` : ""}
-      <div class="import-summary" id="menu-storage-usage" style="margin-top:10px;">Calcul de l'espace de stockage utilisé…</div>
-      <div style="text-align:center;color:var(--text-faint);font-size:11px;margin-top:16px;">${APP_VERSION}</div>
     </div>
   `;
   document.getElementById("menu-close").onclick = ()=>APP.closeOverlay("overlay-menu");
@@ -8006,14 +8098,6 @@ function renderMenuSheet(){
     if(Store.transactions.length===0){ APP.showToast("Aucune donnée à supprimer"); return; }
     confirmResetAll();
   };
-  Store.estimateUsage().then(est=>{
-    const el = document.getElementById("menu-storage-usage");
-    if(!el) return;
-    if(!est || est.quota==null){ el.textContent = "Estimation de l'espace de stockage indisponible sur ce navigateur."; return; }
-    const usedMb = (est.usage/1048576).toFixed(1);
-    const quotaMb = (est.quota/1073741824).toFixed(1);
-    el.textContent = `Espace utilisé : ${usedMb} Mo sur ~${quotaMb} Go disponibles sur cet appareil.`;
-  });
 }
 function openMenuSheet(){
   renderMenuSheet();
@@ -8023,11 +8107,7 @@ function openMenuSheet(){
 window.__SF_MENU = {open: openMenuSheet, buildParamsPayload};
 })();
 
-/* ================= SYNCHRONISATION (GitHub Gist) =================
-   Sauvegarde/récupération manuelle des données (transactions + paramètres) via un Gist GitHub privé,
-   comme mécanisme de transfert entre appareils (alternative à l'export/import de fichier).
-   Le jeton d'accès (scope "gist" uniquement recommandé) et l'ID du Gist sont stockés dans
-   Store.settings.sync, en localStorage sur cet appareil — jamais transmis ailleurs qu'à l'API GitHub. */
+/* ================= SYNCHRONISATION (GitHub Gist) ================= */
 (function(){
 "use strict";
 const U = window.__SF_UTILS;
@@ -8075,7 +8155,6 @@ function computeStatus(){
   return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
 }
 
-/* Récupère et parse le contenu JSON stocké dans le Gist distant. */
 async function fetchRemotePayload(c){
   const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
     headers: {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"}
@@ -8443,7 +8522,7 @@ function createAliasManager(cfg){
   /* Identifiant réel utilisé pour les règles (nom de base, sans le suffixe de date entre parenthèses) —
      l'affichage, lui, montre toujours le libellé complet (avec la date) tel que fourni par hierarchyFn. */
   function trueBase(val){ return U.baseGroupe(val); }
-  /* Icône Voyage (avion) / Vie quotidienne (maison) affichée devant chaque groupe, pour voir le type sans avoir à cliquer. */
+
   function kindIconHtml(base){
     if(!cfg.showKind) return "";
     const kind = AGG.getGroupKind(base);
@@ -8534,13 +8613,16 @@ function createAliasManager(cfg){
         <button class="btn btn-primary" id="am-bulk-move">Déplacer vers…</button>
       </div>` : ""}
     `;
-    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    const cleanBtn = document.getElementById("am-clean-obsolete");
+    sheet.querySelector("#am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    const cleanBtn = sheet.querySelector("#am-clean-obsolete");
     if(cleanBtn) cleanBtn.onclick = ()=>{
       const n = obsolete.length;
+      const shown = obsolete.slice(0,10);
+      const list = shown.map(r=>"• "+(r.full||r[cfg.baseField])+" → "+r[cfg.superField]).join("\n");
+      const more = n>shown.length ? "\n… et "+(n-shown.length)+" de plus" : "";
       APP.confirmAction({
         title:"Supprimer "+n+" règle"+(n>1?"s":"")+" obsolète"+(n>1?"s":"")+" ?",
-        text:"Ces règles concernent des "+cfg.itemLabelPlural+" qui n'apparaissent plus dans vos transactions actuelles. Cette action est définitive.",
+        text:"Ces règles concernent des "+cfg.itemLabelPlural+" qui n'apparaissent plus dans vos transactions actuelles :\n"+list+more,
         confirmLabel:"Supprimer",
         onConfirm:()=>{
           const stillObsolete = new Set(obsoleteRules());
@@ -8551,27 +8633,27 @@ function createAliasManager(cfg){
         }
       });
     };
-    document.getElementById("am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
-    const selModeBtn = document.getElementById("am-selectmode-btn");
+    sheet.querySelector("#am-search").oninput = (e)=>{ searchTerm = e.target.value; renderList(); };
+    const selModeBtn = sheet.querySelector("#am-selectmode-btn");
     if(selModeBtn) selModeBtn.onclick = ()=>{
       selectMode = !selectMode;
       if(!selectMode) selected.clear();
       renderList();
     };
     if(selectMode && !cfg.hasDates){
-      document.querySelectorAll("[data-sel]").forEach(el=>{
+      sheet.querySelectorAll("[data-sel]").forEach(el=>{
         el.onclick = ()=>{
           const base = el.dataset.sel;
           if(selected.has(base)) selected.delete(base); else selected.add(base);
           renderList();
         };
       });
-      const clearBtn = document.getElementById("am-clear-sel");
+      const clearBtn = sheet.querySelector("#am-clear-sel");
       if(clearBtn) clearBtn.onclick = ()=>{ selected.clear(); renderList(); };
-      const moveBtn = document.getElementById("am-bulk-move");
+      const moveBtn = sheet.querySelector("#am-bulk-move");
       if(moveBtn) moveBtn.onclick = ()=>{ view="bulk"; renderBulk(); };
     } else {
-      document.querySelectorAll("[data-base]").forEach(el=>{
+      sheet.querySelectorAll("[data-base]").forEach(el=>{
         el.onclick = ()=>{ editingBase = el.dataset.base; editingFull = cfg.hasDates ? (el.dataset.full || null) : null; view="edit"; renderEdit(); };
       });
     }
@@ -8597,7 +8679,7 @@ function createAliasManager(cfg){
         </div>
         <div class="field-label" style="margin-top:0;">Nom du ${cfg.superLabel}</div>
         ${datalistsHtml()}
-        <input type="text" class="search-mini" id="am-bulk-super" list="am-super-list" placeholder="Nom du ${cfg.superLabel}">
+        <input type="text" class="search-mini" id="am-bulk-super" list="am-super-list-${cfg.sheetId}" placeholder="Nom du ${cfg.superLabel}">
         <div style="font-size:12px;color:var(--text-sub);margin-top:14px;line-height:1.4;">
           Cette action remplace les règles existantes des éléments sélectionnés par cette nouvelle affectation.
         </div>
@@ -8607,11 +8689,11 @@ function createAliasManager(cfg){
         <button class="btn btn-primary" id="am-bulk-apply">Appliquer</button>
       </div>
     `;
-    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
-    document.getElementById("am-bulk-cancel").onclick = ()=>{ view="list"; renderList(); };
-    document.getElementById("am-bulk-apply").onclick = ()=>{
-      const sg = document.getElementById("am-bulk-super").value.trim();
+    sheet.querySelector("#am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    sheet.querySelector("#am-back").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-bulk-cancel").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-bulk-apply").onclick = ()=>{
+      const sg = sheet.querySelector("#am-bulk-super").value.trim();
       if(!sg){ APP.showToast("Merci d'indiquer un nom de "+cfg.superLabel); return; }
       const selectedSet = new Set(items);
       const others = rules().filter(r=> !selectedSet.has(r[cfg.baseField]));
@@ -8626,8 +8708,7 @@ function createAliasManager(cfg){
   }
 
   function datalistsHtml(){
-    return `<datalist id="am-super-list">${existingSuperNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>
-      <datalist id="am-base-list">${existingBaseNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>`;
+    return `<datalist id="am-super-list-${cfg.sheetId}">${existingSuperNames().map(n=>`<option value="${U.escHtml(n)}">`).join("")}</datalist>`;
   }
 
   function kindSectionHtml(){
@@ -8783,7 +8864,7 @@ function createAliasManager(cfg){
         ${range ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:14px;line-height:1.4;">Ce groupe couvre les transactions du ${U.fmtDateShort(new Date(range.from))} au ${U.fmtDateShort(new Date(range.to))}.</div>` : ""}
         <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}</div>
         ${datalistsHtml()}
-        <input type="text" class="search-mini" id="am-super-input" list="am-super-list" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
+        <input type="text" class="search-mini" id="am-super-input" list="am-super-list-${cfg.sheetId}" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
         ${currentRule && currentIsGlobalOther ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une ancienne règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} » (importée avant cette version). Enregistrer ici crée une règle spécifique à cette occurrence uniquement, sans toucher à l'ancienne règle ni aux autres occurrences.</div>` : ""}
         ${dateRangeSectionHtml()}
       </div>
@@ -8792,13 +8873,13 @@ function createAliasManager(cfg){
         <button class="btn btn-primary" id="am-save">Enregistrer</button>
       </div>
     `;
-    document.getElementById("am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    document.getElementById("am-back").onclick = ()=>{ view="list"; renderList(); };
-    document.getElementById("am-cancel").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
+    sheet.querySelector("#am-back").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-cancel").onclick = ()=>{ view="list"; renderList(); };
     wireKindSection();
     wireDateRangeSection();
-    document.getElementById("am-save").onclick = ()=>{
-      const sg = document.getElementById("am-super-input").value.trim();
+    sheet.querySelector("#am-save").onclick = ()=>{
+      const sg = sheet.querySelector("#am-super-input").value.trim();
       const all = rules();
       const keepOthers = all.filter(r=>{
         if(!cfg.hasDates) return r[cfg.baseField] !== editingBase;
