@@ -447,7 +447,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.22.15.58";
+const APP_VERSION = "v 2026.08.22.18.56";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2542,7 +2542,7 @@ function txnLine2(t){
   if(t.type==="Transfer") return t.compte+" → "+t.compteCible;
   const parts=[];
   if(t.categorie) parts.push(t.categorie);
-  if(t.personne) parts.push(AGG.getPersonneDisplay(t));
+  if(t.personne) parts.push(t.personne);
   return parts.length ? parts.join(" · ") : "—";
 }
 
