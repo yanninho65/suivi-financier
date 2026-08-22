@@ -476,7 +476,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché en bas du Menu, cf. renderMenuSheet). */
-const APP_VERSION = "v 2026.08.21.23.23";
+const APP_VERSION = "v 2026.08.22.00.16";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1518,6 +1518,29 @@ function groupeHierarchyFull(transactions){
   });
   return {sections, flat};
 }
+/* Variante de groupeHierarchyFull() dont l'ORDRE est chronologique plutôt qu'alphabétique : les groupes de
+   groupe sont classés du plus récent au plus ancien, en se basant sur la date de début du groupe enfant le
+   plus ancien de chacun ; à l'intérieur d'un groupe de groupe, ses groupes enfants sont classés du plus
+   ancien au plus récent (leur propre date de début, cf. getGroupStartDate). Les groupes non rattachés à un
+   groupe de groupe restent toujours à part (flat, triés par ordre alphabétique) — jamais fondus dans un
+   groupe de groupe. Le résultat porte un indicateur `preSorted` que les vues consommatrices (picker de la
+   fiche transaction, filtre Groupe) respectent pour ne pas re-trier alphabétiquement par-dessus. */
+function groupeHierarchyChrono(transactions){
+  const full = groupeHierarchyFull(transactions);
+  const txnMinDates = groupStartDatesMap(transactions);
+  const NEVER = "9999-99-99"; // repli si vraiment aucune date n'est trouvable (ne devrait pas arriver)
+  const sectionEntries = Array.from(full.sections.entries()).map(([sup, children])=>{
+    const sorted = children.slice().sort((a,b)=>
+      (getGroupStartDate(a.base, txnMinDates)||NEVER).localeCompare(getGroupStartDate(b.base, txnMinDates)||NEVER));
+    const minDate = sorted.length ? (getGroupStartDate(sorted[0].base, txnMinDates)||NEVER) : NEVER;
+    return {sup, children: sorted, minDate};
+  });
+  sectionEntries.sort((a,b)=> b.minDate.localeCompare(a.minDate));
+  const sections = new Map();
+  sectionEntries.forEach(e=> sections.set(e.sup, e.children));
+  const flat = full.flat.slice().sort((a,b)=> a.base.localeCompare(b.base,'fr'));
+  return {sections, flat, preSorted:true};
+}
 
 /* ---------------- Account type (Courant / Épargne) — set manually by the user in Paramètres ---------------- */
 function getAccountTypeDisplay(compteName){
@@ -1598,6 +1621,63 @@ function getGroupDayStats(key){
   });
   return {days, income, expense, total: income+expense,
     incomePerDay: income/days, expensePerDay: expense/days, totalPerDay: (income+expense)/days};
+}
+/* Date de "départ" d'une occurrence de groupe (libellé complet), utilisée pour le classement chronologique
+   des groupes de groupe (picker de la fiche transaction, vue Groupe de l'onglet Évolution, filtre Groupe de
+   l'onglet Transactions). Ordre de priorité strict :
+   1) la date de début configurée manuellement pour ce groupe (réglages du groupe, cf. getGroupDateRange) —
+      toujours prioritaire quand elle existe ;
+   2) à défaut seulement, la date entre parenthèses dans le libellé du groupe (ex. "23-01-08" -> 8 janvier
+      2023, "22-07" -> juillet 2022, "24-01_06" -> plage de mois, départ = janvier 2024) ;
+   3) en dernier recours (aucune date configurée, aucun suffixe reconnaissable), la date de la transaction
+      la plus ancienne de ce groupe.
+   Renvoie une chaîne "YYYY-MM-DD" comparable lexicalement, ou null si vraiment introuvable. */
+function groupStartDatesMap(transactions){
+  const map = new Map();
+  transactions.forEach(t=>{
+    if(!t.groupe) return;
+    const iso = t.dateISO || U.toISO(t.date);
+    const cur = map.get(t.groupe);
+    if(cur==null || iso<cur) map.set(t.groupe, iso);
+  });
+  return map;
+}
+/* Extrait le contenu entre parenthèses en fin de libellé (ex. "Cliff Haven (23-01-08)" -> "23-01-08"),
+   ou null si le libellé n'en comporte pas. */
+function groupLabelSuffix(fullLabel){
+  const m = String(fullLabel||"").match(/\(([^)]*)\)\s*$/);
+  return m ? m[1].trim() : null;
+}
+/* Interprète un suffixe de groupe comme une date de départ. Formats reconnus : "AA-MM-JJ" (jour précis),
+   "AA-MM_MM" (plage de mois sur une même année, départ = 1er du premier mois), "AA-MM" (mois, départ = 1er
+   du mois), "AAAA" (année seule, départ = 1er janvier). Retourne null si le format n'est pas reconnu. */
+function parseGroupSuffixDate(suffix){
+  const s = String(suffix||"").trim();
+  let m = s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if(m){
+    const yy=+m[1], mm=+m[2], dd=+m[3];
+    if(mm>=1 && mm<=12 && dd>=1 && dd<=31) return `20${m[1]}-${m[2]}-${m[3]}`;
+  }
+  m = s.match(/^(\d{2})-(\d{2})_(\d{2})$/);
+  if(m){
+    const mm=+m[2];
+    if(mm>=1 && mm<=12) return `20${m[1]}-${m[2]}-01`;
+  }
+  m = s.match(/^(\d{2})-(\d{2})$/);
+  if(m){
+    const mm=+m[2];
+    if(mm>=1 && mm<=12) return `20${m[1]}-${m[2]}-01`;
+  }
+  m = s.match(/^(\d{4})$/);
+  if(m) return `${m[1]}-01-01`;
+  return null;
+}
+function getGroupStartDate(fullLabel, txnMinDatesMap){
+  const range = getGroupDateRange(fullLabel);
+  if(range && range.dateFrom) return range.dateFrom;
+  const parsed = parseGroupSuffixDate(groupLabelSuffix(fullLabel));
+  if(parsed) return parsed;
+  return (txnMinDatesMap && txnMinDatesMap.get(fullLabel)) || null;
 }
 
 /* ---------------- Personne merging (rules: personne -> groupe de personnes ; pas de dates) ---------------- */
@@ -2019,8 +2099,25 @@ function buildEvolutionIndex(dimension, monthBasis){
     sectionList.push(merged);
   });
 
-  sectionList.forEach(s=> s.items.sort((a,b)=> itemTotalValue(b)-itemTotalValue(a)));
-  sectionList.sort((a,b)=> Math.abs(sectionTotalValue(b))-Math.abs(sectionTotalValue(a)));
+  if(dimension==="groupe"){
+    // Vue Groupe : classement chronologique plutôt que par montant — chaque groupe de groupe est trié du
+    // plus récent au plus ancien (date de début de son groupe enfant le plus ancien), et ses groupes
+    // enfants du plus ancien au plus récent (cf. demande utilisateur, même règle que le picker de la fiche
+    // transaction et le filtre Groupe de l'onglet Transactions).
+    const txnMinDates = groupStartDatesMap(Store.transactions);
+    const NEVER = "9999-99-99";
+    sectionList.forEach(s=>{
+      s.items.sort((a,b)=> (getGroupStartDate(a.key, txnMinDates)||NEVER).localeCompare(getGroupStartDate(b.key, txnMinDates)||NEVER));
+    });
+    sectionList.sort((a,b)=>{
+      const da = a.items.length ? (getGroupStartDate(a.items[0].key, txnMinDates)||NEVER) : NEVER;
+      const db = b.items.length ? (getGroupStartDate(b.items[0].key, txnMinDates)||NEVER) : NEVER;
+      return db.localeCompare(da);
+    });
+  } else {
+    sectionList.forEach(s=> s.items.sort((a,b)=> itemTotalValue(b)-itemTotalValue(a)));
+    sectionList.sort((a,b)=> Math.abs(sectionTotalValue(b))-Math.abs(sectionTotalValue(a)));
+  }
   return {sections: sectionList};
 }
 function itemTotalValue(item){
@@ -2131,9 +2228,9 @@ function recurringColumns(evoIndex, periodFrom, periodTo){
 }
 
 window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
-  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, findGroupAliasRule, getSuperGroupeForBase,
+  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, getCalcMonthYM,
+  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
   buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList,
   buildRecurringIndex, recurringItemTotal, recurringSectionTotal, recurringItemMonthValue, recurringSectionMonthValue,
@@ -2785,16 +2882,18 @@ function renderPickerList(opts){
 
   function hierarchyListHtml(){
     const h = opts.hierarchy;
-    const sectionNames = Array.from(h.sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+    const sectionNames = h.preSorted ? Array.from(h.sections.keys()) : Array.from(h.sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+    const headerSelectable = h.selectableHeaders !== false;
+    const openByDefault = !!h.expandedByDefault;
     let html = sectionNames.map((sup,idx)=>{
-      const children = h.sections.get(sup).slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+      const children = h.preSorted ? h.sections.get(sup).slice() : h.sections.get(sup).slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
       return `<div class="groupe-section">
-        <div class="check-item groupe-section-head ${sup===opts.value?'selected':''}" data-pv="${U.escHtml(sup)}">
+        <div class="check-item groupe-section-head ${headerSelectable && sup===opts.value?'selected':''}" ${headerSelectable?`data-pv="${U.escHtml(sup)}"`:''}>
           <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
           <span class="cnt">${children.length}</span>
-          <button type="button" class="icon-btn pk-expand-btn" data-expand="pk-hsec-${idx}" style="width:30px;height:30px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:14px;height:14px;transform:rotate(-90deg);" ')}</button>
+          <button type="button" class="icon-btn pk-expand-btn" data-expand="pk-hsec-${idx}" style="width:30px;height:30px;flex:0 0 auto;${openByDefault?'transform:rotate(180deg);':''}">${ICONS.arrowLeft.replace('<svg ','<svg style="width:14px;height:14px;transform:rotate(-90deg);" ')}</button>
         </div>
-        <div class="groupe-section-children" id="pk-hsec-${idx}" style="display:none;">
+        <div class="groupe-section-children" id="pk-hsec-${idx}" style="display:${openByDefault?'block':'none'};">
           ${children.map(c=>`
             <div class="check-item ${c.base===opts.value?'selected':''}" data-pv="${U.escHtml(c.base)}">
               <span class="lbl">${U.escHtml(c.base)}</span><span class="cnt">${c.count}</span>
@@ -2909,6 +3008,18 @@ function categorieList(){
   const exp = items.filter(i=>i.kind==="Expense").map(i=>i.value);
   return inc.concat(exp); // Revenus d'abord, puis Dépenses (groupement déjà assuré par le tri)
 }
+/* Hiérarchie pour le picker Catégorie de la fiche transaction : groupée par type (Revenus/Dépenses),
+   toujours dans cet ordre (jamais alphabétique) — d'où `preSorted`, cf. renderPickerList. Une catégorie a
+   toujours un type, il n'y a donc jamais d'entrée "dégroupée" (flat vide). */
+function categoriePickerHierarchy(){
+  const items = AGG.distinctValuesCategorieSorted(Store.transactions); // [{value,count,kind}], Income puis Expense, alpha au sein de chaque type
+  const sections = new Map();
+  const inc = items.filter(i=>i.kind==="Income").map(i=>({base:i.value, count:i.count}));
+  const exp = items.filter(i=>i.kind==="Expense").map(i=>({base:i.value, count:i.count}));
+  if(inc.length) sections.set("Revenus", inc);
+  if(exp.length) sections.set("Dépenses", exp);
+  return {sections, flat: [], preSorted:true, selectableHeaders:false, expandedByDefault:true};
+}
 
 function fieldPickerBtnHtml(id, label, currentValue){
   return `<button type="button" class="search-mini" id="${id}" style="margin:0;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;">
@@ -2925,9 +3036,6 @@ function openTxnForm(id){
   if(!t) return;
   const modal = document.getElementById("modal-detail");
   const comptes = AGG.distinctValues(Store.transactions, "compte").map(x=>x.value);
-  const personnes = AGG.distinctValues(Store.transactions, "personne").map(x=>x.value);
-  const groupes = AGG.distinctValues(Store.transactions, "groupe").map(x=>x.value);
-  const categories = categorieList();
 
   // État local du formulaire (les champs remplacent les <select> natifs par des pickers plein écran à sélection immédiate)
   const state = {
@@ -3021,12 +3129,12 @@ function openTxnForm(id){
   }
 
   document.getElementById("edit-categorie-btn").onclick = ()=> openPicker({
-    title:"Catégorie", options:categories, value:state.categorie, allowNew:true,
+    title:"Catégorie", hierarchy: categoriePickerHierarchy(), value:state.categorie, allowNew:true,
     newLabel:"+ Nouvelle catégorie…", newPlaceholder:"Nom de la catégorie",
     onSelect:(v)=>{ state.categorie=v; updateFieldLabel("edit-categorie-btn", v, "Choisir une catégorie"); }
   });
   document.getElementById("edit-personne-btn").onclick = ()=> openPicker({
-    title:"Personne", options:personnes, value:state.personne, allowNew:true,
+    title:"Personne", hierarchy: AGG.personneHierarchy(Store.transactions), value:state.personne, allowNew:true,
     newLabel:"+ Nouvelle personne…", newPlaceholder:"Nom de la personne",
     onSelect:(v)=>{ state.personne=v; updateFieldLabel("edit-personne-btn", v, "Choisir une personne"); }
   });
@@ -3041,7 +3149,7 @@ function openTxnForm(id){
     onSelect:(v)=>{ state.compteCible=v; updateFieldLabel("edit-compte-cible-btn", v, "Choisir un compte"); }
   });
   document.getElementById("edit-groupe-btn").onclick = ()=> openPicker({
-    title:"Groupe", options:groupes, value:state.groupe, allowNew:true,
+    title:"Groupe", hierarchy: AGG.groupeHierarchyChrono(Store.transactions), value:state.groupe, allowNew:true,
     newLabel:"+ Nouveau groupe…", newPlaceholder:"Nom du groupe (ex. Lieu (25-01))",
     onSelect:(v)=>{ state.groupe=v; updateFieldLabel("edit-groupe-btn", v, "Choisir un groupe"); }
   });
@@ -6980,15 +7088,15 @@ function renderMenuStep(){
 
 /* ---- Step 2: single-category detail ---- */
 const NESTED_DIM_CONFIG = {
-  groupes: {listId:"f-list-groupe", searchId:"f-search-groupe", hierarchyFn:()=>AGG.groupeHierarchyFull(Store.transactions)},
+  groupes: {listId:"f-list-groupe", searchId:"f-search-groupe", hierarchyFn:()=>AGG.groupeHierarchyChrono(Store.transactions)},
   personnes: {listId:"f-list-personne", searchId:"f-search-personne", hierarchyFn:()=>AGG.personneHierarchy(Store.transactions), noGroupLabel:"Sans type"},
 };
 
 function nestedFilterHtml(kind){
   const cfg = NESTED_DIM_CONFIG[kind];
   const filterSet = F[kind];
-  const {sections, flat} = cfg.hierarchyFn();
-  const sectionNames = Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  const {sections, flat, preSorted} = cfg.hierarchyFn();
+  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
   let html = `<div id="${cfg.listId}" class="check-list" style="max-height:none;">`;
   sectionNames.forEach(sup=>{
     const children = sections.get(sup);
