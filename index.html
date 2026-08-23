@@ -447,7 +447,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.23.16.30";
+const APP_VERSION = "v 2026.08.23.17.10";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -9354,13 +9354,21 @@ function emptyItem(){
     rembTiersMontant:0, rembTiersDate:null,
     rembSecuMontant:0, rembSecuDate:null,
     rembMutuelleMontant:0, rembMutuelleDate:null,
-    groupe:"", mutuelle:"", partMoi:100
+    groupe:"", mutuelle:"", partMoi:100, termine:false
   };
 }
 /* Clé de contenu (même principe que buildTxnId pour les transactions) : se recalcule à chaque
-   modification, sert à dédupliquer lors d'un import (fusion) Excel/JSON. */
+   modification, sert à dédupliquer lors d'un import (fusion) Excel/JSON. "termine" en est volontairement
+   exclu : c'est un statut de suivi qu'on bascule souvent, pas un champ identifiant le soin lui-même —
+   sinon chaque bascule "Terminé" créerait un nouvel id et casserait la déduplication à l'import. */
 function buildSanteId(it){
   return ["s",it.dateSoin,it.beneficiaire||"",it.typePrestation||"",it.medecin||"",it.montantEur||0,it.groupe||"",it.statut||""].join("|");
+}
+/* Montant correspondant à "ma part" (montant total × part moi %), arrondi à la 2e décimale
+   INFÉRIEURE (floor) — jamais un arrondi standard, à la demande explicite de l'utilisateur. */
+function computeMaPart(it){
+  const raw = (it.montantEur||0) * (it.partMoi||0) / 100;
+  return Math.floor(raw*100)/100;
 }
 function sanitizeItem(raw){
   const it = Object.assign(emptyItem(), raw||{});
@@ -9371,6 +9379,7 @@ function sanitizeItem(raw){
     const n = Number(raw); it[k] = isNaN(n) ? 0 : n;
   });
   it.partMoi = Math.max(0, Math.min(100, it.partMoi));
+  it.termine = !!it.termine;
   ["beneficiaire","devise","medecin","typePrestation","statut","groupe","mutuelle"].forEach(k=>{ it[k] = String(it[k]||"").trim(); });
   if(!it.devise) it.devise = "€";
   if(it.devise!=="€" && it.montantDevise!=null && it.montantDevise!==""){
@@ -9388,19 +9397,22 @@ function sanitizeItem(raw){
   return it;
 }
 
+
 /* ---------------- Filtres (état, persistance) ---------------- */
 const SFilters = {
   search:"",
   beneficiaires:new Set(), prestations:new Set(), statuts:new Set(), devises:new Set(), groupes:new Set(),
+  termine:new Set(), // valeurs possibles : "done" | "pending"
   reset(){
     this.search=""; this.beneficiaires.clear(); this.prestations.clear();
-    this.statuts.clear(); this.devises.clear(); this.groupes.clear();
+    this.statuts.clear(); this.devises.clear(); this.groupes.clear(); this.termine.clear();
   },
   persist(){
     Store.settings.santeFilters = {
       search:this.search,
       beneficiaires:Array.from(this.beneficiaires), prestations:Array.from(this.prestations),
-      statuts:Array.from(this.statuts), devises:Array.from(this.devises), groupes:Array.from(this.groupes)
+      statuts:Array.from(this.statuts), devises:Array.from(this.devises), groupes:Array.from(this.groupes),
+      termine:Array.from(this.termine)
     };
     Store.saveSettings();
   },
@@ -9413,6 +9425,7 @@ const SFilters = {
     this.statuts = new Set(s.statuts||[]);
     this.devises = new Set(s.devises||[]);
     this.groupes = new Set(s.groupes||[]);
+    this.termine = new Set(s.termine||[]);
   },
   activeCount(){
     let c=0;
@@ -9421,6 +9434,7 @@ const SFilters = {
     if(this.statuts.size) c++;
     if(this.devises.size) c++;
     if(this.groupes.size) c++;
+    if(this.termine.size) c++;
     return c;
   },
   matches(it){
@@ -9428,6 +9442,7 @@ const SFilters = {
     if(this.prestations.size && !this.prestations.has(it.typePrestation)) return false;
     if(this.statuts.size && !this.statuts.has(it.statut)) return false;
     if(this.devises.size && !this.devises.has(it.devise)) return false;
+    if(this.termine.size && !this.termine.has(it.termine ? "done" : "pending")) return false;
     if(this.groupes.size){
       const gBase = it.groupe ? U.baseGroupe(it.groupe) : "";
       if(!this.groupes.has(it.groupe) && !this.groupes.has(gBase)) return false;
@@ -9464,19 +9479,22 @@ function reimbClass(it){
   return "trf";
 }
 function computeSanteTotals(items){
-  let montant=0, remb=0;
-  items.forEach(it=>{ montant += it.montantEur||0; remb += reimbTotal(it); });
-  return {montant, remb, reste: Math.max(0, montant-remb)};
+  let montant=0, remb=0, maPart=0;
+  items.forEach(it=>{ montant += it.montantEur||0; remb += reimbTotal(it); maPart += computeMaPart(it); });
+  return {montant, remb, reste: Math.max(0, montant-remb), maPart};
 }
 
 /* ---------------- Groupement (bouton Affichage) ---------------- */
-const SANTE_GROUPBY_LABEL = {date:"Mois", beneficiaire:"Bénéficiaire", statut:"Statut", groupe:"Groupe", medecin:"Médecin / hôpital", prestation:"Type de prestation"};
+const SANTE_GROUPBY_LABEL = {date:"Mois", beneficiaire:"Bénéficiaire", statut:"Statut", groupe:"Groupe", medecin:"Médecin / hôpital", prestation:"Type de prestation", termine:"Terminé"};
 let santeGroupBy = "date";
 function santeGroupInfo(it, groupBy){
   if(groupBy==="date"){
     const d = new Date(it.dateSoin+"T00:00:00");
     const y=d.getFullYear(), m=d.getMonth();
     return {key:y+"-"+U.pad2(m+1), label:cap(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+  }
+  if(groupBy==="termine"){
+    return it.termine ? {key:"done", label:"Terminé"} : {key:"pending", label:"Non terminé"};
   }
   const fieldMap = {beneficiaire:"beneficiaire", statut:"statut", groupe:"groupe", medecin:"medecin", prestation:"typePrestation"};
   const v = it[fieldMap[groupBy]] || "—";
@@ -9494,6 +9512,7 @@ function computeSanteGroups(items, groupBy){
   const arr = Array.from(groups.values());
   arr.forEach(g=> g.items.sort((a,b)=> b.dateSoin.localeCompare(a.dateSoin)));
   if(groupBy==="date") arr.sort((a,b)=> b.sortVal-a.sortVal);
+  else if(groupBy==="termine"){ const rank={pending:0, done:1}; arr.sort((a,b)=> (rank[a.key]??9)-(rank[b.key]??9)); }
   else arr.sort((a,b)=> a.label.localeCompare(b.label,'fr'));
   return arr;
 }
@@ -9545,6 +9564,8 @@ function makeSanteItemEl(it){
   const line3Parts = [U.fmtDateShort(dateObj)];
   if(it.beneficiaire) line3Parts.push(it.beneficiaire);
   if(it.statut) line3Parts.push(it.statut);
+  if(it.termine) line3Parts.push("✓ Terminé");
+  if(it.termine) el.style.opacity = "0.6";
   el.innerHTML = `
     <div class="txn-band ${cls}" title="${U.escHtml(it.beneficiaire||"")}">${U.escHtml(initials)}</div>
     <div class="txn-content">
@@ -9591,9 +9612,10 @@ function renderSante(){
       <span style="font-size:13px;color:var(--text-sub);font-weight:600;">${filtered.length.toLocaleString('fr-FR')} soin${filtered.length>1?"s":""}</span>
       <span style="font-size:13px;font-weight:800;">${U.fmtMoney(totals.montant)}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 4px 0;font-size:11.5px;color:var(--text-sub);">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 10px;padding:2px 4px 0;font-size:11px;color:var(--text-sub);">
       <span>Remboursé ${U.fmtMoney(totals.remb)}</span>
       <span>Reste à charge ${U.fmtMoney(totals.reste)}</span>
+      <span>Ma part ${U.fmtMoney(totals.maPart)}</span>
     </div>
     <div style="display:flex;justify-content:flex-start;">
       <button type="button" class="txn-view-pill" id="sante-view-indicator">
@@ -9735,8 +9757,9 @@ function renderSanteDetail(id, seed){
     const lists = Store.settings.sante.lists;
 
     modal.innerHTML = `
-      <div style="display:flex;justify-content:${isNew?'space-between':'flex-end'};align-items:center;margin-bottom:2px;">
-        ${isNew?`<span class="u-title-lg">Nouveau soin</span>`:""}
+      ${isNew ? `<div class="u-title-lg" style="margin-bottom:10px;">Nouveau soin</div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <button type="button" class="pill-toggle ${cur.termine?'selected':''}" id="sd-termine" title="Marquer comme terminé / non terminé">${cur.termine?ICONS.check:""}${cur.termine?" Terminé":"Non terminé"}</button>
         <button class="icon-btn" id="sd-close">${ICONS.close}</button>
       </div>
 
@@ -9777,7 +9800,7 @@ function renderSanteDetail(id, seed){
       <div class="field-label">Mutuelle &amp; part</div>
       <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
         <div id="sd-mutuelle" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Mutuelle</span><span>${U.escHtml(cur.mutuelle||"—")}${TAP_CHEVRON_S}</span></div>
-        <div id="sd-partmoi" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Part moi</span><span>${cur.partMoi}%${TAP_CHEVRON_S}</span></div>
+        <div id="sd-partmoi" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Part moi</span><span>${cur.partMoi}% · ${U.fmtMoney(computeMaPart(cur))}${TAP_CHEVRON_S}</span></div>
       </div>
 
       <div style="display:flex;gap:10px;margin-top:16px;">
@@ -9792,6 +9815,7 @@ function renderSanteDetail(id, seed){
     `;
 
     document.getElementById("sd-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    document.getElementById("sd-termine").onclick = ()=> commit({termine: !cur.termine});
 
     document.getElementById("sd-prestation").onclick = ()=>{
       PICKER.openPicker({
@@ -10053,6 +10077,11 @@ function renderSanteFilterSheet(){
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Filtres</h2><button class="icon-btn" id="sf-close">${ICONS.close}</button></div>
     <div class="sheet-body">
+      <div class="field-label" style="margin-top:0;">Terminé</div>
+      <div class="chiprow" id="sf-termine">
+        <div class="chip-opt ${SFilters.termine.has('pending')?'selected':''}" data-val="pending">Non terminé</div>
+        <div class="chip-opt ${SFilters.termine.has('done')?'selected':''}" data-val="done">Terminé</div>
+      </div>
       ${santeFilterSectionHtml("Bénéficiaire", "sf-list-benef", beneficiaires, SFilters.beneficiaires)}
       ${santeFilterSectionHtml("Type de soin", "sf-list-prest", prestations, SFilters.prestations)}
       ${santeFilterSectionHtml("Statut", "sf-list-statut", statuts, SFilters.statuts)}
@@ -10065,6 +10094,15 @@ function renderSanteFilterSheet(){
     </div>
   `;
   document.getElementById("sf-close").onclick = ()=>APP.closeOverlay("overlay-filter");
+  document.querySelectorAll("#sf-termine .chip-opt").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      if(SFilters.termine.has(val)) SFilters.termine.delete(val); else SFilters.termine.add(val);
+      el.classList.toggle("selected");
+      SFilters.persist();
+      updateSanteApplyButton();
+    };
+  });
   wireSanteChecklist("sf-list-benef", SFilters.beneficiaires);
   wireSanteChecklist("sf-list-prest", SFilters.prestations);
   wireSanteChecklist("sf-list-statut", SFilters.statuts);
@@ -10199,7 +10237,7 @@ function setDateColFormatS(ws, colIndex, startRow, rowCount){
   }
 }
 const SANTE_XLSX_HEADER = ["Date du soin","Bénéficiaire","Devise","Montant €","Montant devise","Médecin/hôpital","Type de prestation","Statut","Statut mis à jour le",
-  "Remb. tiers payant €","Date remb. tiers","Remb. sécu €","Date remb. sécu","Remb. mutuelle €","Date remb. mutuelle","Groupe","Mutuelle","Part moi (%)"];
+  "Remb. tiers payant €","Date remb. tiers","Remb. sécu €","Date remb. sécu","Remb. mutuelle €","Date remb. mutuelle","Groupe","Mutuelle","Part moi (%)","Terminé"];
 const SANTE_DATE_COLS = [0,8,10,12,14]; // index des colonnes date dans SANTE_XLSX_HEADER
 
 function exportSanteExcel(){
@@ -10212,7 +10250,7 @@ function exportSanteExcel(){
       it.rembTiersMontant, isoToDateObjS(it.rembTiersDate),
       it.rembSecuMontant, isoToDateObjS(it.rembSecuDate),
       it.rembMutuelleMontant, isoToDateObjS(it.rembMutuelleDate),
-      it.groupe, it.mutuelle, it.partMoi
+      it.groupe, it.mutuelle, it.partMoi, it.termine ? "Oui" : "Non"
     ]);
   });
   const ws = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
@@ -10262,7 +10300,8 @@ function rowToSanteItem(row){
     rembMutuelleDate: dateOrNull(norm["date remb. mutuelle"]),
     groupe: strOr(norm["groupe"], ""),
     mutuelle: strOr(norm["mutuelle"], ""),
-    partMoi: numOrNull(norm["part moi (%)"])
+    partMoi: numOrNull(norm["part moi (%)"]),
+    termine: /^(oui|yes|true|1|x)$/i.test(String(norm["termine"]||"").trim())
   };
   if(it.partMoi==null) it.partMoi = 100;
   return sanitizeItem(it);
