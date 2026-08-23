@@ -447,7 +447,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.22.18.56";
+const APP_VERSION = "v 2026.08.23.16.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -484,6 +484,9 @@ const ICONS = {
   columns:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M15 4v16"/></svg>',
   calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  moreHorizontal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+  heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
+  stethoscope:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2v6.5a4.5 4.5 0 0 0 9 0V2"/><path d="M9.3 15.5a6 6 0 0 0 12 0v-2.5"/><circle cx="20.3" cy="10" r="2"/></svg>',
 };
 
 /* ---------------- Utils ---------------- */
@@ -665,6 +668,12 @@ const U = window.__SF_UTILS;
 
 const LS_SETTINGS = "sf_settings_v1";
 const LS_KEY_LEGACY = "sf_transactions_v1"; // ancien emplacement (localStorage), migré automatiquement
+const LS_KEY_SANTE_LEGACY = "sf_sante_items_v1"; // repli localStorage pour les soins (onglet Santé)
+/* Clés des 6 listes déroulantes personnalisables de l'onglet Santé (réglages propres à l'onglet,
+   modifiables depuis Santé > Réglages — cf. window.__SF_SANTE_SETTINGS). Le Groupe n'en fait PAS partie :
+   il pioche dans les groupes déjà connus du fichier (mêmes données que les Transactions). */
+const SANTE_LIST_KEYS = ["beneficiaires","devises","medecins","prestations","statuts","mutuelles"];
+const SANTE_DEFAULT_DEVISES = ["€","$","£","CHF"];
 
 function describeStorageError(e, byteLen){
   const name = e && e.name ? e.name : "";
@@ -735,6 +744,7 @@ function idbDelete(key){
 /* ---------------- Store ---------------- */
 const Store = {
   transactions: [], // array of txn objects
+  santeItems: [], // array d'objets "soin" (onglet Santé)
   settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
     evolution:{view:"groupe", monthBasis:"reel", merges:{groupe:[], categorie:[], personne:[]}},
@@ -765,6 +775,15 @@ const Store = {
         const raw = localStorage.getItem(LS_KEY_LEGACY);
         if(raw) this.transactions = JSON.parse(raw).map(t=>({...t, date:new Date(t.date)}));
       }catch(e2){ this.transactions=[]; }
+    }
+    try{
+      const rawSante = this.storageMode==="localstorage"
+        ? localStorage.getItem(LS_KEY_SANTE_LEGACY)
+        : await idbGet("sante_items");
+      if(rawSante) this.santeItems = JSON.parse(rawSante);
+    }catch(e){
+      console.warn("Erreur de chargement des soins (onglet Santé)", e);
+      this.santeItems = [];
     }
     try{
       const rawS = localStorage.getItem(LS_SETTINGS);
@@ -812,6 +831,41 @@ const Store = {
           return true;
         }catch(e2){
           this.lastSaveError += " Le repli de secours (stockage navigateur) a également échoué : " + (e2 && e2.message ? e2.message : e2) + ".";
+        }
+      }
+      return false;
+    });
+  },
+  /* Même mécanique que saveTransactions, pour les soins de l'onglet Santé (clé IndexedDB séparée
+     "sante_items" ; pas de champ Date à convertir, tous les champs sont déjà des chaînes/nombres). */
+  lastSanteSaveError: null,
+  saveSanteItems(){
+    this.lastSanteSaveError = null;
+    let json;
+    try{
+      json = JSON.stringify(this.santeItems);
+    }catch(e){
+      this.lastSanteSaveError = "Impossible de préparer les données (" + (e && e.message ? e.message : e) + ")";
+      return Promise.resolve(false);
+    }
+    if(this.storageMode === "localstorage"){
+      try{ localStorage.setItem(LS_KEY_SANTE_LEGACY, json); return Promise.resolve(true); }
+      catch(e){
+        this.lastSanteSaveError = describeStorageError(e, json.length);
+        console.warn("Erreur de sauvegarde (Santé)", e);
+        return Promise.resolve(false);
+      }
+    }
+    return idbSet("sante_items", json).then(()=>true).catch(e=>{
+      console.warn("Erreur de sauvegarde IndexedDB (Santé)", e);
+      this.lastSanteSaveError = describeStorageError(e, json.length);
+      if(json.length < 4*1024*1024){
+        try{
+          localStorage.setItem(LS_KEY_SANTE_LEGACY, json);
+          this.lastSanteSaveError += " — repli automatique sur le stockage navigateur réussi.";
+          return true;
+        }catch(e2){
+          this.lastSanteSaveError += " Le repli de secours a également échoué : " + (e2 && e2.message ? e2.message : e2) + ".";
         }
       }
       return false;
@@ -877,14 +931,26 @@ const Store = {
     if(s.sync.lastSyncedAt===undefined) s.sync.lastSyncedAt = null;
     if(s.sync.lastSyncedHash===undefined) s.sync.lastSyncedHash = null;
     if(typeof s.txnGroupsExpanded!=="boolean") s.txnGroupsExpanded = false;
+    // ---- Onglet Santé : listes personnalisables + filtres mémorisés ----
+    if(!s.sante || typeof s.sante!=="object") s.sante = {};
+    if(!s.sante.lists || typeof s.sante.lists!=="object") s.sante.lists = {};
+    SANTE_LIST_KEYS.forEach(k=>{ if(!Array.isArray(s.sante.lists[k])) s.sante.lists[k] = []; });
+    if(s.sante.lists.devises.length===0) s.sante.lists.devises = SANTE_DEFAULT_DEVISES.slice();
+    if(!s.santeFilters || typeof s.santeFilters!=="object") s.santeFilters = null;
+    if(typeof s.santeGroupsExpanded!=="boolean") s.santeGroupsExpanded = false;
   },
   clearAll(){
     this.transactions=[];
+    this.santeItems=[];
     if(this.storageMode === "localstorage"){
       try{ localStorage.removeItem(LS_KEY_LEGACY); }catch(e){}
+      try{ localStorage.removeItem(LS_KEY_SANTE_LEGACY); }catch(e){}
       return Promise.resolve(true);
     }
-    return idbDelete("transactions").catch(e=>{ console.warn(e); return false; });
+    return Promise.all([
+      idbDelete("transactions").catch(e=>{ console.warn(e); return false; }),
+      idbDelete("sante_items").catch(e=>{ console.warn(e); return false; })
+    ]).then(r=>r.every(Boolean));
   },
 
   async estimateUsage(){
@@ -894,6 +960,7 @@ const Store = {
     return null;
   }
 };
+Store.SANTE_LIST_KEYS = SANTE_LIST_KEYS;
 window.__SF_STORE = Store;
 
 /* ---------------- Header mapping ---------------- */
@@ -2319,6 +2386,7 @@ function buildShell(){
     <div class="view" id="view-budget"></div>
     <div class="view" id="view-evolution"></div>
     <div class="view" id="view-recurrent"></div>
+    <div class="view" id="view-sante"></div>
     <div class="view active" id="view-accounts"></div>
 
     <div class="float-bar-wrap" id="floatbar-wrap">
@@ -2340,6 +2408,7 @@ function buildShell(){
       <button class="navbtn" data-tab="budget">${ICONS.budget}<span>Budget</span></button>
       <button class="navbtn" data-tab="evolution">${ICONS.trend}<span>Évolution</span></button>
       <button class="navbtn" data-tab="recurrent">${ICONS.refreshCw}<span>Récurrent</span></button>
+      <button class="navbtn" id="nav-more" title="Plus">${ICONS.moreHorizontal}<span>Plus</span></button>
     </div>
 
     <div class="overlay overlay-large" id="overlay-filter"><div class="sheet sheet-large" id="sheet-filter"></div></div>
@@ -2347,20 +2416,31 @@ function buildShell(){
     <div class="overlay" id="overlay-import"><div class="sheet" id="sheet-import"></div></div>
     <div class="overlay" id="overlay-menu"><div class="sheet" id="sheet-menu"></div></div>
     <div class="overlay" id="overlay-sync"><div class="sheet" id="sheet-sync"></div></div>
+    <div class="overlay" id="overlay-more"><div class="sheet" id="sheet-more"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-detail"><div class="modal-center" id="modal-detail"></div></div>
     <div class="overlay overlay-large" id="overlay-groupmgr"><div class="sheet sheet-large" id="sheet-groupmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-personmgr"><div class="sheet sheet-large" id="sheet-personmgr"></div></div>
     <div class="overlay overlay-large" id="overlay-accttype"><div class="sheet sheet-large" id="sheet-accttype"></div></div>
     <div class="overlay overlay-large" id="overlay-catmgr"><div class="sheet sheet-large" id="sheet-catmgr"></div></div>
+    <div class="overlay overlay-large" id="overlay-santesettings"><div class="sheet sheet-large" id="sheet-santesettings"></div></div>
     <div class="overlay overlay-large" id="overlay-picker"><div class="sheet sheet-large" id="sheet-picker"></div></div>
     <div class="overlay modal-center-wrap" id="overlay-confirm"><div class="modal-center" id="modal-confirm"></div></div>
   `;
 
   document.getElementById("btn-theme").onclick = cycleTheme;
   document.getElementById("btn-menu").onclick = ()=>window.__SF_MENU.open();
-  document.getElementById("btn-filter").onclick = ()=>window.__SF_FILTERSHEET.openFilterSheet();
-  document.getElementById("btn-add-txn").onclick = ()=>window.__SF_VIEWS.openTxnNew();
-  document.getElementById("btn-display").onclick = ()=>window.__SF_VIEWS.openDisplayMenu();
+  document.getElementById("btn-filter").onclick = ()=>{
+    if(currentTab==="sante") window.__SF_SANTE_FILTERSHEET.openFilterSheet();
+    else window.__SF_FILTERSHEET.openFilterSheet();
+  };
+  document.getElementById("btn-add-txn").onclick = ()=>{
+    if(currentTab==="sante") window.__SF_SANTE.openNew();
+    else window.__SF_VIEWS.openTxnNew();
+  };
+  document.getElementById("btn-display").onclick = ()=>{
+    if(currentTab==="sante") window.__SF_SANTE.openDisplayMenu();
+    else window.__SF_VIEWS.openDisplayMenu();
+  };
   document.getElementById("btn-search-toggle").onclick = ()=>{
     document.getElementById("float-bar-actions").style.display = "none";
     document.getElementById("float-bar-search").style.display = "flex";
@@ -2371,30 +2451,69 @@ function buildShell(){
     document.getElementById("float-bar-actions").style.display = "flex";
   };
   document.getElementById("search-input").oninput = U.debounce((e)=>{
-    F.search = e.target.value;
-    F.persist();
-    resetTxnPagination();
+    if(currentTab==="sante"){
+      const SF = window.__SF_SANTE_FILTERS;
+      if(SF){ SF.search = e.target.value; SF.persist(); }
+    } else {
+      F.search = e.target.value;
+      F.persist();
+      resetTxnPagination();
+    }
     refreshCurrentTab();
   }, 180);
 
-  document.querySelectorAll(".navbtn").forEach(btn=>{
+  document.querySelectorAll(".navbtn[data-tab]").forEach(btn=>{
     btn.onclick = ()=> switchTab(btn.dataset.tab);
   });
+  document.getElementById("nav-more").onclick = ()=> openMoreMenu();
 
   document.getElementById("overlay-filter").onclick = (e)=>{ if(e.target.id==="overlay-filter") closeOverlay("overlay-filter"); };
   document.getElementById("overlay-dispmenu").onclick = (e)=>{ if(e.target.id==="overlay-dispmenu") closeOverlay("overlay-dispmenu"); };
   document.getElementById("overlay-import").onclick = (e)=>{ if(e.target.id==="overlay-import") closeOverlay("overlay-import"); };
   document.getElementById("overlay-menu").onclick = (e)=>{ if(e.target.id==="overlay-menu") closeOverlay("overlay-menu"); };
   document.getElementById("overlay-sync").onclick = (e)=>{ if(e.target.id==="overlay-sync") closeOverlay("overlay-sync"); };
+  document.getElementById("overlay-more").onclick = (e)=>{ if(e.target.id==="overlay-more") closeOverlay("overlay-more"); };
   document.getElementById("overlay-detail").onclick = (e)=>{ if(e.target.id==="overlay-detail") closeOverlay("overlay-detail"); };
   document.getElementById("overlay-confirm").onclick = (e)=>{ if(e.target.id==="overlay-confirm") closeOverlay("overlay-confirm"); };
   document.getElementById("overlay-groupmgr").onclick = (e)=>{ if(e.target.id==="overlay-groupmgr") closeOverlay("overlay-groupmgr"); };
   document.getElementById("overlay-personmgr").onclick = (e)=>{ if(e.target.id==="overlay-personmgr") closeOverlay("overlay-personmgr"); };
   document.getElementById("overlay-accttype").onclick = (e)=>{ if(e.target.id==="overlay-accttype") closeOverlay("overlay-accttype"); };
   document.getElementById("overlay-catmgr").onclick = (e)=>{ if(e.target.id==="overlay-catmgr") closeOverlay("overlay-catmgr"); };
+  document.getElementById("overlay-santesettings").onclick = (e)=>{ if(e.target.id==="overlay-santesettings") closeOverlay("overlay-santesettings"); };
   document.getElementById("overlay-picker").onclick = (e)=>{ if(e.target.id==="overlay-picker") closeOverlay("overlay-picker"); };
 
   applyThemeToDom();
+}
+
+/* ---- Menu "Plus" (bouton ⋯ en bas à droite) : accès aux onglets secondaires (Santé pour l'instant,
+   conçu pour en accueillir d'autres plus tard sans encombrer la barre principale). ---- */
+const MORE_TABS = [
+  {key:"sante", label:"Santé", desc:"Suivi de vos remboursements de santé", icon:()=>U.ICONS.heart}
+];
+function openMoreMenu(){
+  const sheet = document.getElementById("sheet-more");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Plus</h2><button class="icon-btn" id="more-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="card" style="padding:4px 6px;">
+        ${MORE_TABS.map(t=>`
+          <div class="rowline" data-moretab="${t.key}" style="cursor:pointer;">
+            <span class="u-row-label">${t.icon()} ${U.escHtml(t.label)}</span>
+            <span style="display:flex;transform:rotate(180deg);color:var(--text-faint);">${ICONS.arrowLeft}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+  document.getElementById("more-close").onclick = ()=>closeOverlay("overlay-more");
+  sheet.querySelectorAll("[data-moretab]").forEach(el=>{
+    el.onclick = ()=>{
+      closeOverlay("overlay-more");
+      switchTab(el.dataset.moretab);
+    };
+  });
+  openOverlay("overlay-more");
 }
 
 function closeOverlay(id){ document.getElementById(id).classList.remove("open"); }
@@ -2447,17 +2566,30 @@ function updateThemeColorMeta(){
   meta.setAttribute("content", isDark ? "#0E0F12" : "#F0F1F4");
 }
 
+const MORE_TAB_KEYS = ["sante"]; // onglets accessibles via le bouton "Plus" (⋯), cf. openMoreMenu
+
 function switchTab(tab){
   currentTab = tab;
   resetTxnPagination();
-  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  document.querySelectorAll(".navbtn[data-tab]").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  const moreBtn = document.getElementById("nav-more");
+  if(moreBtn) moreBtn.classList.toggle("active", MORE_TAB_KEYS.includes(tab));
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById("view-"+tab).classList.add("active");
-  const showFloat = (tab==="transactions");
+  const showFloat = (tab==="transactions" || tab==="sante");
   document.getElementById("floatbar-wrap").style.display = showFloat ? "flex" : "none";
   // Repart toujours sur la rangée d'icônes (pas la barre de recherche dépliée) en arrivant sur l'onglet.
   document.getElementById("float-bar-search").style.display = "none";
   document.getElementById("float-bar-actions").style.display = "flex";
+  const searchInput = document.getElementById("search-input");
+  const addBtn = document.getElementById("btn-add-txn");
+  if(tab==="sante"){
+    searchInput.placeholder = "Rechercher un soin, un médecin…";
+    addBtn.title = "Ajouter un soin";
+  } else {
+    searchInput.placeholder = "Rechercher une dépense, un lieu…";
+    addBtn.title = "Ajouter une transaction";
+  }
   refreshCurrentTab();
 }
 
@@ -2465,6 +2597,7 @@ function refreshCurrentTab(){
   updateFilterBadge();
   if(window.__SF_SYNC) window.__SF_SYNC.updateIndicator();
   const V = window.__SF_VIEWS;
+  if(currentTab==="sante"){ window.__SF_SANTE && window.__SF_SANTE.render(); return; }
   if(!V) return;
   if(currentTab==="transactions") V.renderTransactions();
   else if(currentTab==="budget") V.renderBudget && V.renderBudget();
@@ -2474,15 +2607,18 @@ function refreshCurrentTab(){
 }
 
 function updateFilterBadge(){
-  const n = F.activeCount();
+  const isSante = currentTab==="sante";
+  const SF = window.__SF_SANTE_FILTERS;
+  const n = isSante ? (SF ? SF.activeCount() : 0) : F.activeCount();
+  const searchVal = isSante ? (SF ? SF.search : "") : F.search;
   const badge = document.getElementById("filter-badge");
   const btn = document.getElementById("btn-filter");
   const searchInput = document.getElementById("search-input");
-  if(searchInput.value !== F.search) searchInput.value = F.search;
+  if(searchInput.value !== searchVal) searchInput.value = searchVal;
   if(n>0){ badge.style.display="flex"; badge.textContent=n; btn.classList.add("active-filter"); }
   else { badge.style.display="none"; btn.classList.remove("active-filter"); }
   const searchBtn = document.getElementById("btn-search-toggle");
-  if(searchBtn) searchBtn.classList.toggle("active-filter", !!F.search);
+  if(searchBtn) searchBtn.classList.toggle("active-filter", !!searchVal);
 }
 
 window.__SF_APP = {
@@ -3268,7 +3404,7 @@ window.__SF_VIEWS.openTxnEdit = openTxnEdit;
 window.__SF_VIEWS.openTxnNew = openTxnNew;
 window.__SF_VIEWS.openDisplayMenu = openDisplayMenu;
 window.__SF_VIEWS.makeTxnItemEl = makeTxnItemEl;
-window.__SF_PICKER = {openPicker, fieldPickerBtnHtml};
+window.__SF_PICKER = {openPicker, fieldPickerBtnHtml, openInlineEditor};
 })();
 (function(){
 "use strict";
@@ -7345,7 +7481,9 @@ function handleFile(file){
         const rawArr = Array.isArray(obj) ? obj : (obj.transactions || []);
         const txns = rawArr.map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
         const params = (!Array.isArray(obj) && obj.params) ? obj.params : null;
-        parsedResult = {txns, skipped: rawArr.length-txns.length, total: rawArr.length, fileName: file.name, params};
+        const santeItems = (!Array.isArray(obj) && Array.isArray(obj.santeItems)) ? obj.santeItems : null;
+        const santeSettings = (!Array.isArray(obj) && obj.santeSettings) ? obj.santeSettings : null;
+        parsedResult = {txns, skipped: rawArr.length-txns.length, total: rawArr.length, fileName: file.name, params, santeItems, santeSettings};
         renderImportSummary();
       }catch(err){
         statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Fichier JSON invalide : ${U.escHtml(err.message)}</div>`;
@@ -7724,6 +7862,15 @@ function renderImportSummary(){
       const doParams = showParamsSection;
       const stats = doTxns ? DATA.importTxns(parsedResult.txns, chosenMode) : null;
       const pstats = doParams ? applyParamsImport(parsedResult.params, chosenParamsMode) : null;
+      // Sauvegarde JSON (§ exportBackup) : les soins de l'onglet Santé, s'il y en a dans le fichier,
+      // voyagent avec le reste — fusion/remplacement selon le même choix que pour les transactions.
+      let santeStats = null;
+      if(parsedResult.santeItems && parsedResult.santeItems.length && window.__SF_SANTE_DATA){
+        santeStats = window.__SF_SANTE_DATA.importSanteItems(parsedResult.santeItems, chosenMode);
+      }
+      if(parsedResult.santeSettings && window.__SF_SANTE_DATA){
+        window.__SF_SANTE_DATA.importSanteSettings(parsedResult.santeSettings);
+      }
       if(pstats) Store.saveSettings();
       APP.closeOverlay("overlay-import");
       APP.refreshCurrentTab();
@@ -7742,9 +7889,15 @@ function renderImportSummary(){
         } else {
           msg = "Paramètres mis à jour";
         }
+        if(santeStats) msg += ` · ${santeStats.added.toLocaleString('fr-FR')} soin(s) importé(s)`;
         APP.showToast(msg);
       };
-      if(doTxns) Store.saveTransactions().then(finish);
+      const afterTxnSave = (ok)=>{
+        if(santeStats) Store.saveSanteItems().then(()=>finish(ok));
+        else finish(ok);
+      };
+      if(doTxns) Store.saveTransactions().then(afterTxnSave);
+      else if(santeStats) Store.saveSanteItems().then(afterTxnSave);
       else finish(true);
     };
   }
@@ -7803,6 +7956,12 @@ function exportBackup(scope){
   }
   if(scope==="both" || scope==="params"){
     payload.params = buildParamsPayload();
+  }
+  // Les soins de l'onglet Santé voyagent toujours avec la sauvegarde JSON (quel que soit le
+  // périmètre choisi ci-dessus), au même titre que la synchro Gist — cf. buildSyncPayload.
+  if(Store.santeItems.length || Object.values((Store.settings.sante||{}).lists||{}).some(l=>l.length)){
+    payload.santeItems = Store.santeItems.slice();
+    payload.santeSettings = Store.settings.sante;
   }
   const blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
@@ -8002,7 +8161,7 @@ function confirmResetAll(){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
     <h3 class="u-title-md">Réinitialiser toutes les données ?</h3>
-    <p class="u-desc">Cette action supprimera définitivement les ${Store.transactions.length.toLocaleString('fr-FR')} transactions enregistrées sur cet appareil. Pensez à exporter une sauvegarde avant si besoin.</p>
+    <p class="u-desc">Cette action supprimera définitivement les ${Store.transactions.length.toLocaleString('fr-FR')} transactions${Store.santeItems.length ? ` et les ${Store.santeItems.length.toLocaleString('fr-FR')} soin${Store.santeItems.length>1?'s':''} (onglet Santé)` : ""} enregistrés sur cet appareil. Pensez à exporter une sauvegarde avant si besoin.</p>
     <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="reset-cancel">Annuler</button>
       <button class="btn" style="flex:1;background:var(--expense);color:#fff;" id="reset-confirm">Supprimer</button>
@@ -8012,6 +8171,7 @@ function confirmResetAll(){
   document.getElementById("reset-confirm").onclick = ()=>{
     Store.clearAll();
     window.__SF_FILTERS.reset();
+    if(window.__SF_SANTE_FILTERS) window.__SF_SANTE_FILTERS.reset();
     APP.closeOverlay("overlay-confirm");
     APP.closeOverlay("overlay-menu");
     APP.showToast("Données réinitialisées");
@@ -8114,7 +8274,7 @@ function renderMenuSheet(){
   document.getElementById("menu-catmgr").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_CATMGR.open(); };
   document.getElementById("menu-accttype").onclick = ()=>{ APP.closeOverlay("overlay-menu"); window.__SF_ACCTTYPE.open(); };
   document.getElementById("menu-reset").onclick = ()=>{
-    if(Store.transactions.length===0){ APP.showToast("Aucune donnée à supprimer"); return; }
+    if(Store.transactions.length===0 && Store.santeItems.length===0){ APP.showToast("Aucune donnée à supprimer"); return; }
     confirmResetAll();
   };
 }
@@ -8154,11 +8314,14 @@ function buildSyncPayload(){
     version: 2,
     exportedAt: new Date().toISOString(),
     transactions: Store.transactions.map(t=>({...t, date:t.date.toISOString()})),
-    params: window.__SF_MENU.buildParamsPayload()
+    params: window.__SF_MENU.buildParamsPayload(),
+    santeItems: Store.santeItems.slice(),
+    santeSettings: Store.settings.sante
   };
 }
 function hashPayload(payload){
-  const str = JSON.stringify(payload.transactions) + "|" + JSON.stringify(payload.params);
+  const str = JSON.stringify(payload.transactions) + "|" + JSON.stringify(payload.params)
+    + "|" + JSON.stringify(payload.santeItems||[]) + "|" + JSON.stringify(payload.santeSettings||{});
   let h = 0;
   for(let i=0;i<str.length;i++){ h = (Math.imul(31,h) + str.charCodeAt(i))|0; }
   return String(h);
@@ -8239,6 +8402,10 @@ function applyRemotePayloadLocally(payload){
   const txns = (payload.transactions||[]).map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
   window.__SF_DATA.importTxns(txns, "replace");
   if(payload.params) window.__SF_IMPORT.applyParamsImport(payload.params, "replace");
+  // Onglet Santé : miroir complet comme pour les transactions (remplacement, pas de fusion —
+  // cohérent avec le fonctionnement "replace" de la synchro Gist pour le reste des données).
+  if(payload.santeItems) Store.santeItems = payload.santeItems.slice();
+  if(payload.santeSettings) Store.settings.sante = payload.santeSettings;
   Store.normalizeSettings();
 }
 
@@ -8276,6 +8443,7 @@ async function pullFromGist(){
     Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
     Store.saveSettings();
     await Store.saveTransactions();
+    await Store.saveSanteItems();
     APP.refreshCurrentTab();
     APP.showToast("Données récupérées depuis GitHub Gist");
   }catch(e){
@@ -8322,6 +8490,7 @@ async function smartSync(){
       Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
       Store.saveSettings();
       await Store.saveTransactions();
+      await Store.saveSanteItems();
       APP.refreshCurrentTab();
       APP.showToast("Données récupérées depuis GitHub Gist");
       return;
@@ -8378,6 +8547,7 @@ function showConflictModal(c, localPayload, localHash, remotePayload){
       Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
       Store.saveSettings();
       await Store.saveTransactions();
+      await Store.saveSanteItems();
       APP.refreshCurrentTab();
       APP.showToast("Données récupérées depuis GitHub Gist (a écrasé cet appareil)");
     }catch(e){
@@ -9157,6 +9327,1115 @@ function openCatMgr(){
 }
 window.__SF_CATMGR = {open: openCatMgr};
 })();
+
+/* ================= ONGLET SANTÉ ================= */
+(function(){
+"use strict";
+const U = window.__SF_UTILS;
+const Store = window.__SF_STORE;
+const AGG = window.__SF_AGG;
+const APP = window.__SF_APP;
+const PICKER = window.__SF_PICKER;
+const ICONS = U.ICONS;
+
+const LIST_KEYS = Store.SANTE_LIST_KEYS; // ["beneficiaires","devises","medecins","prestations","statuts","mutuelles"]
+const LIST_LABELS = {beneficiaires:"Bénéficiaires", devises:"Devises", medecins:"Médecins / hôpitaux", prestations:"Types de prestation", statuts:"Statuts", mutuelles:"Mutuelles"};
+const LIST_PLACEHOLDER = {beneficiaires:"Ex. Marie", devises:"Ex. $ (USD)", medecins:"Ex. Dr Martin", prestations:"Ex. Consultation", statuts:"Ex. Envoyé", mutuelles:"Ex. MGEN"};
+const TAP_CHEVRON_S = `<span style="color:var(--text-faint);display:inline-flex;vertical-align:middle;margin-left:4px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:12px;height:12px;transform:rotate(180deg);" ')}</span>`;
+
+function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+/* ---------------- Modèle de données ---------------- */
+function emptyItem(){
+  return {
+    dateSoin: U.toISO(new Date()),
+    beneficiaire:"", devise:"€", montantEur:0, montantDevise:null,
+    medecin:"", typePrestation:"", statut:"", statutDate:null,
+    rembTiersMontant:0, rembTiersDate:null,
+    rembSecuMontant:0, rembSecuDate:null,
+    rembMutuelleMontant:0, rembMutuelleDate:null,
+    groupe:"", mutuelle:"", partMoi:100
+  };
+}
+/* Clé de contenu (même principe que buildTxnId pour les transactions) : se recalcule à chaque
+   modification, sert à dédupliquer lors d'un import (fusion) Excel/JSON. */
+function buildSanteId(it){
+  return ["s",it.dateSoin,it.beneficiaire||"",it.typePrestation||"",it.medecin||"",it.montantEur||0,it.groupe||"",it.statut||""].join("|");
+}
+function sanitizeItem(raw){
+  const it = Object.assign(emptyItem(), raw||{});
+  if(!it.dateSoin) it.dateSoin = U.toISO(new Date());
+  ["montantEur","rembTiersMontant","rembSecuMontant","rembMutuelleMontant","partMoi"].forEach(k=>{
+    let raw = it[k];
+    if(typeof raw === "string") raw = raw.replace(/\s/g,"").replace(",",".");
+    const n = Number(raw); it[k] = isNaN(n) ? 0 : n;
+  });
+  it.partMoi = Math.max(0, Math.min(100, it.partMoi));
+  ["beneficiaire","devise","medecin","typePrestation","statut","groupe","mutuelle"].forEach(k=>{ it[k] = String(it[k]||"").trim(); });
+  if(!it.devise) it.devise = "€";
+  if(it.devise!=="€" && it.montantDevise!=null && it.montantDevise!==""){
+    let rawD = it.montantDevise;
+    if(typeof rawD === "string") rawD = rawD.replace(/\s/g,"").replace(",",".");
+    const n = Number(rawD);
+    it.montantDevise = isNaN(n) ? null : n;
+  } else {
+    it.montantDevise = null;
+  }
+  ["dateSoin","statutDate","rembTiersDate","rembSecuDate","rembMutuelleDate"].forEach(k=>{
+    it[k] = it[k] ? it[k] : (k==="dateSoin" ? it.dateSoin : null);
+  });
+  it.id = buildSanteId(it);
+  return it;
+}
+
+/* ---------------- Filtres (état, persistance) ---------------- */
+const SFilters = {
+  search:"",
+  beneficiaires:new Set(), prestations:new Set(), statuts:new Set(), devises:new Set(), groupes:new Set(),
+  reset(){
+    this.search=""; this.beneficiaires.clear(); this.prestations.clear();
+    this.statuts.clear(); this.devises.clear(); this.groupes.clear();
+  },
+  persist(){
+    Store.settings.santeFilters = {
+      search:this.search,
+      beneficiaires:Array.from(this.beneficiaires), prestations:Array.from(this.prestations),
+      statuts:Array.from(this.statuts), devises:Array.from(this.devises), groupes:Array.from(this.groupes)
+    };
+    Store.saveSettings();
+  },
+  restore(){
+    const s = Store.settings.santeFilters;
+    if(!s) return;
+    this.search = s.search||"";
+    this.beneficiaires = new Set(s.beneficiaires||[]);
+    this.prestations = new Set(s.prestations||[]);
+    this.statuts = new Set(s.statuts||[]);
+    this.devises = new Set(s.devises||[]);
+    this.groupes = new Set(s.groupes||[]);
+  },
+  activeCount(){
+    let c=0;
+    if(this.beneficiaires.size) c++;
+    if(this.prestations.size) c++;
+    if(this.statuts.size) c++;
+    if(this.devises.size) c++;
+    if(this.groupes.size) c++;
+    return c;
+  },
+  matches(it){
+    if(this.beneficiaires.size && !this.beneficiaires.has(it.beneficiaire)) return false;
+    if(this.prestations.size && !this.prestations.has(it.typePrestation)) return false;
+    if(this.statuts.size && !this.statuts.has(it.statut)) return false;
+    if(this.devises.size && !this.devises.has(it.devise)) return false;
+    if(this.groupes.size){
+      const gBase = it.groupe ? U.baseGroupe(it.groupe) : "";
+      if(!this.groupes.has(it.groupe) && !this.groupes.has(gBase)) return false;
+    }
+    if(this.search){
+      const s = U.normalize(this.search);
+      const hay = U.normalize([it.beneficiaire,it.medecin,it.typePrestation,it.statut,it.groupe,it.mutuelle].join(" "));
+      if(!hay.includes(s)) return false;
+    }
+    return true;
+  }
+};
+window.__SF_SANTE_FILTERS = SFilters;
+
+function applySanteFilters(items){ return items.filter(it=>SFilters.matches(it)); }
+
+/* ---------------- Agrégation ---------------- */
+function distinctSante(field){
+  const counts = new Map();
+  Store.santeItems.forEach(it=>{
+    const v = it[field];
+    if(!v) return;
+    counts.set(v, (counts.get(v)||0)+1);
+  });
+  return Array.from(counts.entries()).map(([value,count])=>({value,count})).sort((a,b)=>a.value.localeCompare(b.value,'fr'));
+}
+function reimbTotal(it){ return (it.rembTiersMontant||0)+(it.rembSecuMontant||0)+(it.rembMutuelleMontant||0); }
+function reimbClass(it){
+  const m = it.montantEur||0;
+  const r = reimbTotal(it);
+  if(m<=0) return "trf";
+  if(r<=0) return "exp";
+  if(r>=m) return "inc";
+  return "trf";
+}
+function computeSanteTotals(items){
+  let montant=0, remb=0;
+  items.forEach(it=>{ montant += it.montantEur||0; remb += reimbTotal(it); });
+  return {montant, remb, reste: Math.max(0, montant-remb)};
+}
+
+/* ---------------- Groupement (bouton Affichage) ---------------- */
+const SANTE_GROUPBY_LABEL = {date:"Mois", beneficiaire:"Bénéficiaire", statut:"Statut", groupe:"Groupe", medecin:"Médecin / hôpital", prestation:"Type de prestation"};
+let santeGroupBy = "date";
+function santeGroupInfo(it, groupBy){
+  if(groupBy==="date"){
+    const d = new Date(it.dateSoin+"T00:00:00");
+    const y=d.getFullYear(), m=d.getMonth();
+    return {key:y+"-"+U.pad2(m+1), label:cap(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+  }
+  const fieldMap = {beneficiaire:"beneficiaire", statut:"statut", groupe:"groupe", medecin:"medecin", prestation:"typePrestation"};
+  const v = it[fieldMap[groupBy]] || "—";
+  return {key:v, label:v};
+}
+function computeSanteGroups(items, groupBy){
+  const groups = new Map();
+  items.forEach(it=>{
+    const g = santeGroupInfo(it, groupBy);
+    if(!groups.has(g.key)) groups.set(g.key, {key:g.key, label:g.label, sortVal:g.sortVal, items:[], montant:0});
+    const o = groups.get(g.key);
+    o.items.push(it);
+    o.montant += it.montantEur||0;
+  });
+  const arr = Array.from(groups.values());
+  arr.forEach(g=> g.items.sort((a,b)=> b.dateSoin.localeCompare(a.dateSoin)));
+  if(groupBy==="date") arr.sort((a,b)=> b.sortVal-a.sortVal);
+  else arr.sort((a,b)=> a.label.localeCompare(b.label,'fr'));
+  return arr;
+}
+function openSanteDisplayMenu(){
+  const sheet = document.getElementById("sheet-dispmenu");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Affichage</h2><button class="icon-btn" id="sante-dispmenu-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="card" style="padding:4px 6px;">
+        ${Object.keys(SANTE_GROUPBY_LABEL).map(k=>`
+          <div class="rowline dispmenu-row-sante" data-key="${k}" style="cursor:pointer;">
+            <span style="font-weight:600;font-size:14.5px;">${SANTE_GROUPBY_LABEL[k]}</span>
+            ${santeGroupBy===k ? `<span style="color:var(--primary);display:flex;">${ICONS.check}</span>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+  document.getElementById("sante-dispmenu-close").onclick = ()=>APP.closeOverlay("overlay-dispmenu");
+  sheet.querySelectorAll(".dispmenu-row-sante").forEach(row=>{
+    row.onclick = ()=>{
+      santeGroupBy = row.dataset.key;
+      APP.closeOverlay("overlay-dispmenu");
+      renderSante();
+    };
+  });
+  APP.openOverlay("overlay-dispmenu");
+}
+
+/* ---------------- Liste ---------------- */
+function emptyStateSanteHtml(){
+  return `<div class="empty-state">
+    ${ICONS.heart}
+    <h3>Aucun soin enregistré</h3>
+    <p>Ajoutez un soin pour suivre vos remboursements de santé.</p>
+    <button class="btn btn-primary" id="sante-empty-add">${ICONS.plus}Ajouter un soin</button>
+  </div>`;
+}
+function makeSanteItemEl(it){
+  const el = document.createElement("div");
+  el.className = "txn-item";
+  const cls = reimbClass(it);
+  const initials = (it.beneficiaire||"?").trim().slice(0,2).toUpperCase();
+  const dateObj = new Date(it.dateSoin+"T00:00:00");
+  const line2Parts = [];
+  if(it.medecin) line2Parts.push(it.medecin);
+  if(it.groupe) line2Parts.push(it.groupe);
+  const line3Parts = [U.fmtDateShort(dateObj)];
+  if(it.beneficiaire) line3Parts.push(it.beneficiaire);
+  if(it.statut) line3Parts.push(it.statut);
+  el.innerHTML = `
+    <div class="txn-band ${cls}" title="${U.escHtml(it.beneficiaire||"")}">${U.escHtml(initials)}</div>
+    <div class="txn-content">
+      <div class="txn-mid">
+        <div class="txn-title">${U.escHtml(it.typePrestation||"Soin")}</div>
+        <div class="txn-sub">${U.escHtml(line2Parts.join(" · ")||"—")}</div>
+        <div class="txn-line">${U.escHtml(line3Parts.join(" · "))}</div>
+      </div>
+      <div class="txn-amt ${cls}">${U.fmtMoney(it.montantEur||0)}</div>
+    </div>
+  `;
+  el.onclick = ()=> openSanteDetail(it.id);
+  return el;
+}
+function wireSanteSettingsBtn(){
+  const btn = document.getElementById("sante-settings-btn");
+  if(btn) btn.onclick = ()=> window.__SF_SANTE_SETTINGS.open();
+}
+function wireSanteViewIndicator(){
+  const btn = document.getElementById("sante-view-indicator");
+  if(btn) btn.onclick = ()=> openSanteDisplayMenu();
+}
+function renderSante(){
+  const view = document.getElementById("view-sante");
+  const headerHtml = `<div class="section" style="padding-top:14px;padding-left:12px;padding-right:12px;padding-bottom:0;">
+    <div style="display:flex;justify-content:flex-end;">
+      <button type="button" class="icon-btn" id="sante-settings-btn" style="width:36px;height:36px;box-shadow:none;background:var(--card-alt);" title="Réglages de l'onglet Santé">${ICONS.settings}</button>
+    </div>
+  </div>`;
+
+  if(Store.santeItems.length===0){
+    view.innerHTML = headerHtml + `<div class="section">${emptyStateSanteHtml()}</div>`;
+    const addBtn = view.querySelector("#sante-empty-add");
+    if(addBtn) addBtn.onclick = ()=> openSanteNew();
+    wireSanteSettingsBtn();
+    return;
+  }
+
+  const filtered = applySanteFilters(Store.santeItems);
+  const totals = computeSanteTotals(filtered);
+
+  let html = headerHtml + `<div class="section" style="padding-top:0;padding-left:12px;padding-right:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px;gap:8px;">
+      <span style="font-size:13px;color:var(--text-sub);font-weight:600;">${filtered.length.toLocaleString('fr-FR')} soin${filtered.length>1?"s":""}</span>
+      <span style="font-size:13px;font-weight:800;">${U.fmtMoney(totals.montant)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 4px 0;font-size:11.5px;color:var(--text-sub);">
+      <span>Remboursé ${U.fmtMoney(totals.remb)}</span>
+      <span>Reste à charge ${U.fmtMoney(totals.reste)}</span>
+    </div>
+    <div style="display:flex;justify-content:flex-start;">
+      <button type="button" class="txn-view-pill" id="sante-view-indicator">
+        ${ICONS.layers}<span>${U.escHtml(SANTE_GROUPBY_LABEL[santeGroupBy])}</span>
+        <span class="tvp-chev" style="display:flex;transform:rotate(180deg);">${ICONS.arrowLeft}</span>
+      </button>
+    </div>
+  </div>`;
+
+  if(filtered.length===0){
+    html += `<div class="section"><div class="empty-state">${ICONS.search}<h3>Aucun résultat</h3><p>Essayez d'ajuster vos filtres ou votre recherche.</p></div></div>`;
+    view.innerHTML = html;
+    wireSanteViewIndicator();
+    wireSanteSettingsBtn();
+    return;
+  }
+
+  html += `<div class="section" id="sante-list-section" style="padding-left:12px;padding-right:12px;"></div>`;
+  view.innerHTML = html;
+  wireSanteViewIndicator();
+  wireSanteSettingsBtn();
+
+  const listSection = document.getElementById("sante-list-section");
+  const groups = computeSanteGroups(filtered, santeGroupBy);
+  groups.forEach(g=>{
+    const card = document.createElement("div");
+    card.style.marginBottom = "16px";
+    card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:2px 2px 8px;">
+      <span style="font-weight:800;font-size:13.5px;">${U.escHtml(g.label)}</span>
+      <span style="font-size:12px;color:var(--text-sub);">${g.items.length} · ${U.fmtMoney(g.montant)}</span>
+    </div>`;
+    const itemsWrap = document.createElement("div");
+    g.items.forEach(it=> itemsWrap.appendChild(makeSanteItemEl(it)));
+    card.appendChild(itemsWrap);
+    listSection.appendChild(card);
+  });
+}
+
+/* ---------------- Édition compacte : remboursement (montant + date) ---------------- */
+function openReimbEditor(title, montant, date, onSave){
+  const modal = document.getElementById("modal-confirm");
+  modal.innerHTML = `
+    <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">${U.escHtml(title)}</div>
+    <div class="field-label" style="margin-top:0;">Montant (€)</div>
+    <input type="number" class="search-mini" id="re-montant" style="margin:0 0 14px;" value="${montant||0}" min="0" step="0.01">
+    <div class="field-label" style="margin-top:0;">Date du remboursement</div>
+    <input type="date" class="search-mini" id="re-date" style="margin:0 0 16px;" value="${date||''}">
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="re-cancel">Annuler</button>
+      <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="re-confirm">Enregistrer</button>
+    </div>
+  `;
+  document.getElementById("re-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("re-confirm").onclick = ()=>{
+    const m = Number(document.getElementById("re-montant").value);
+    const d = document.getElementById("re-date").value || null;
+    if(isNaN(m) || m<0){ APP.showToast("Montant invalide"); return; }
+    APP.closeOverlay("overlay-confirm");
+    onSave(m, d);
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
+/* ---------------- Édition compacte : part moi (%) avec accès rapide 0/50/100 ---------------- */
+function openPartMoiEditor(current, onSave){
+  const modal = document.getElementById("modal-confirm");
+  let val = current;
+  function render(){
+    modal.innerHTML = `
+      <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">Part moi</div>
+      <div class="pill-toggle-wrap" style="margin-bottom:14px;">
+        ${[0,50,100].map(p=>`<button type="button" class="pill-toggle ${val===p?'selected':''}" data-pm="${p}">${p}%</button>`).join("")}
+      </div>
+      <input type="number" class="search-mini" id="pm-input" style="margin:0 0 16px;" value="${val}" min="0" max="100" step="1">
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="pm-cancel">Annuler</button>
+        <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="pm-confirm">Enregistrer</button>
+      </div>
+    `;
+    modal.querySelectorAll("[data-pm]").forEach(btn=>{
+      btn.onclick = ()=>{ val = Number(btn.dataset.pm); render(); };
+    });
+    document.getElementById("pm-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+    const input = document.getElementById("pm-input");
+    input.oninput = ()=>{ const n = Number(input.value); if(!isNaN(n)) val = n; };
+    document.getElementById("pm-confirm").onclick = ()=>{
+      const n = Number(input.value);
+      if(isNaN(n) || n<0 || n>100){ APP.showToast("Merci de renseigner un pourcentage entre 0 et 100"); return; }
+      APP.closeOverlay("overlay-confirm");
+      onSave(n);
+    };
+  }
+  render();
+  APP.openOverlay("overlay-confirm");
+}
+
+function addToList(key, value){
+  if(!value) return;
+  const list = Store.settings.sante.lists[key];
+  if(!list.includes(value)){
+    list.push(value);
+    Store.saveSettings();
+  }
+}
+
+/* ---------------- Fiche soin (détail + édition unifiées, sur le modèle de la fiche transaction) ---------------- */
+function openSanteDetail(id){ renderSanteDetail(id, null); }
+function openSanteNew(){ renderSanteDetail(null, null); }
+
+function renderSanteDetail(id, seed){
+  const isNew = !id;
+  let currentId = id;
+  const draft = !isNew ? null : Object.assign(emptyItem(), seed ? Object.assign({}, seed, {id:undefined}) : {});
+
+  function current(){ return isNew ? draft : Store.santeItems.find(x=>x.id===currentId); }
+
+  function commit(patch){
+    if(isNew){ Object.assign(draft, patch); render(); return; }
+    const cur = current();
+    if(!cur) return;
+    const merged = sanitizeItem(Object.assign({}, cur, patch));
+    const idx = Store.santeItems.findIndex(x=>x.id===currentId);
+    if(idx===-1) return;
+    Store.santeItems[idx] = merged;
+    currentId = merged.id;
+    render();
+    APP.refreshCurrentTab();
+    Store.saveSanteItems().then(ok=>{
+      if(!ok) APP.showToast("Modifié, mais la sauvegarde a échoué");
+    });
+  }
+
+  function render(){
+    const cur = current();
+    if(!cur){ APP.closeOverlay("overlay-detail"); return; }
+    const modal = document.getElementById("modal-detail");
+    const dateObj = new Date(cur.dateSoin+"T00:00:00");
+    const showDevise = cur.devise && cur.devise!=="€";
+    const lists = Store.settings.sante.lists;
+
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:${isNew?'space-between':'flex-end'};align-items:center;margin-bottom:2px;">
+        ${isNew?`<span class="u-title-lg">Nouveau soin</span>`:""}
+        <button class="icon-btn" id="sd-close">${ICONS.close}</button>
+      </div>
+
+      <div id="sd-prestation" class="txn-tap-row" style="cursor:pointer;padding:8px 2px 16px;">
+        <div style="font-weight:800;font-size:19px;line-height:1.3;${cur.typePrestation?'':'color:var(--text-faint);'}">${U.escHtml(cur.typePrestation||"(Type de prestation)")}</div>
+      </div>
+
+      <div class="field-label" style="margin-top:0;">Soin</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+        <div id="sd-montant" class="detail-row txn-tap-row" style="cursor:pointer;padding:14px 2px;">
+          <span>Montant</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:21px;font-weight:900;">${U.fmtMoney(cur.montantEur||0)}</span>
+            ${TAP_CHEVRON_S}
+          </span>
+        </div>
+        <div id="sd-devise" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Devise</span><span>${U.escHtml(cur.devise||"€")}${TAP_CHEVRON_S}</span></div>
+        ${showDevise ? `<div id="sd-montant-devise" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Montant (${U.escHtml(cur.devise)})</span><span>${cur.montantDevise!=null?cur.montantDevise.toLocaleString('fr-FR'):"—"}${TAP_CHEVRON_S}</span></div>` : ""}
+        <div id="sd-date" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Date du soin</span><span>${U.escHtml(U.fmtDateLong(dateObj))}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-beneficiaire" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Bénéficiaire</span><span>${U.escHtml(cur.beneficiaire||"—")}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-medecin" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Médecin / hôpital</span><span>${U.escHtml(cur.medecin||"—")}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-groupe" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Groupe</span><span>${U.escHtml(cur.groupe||"—")}${TAP_CHEVRON_S}</span></div>
+      </div>
+
+      <div class="field-label">Statut</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+        <div id="sd-statut" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Statut</span><span>${U.escHtml(cur.statut||"—")}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-statut-date" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Mise à jour le</span><span>${cur.statutDate?U.escHtml(U.fmtDateShort(new Date(cur.statutDate+"T00:00:00"))):"—"}${TAP_CHEVRON_S}</span></div>
+      </div>
+
+      <div class="field-label">Remboursements</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+        <div id="sd-remb-tiers" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Tiers payant</span><span>${U.fmtMoney(cur.rembTiersMontant||0)}${cur.rembTiersDate?" · "+U.fmtDateShort(new Date(cur.rembTiersDate+"T00:00:00")):""}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-remb-secu" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Sécu</span><span>${U.fmtMoney(cur.rembSecuMontant||0)}${cur.rembSecuDate?" · "+U.fmtDateShort(new Date(cur.rembSecuDate+"T00:00:00")):""}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-remb-mutuelle" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Mutuelle</span><span>${U.fmtMoney(cur.rembMutuelleMontant||0)}${cur.rembMutuelleDate?" · "+U.fmtDateShort(new Date(cur.rembMutuelleDate+"T00:00:00")):""}${TAP_CHEVRON_S}</span></div>
+      </div>
+
+      <div class="field-label">Mutuelle &amp; part</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:4px 14px;">
+        <div id="sd-mutuelle" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Mutuelle</span><span>${U.escHtml(cur.mutuelle||"—")}${TAP_CHEVRON_S}</span></div>
+        <div id="sd-partmoi" class="detail-row txn-tap-row" style="cursor:pointer;"><span>Part moi</span><span>${cur.partMoi}%${TAP_CHEVRON_S}</span></div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        ${isNew ? `
+          <button class="btn btn-ghost" id="sd-cancel" style="flex:1;">Annuler</button>
+          <button class="btn btn-primary" id="sd-save" style="flex:1;">Enregistrer</button>
+        ` : `
+          <button class="btn btn-ghost" id="sd-duplicate" style="flex:1;">${ICONS.copy}Dupliquer</button>
+          <button class="btn btn-ghost" id="sd-delete" style="flex:1;color:var(--expense);">${ICONS.trash}Supprimer</button>
+        `}
+      </div>
+    `;
+
+    document.getElementById("sd-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+
+    document.getElementById("sd-prestation").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Type de prestation", options:lists.prestations.slice(), value:cur.typePrestation, allowNew:true,
+        newLabel:"+ Nouveau type…", newPlaceholder:"Ex. Consultation, Pharmacie…",
+        onSelect:(v)=>{ addToList("prestations", v); commit({typePrestation:v}); }
+      });
+    };
+    document.getElementById("sd-montant").onclick = ()=>{
+      PICKER.openInlineEditor({
+        title:"Montant (€)", inputType:"number", min:0, step:0.01, value: cur.montantEur||"", placeholder:"0,00",
+        onSave:(v)=>{
+          const n = Number(v);
+          if(v===""||isNaN(n)||n<0){ APP.showToast("Merci de renseigner un montant valide"); return; }
+          commit({montantEur:n});
+        }
+      });
+    };
+    document.getElementById("sd-devise").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Devise", options:lists.devises.slice(), value:cur.devise, allowNew:true, noEmpty:true,
+        newLabel:"+ Nouvelle devise…", newPlaceholder:"Ex. $ (USD)",
+        onSelect:(v)=>{ addToList("devises", v); commit({devise:v, montantDevise: v==="€"?null:cur.montantDevise}); }
+      });
+    };
+    if(showDevise){
+      const mdBtn = document.getElementById("sd-montant-devise");
+      if(mdBtn) mdBtn.onclick = ()=>{
+        PICKER.openInlineEditor({
+          title:"Montant ("+cur.devise+")", inputType:"number", min:0, step:0.01, value: cur.montantDevise!=null?cur.montantDevise:"", placeholder:"0,00",
+          onSave:(v)=>{
+            const n = v===""? null : Number(v);
+            if(n!=null && isNaN(n)){ APP.showToast("Montant invalide"); return; }
+            commit({montantDevise:n});
+          }
+        });
+      };
+    }
+    document.getElementById("sd-date").onclick = ()=>{
+      PICKER.openInlineEditor({
+        title:"Date du soin", inputType:"date", value:cur.dateSoin,
+        onSave:(v)=>{
+          if(!v){ APP.showToast("Merci de renseigner une date valide"); return; }
+          commit({dateSoin:v});
+        }
+      });
+    };
+    document.getElementById("sd-beneficiaire").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Bénéficiaire", options:lists.beneficiaires.slice(), value:cur.beneficiaire, allowNew:true,
+        newLabel:"+ Nouveau bénéficiaire…", newPlaceholder:"Nom",
+        onSelect:(v)=>{ addToList("beneficiaires", v); commit({beneficiaire:v}); }
+      });
+    };
+    document.getElementById("sd-medecin").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Médecin / hôpital", options:lists.medecins.slice(), value:cur.medecin, allowNew:true,
+        newLabel:"+ Nouveau…", newPlaceholder:"Nom du médecin ou de l'établissement",
+        onSelect:(v)=>{ addToList("medecins", v); commit({medecin:v}); }
+      });
+    };
+    document.getElementById("sd-groupe").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Groupe", hierarchy: AGG.groupeHierarchyChrono(Store.transactions), value:cur.groupe, allowNew:true,
+        newLabel:"+ Nouveau groupe…", newPlaceholder:"Nom du groupe",
+        onSelect:(v)=> commit({groupe:v})
+      });
+    };
+    document.getElementById("sd-statut").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Statut", options:lists.statuts.slice(), value:cur.statut, allowNew:true,
+        newLabel:"+ Nouveau statut…", newPlaceholder:"Ex. Envoyé, Remboursé…",
+        onSelect:(v)=>{ addToList("statuts", v); commit({statut:v, statutDate: U.toISO(new Date())}); }
+      });
+    };
+    document.getElementById("sd-statut-date").onclick = ()=>{
+      PICKER.openInlineEditor({
+        title:"Statut mis à jour le", inputType:"date", value:cur.statutDate||U.toISO(new Date()),
+        onSave:(v)=> commit({statutDate:v||null})
+      });
+    };
+    document.getElementById("sd-remb-tiers").onclick = ()=>{
+      openReimbEditor("Tiers payant", cur.rembTiersMontant, cur.rembTiersDate, (montant,date)=>commit({rembTiersMontant:montant, rembTiersDate:date}));
+    };
+    document.getElementById("sd-remb-secu").onclick = ()=>{
+      openReimbEditor("Sécu", cur.rembSecuMontant, cur.rembSecuDate, (montant,date)=>commit({rembSecuMontant:montant, rembSecuDate:date}));
+    };
+    document.getElementById("sd-remb-mutuelle").onclick = ()=>{
+      openReimbEditor("Mutuelle", cur.rembMutuelleMontant, cur.rembMutuelleDate, (montant,date)=>commit({rembMutuelleMontant:montant, rembMutuelleDate:date}));
+    };
+    document.getElementById("sd-mutuelle").onclick = ()=>{
+      PICKER.openPicker({
+        title:"Mutuelle", options:lists.mutuelles.slice(), value:cur.mutuelle, allowNew:true,
+        newLabel:"+ Nouvelle mutuelle…", newPlaceholder:"Nom de la mutuelle",
+        onSelect:(v)=>{ addToList("mutuelles", v); commit({mutuelle:v}); }
+      });
+    };
+    document.getElementById("sd-partmoi").onclick = ()=>{
+      openPartMoiEditor(cur.partMoi, (v)=> commit({partMoi:v}));
+    };
+
+    if(isNew){
+      document.getElementById("sd-cancel").onclick = ()=>APP.closeOverlay("overlay-detail");
+      document.getElementById("sd-save").onclick = ()=>{
+        if(!draft.dateSoin || !(Number(draft.montantEur)>0)){
+          APP.showToast("Merci de renseigner une date et un montant valides");
+          return;
+        }
+        const toAdd = sanitizeItem(draft);
+        Store.santeItems.push(toAdd);
+        APP.closeOverlay("overlay-detail");
+        APP.refreshCurrentTab();
+        Store.saveSanteItems().then(ok=>{
+          APP.showToast(ok ? "Soin ajouté" : "Ajouté, mais la sauvegarde a échoué");
+        });
+      };
+    } else {
+      document.getElementById("sd-duplicate").onclick = ()=>{
+        const source = current();
+        APP.closeOverlay("overlay-detail");
+        renderSanteDetail(null, source);
+      };
+      document.getElementById("sd-delete").onclick = ()=>{
+        APP.confirmAction({
+          title:"Supprimer ce soin ?", text:"Cette action est définitive.", confirmLabel:"Supprimer",
+          onConfirm:()=>{
+            Store.santeItems = Store.santeItems.filter(x=>x.id!==currentId);
+            APP.closeOverlay("overlay-detail");
+            APP.refreshCurrentTab();
+            Store.saveSanteItems().then(ok=>{
+              APP.showToast(ok ? "Soin supprimé" : "Supprimé, mais la sauvegarde a échoué");
+            });
+          }
+        });
+      };
+    }
+  }
+
+  render();
+  APP.openOverlay("overlay-detail");
+}
+
+window.__SF_SANTE = {render: renderSante, openNew: openSanteNew, openDetail: openSanteDetail, openDisplayMenu: openSanteDisplayMenu};
+
+/* ================= FILTRES SANTÉ (réutilise overlay-filter / sheet-filter) ================= */
+function santeFilterSectionHtml(title, listId, options, selectedSet){
+  if(options.length===0) return `<div class="field-label">${title}</div><div class="u-empty-note">Aucune valeur disponible</div>`;
+  return `<div class="field-label">${title}</div>
+    <div class="check-list" id="${listId}" style="max-height:none;margin-bottom:6px;">
+      ${options.map(o=>`
+        <div class="check-item ${selectedSet.has(o.value)?'selected':''}" data-val="${U.escHtml(o.value)}">
+          <span class="cbox">${ICONS.check}</span>
+          <span class="lbl">${U.escHtml(o.value)}</span>
+          <span class="cnt">${o.count}</span>
+        </div>
+      `).join("")}
+    </div>`;
+}
+function wireSanteChecklist(listId, set){
+  const list = document.getElementById(listId);
+  if(!list) return;
+  list.querySelectorAll(".check-item[data-val]").forEach(el=>{
+    el.onclick = ()=>{
+      const v = el.dataset.val;
+      if(set.has(v)) set.delete(v); else set.add(v);
+      el.classList.toggle("selected");
+      SFilters.persist();
+      updateSanteApplyButton();
+    };
+  });
+}
+function santeGroupeFilterHtml(){
+  const {sections, flat, preSorted} = AGG.groupeHierarchyChrono(Store.transactions);
+  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  const filterSet = SFilters.groupes;
+  let html = `<div class="field-label">Groupe</div><input type="text" class="search-mini" id="sf-search-groupe" placeholder="Rechercher un groupe…">
+    <div id="sf-list-groupe" class="check-list" style="max-height:none;margin-bottom:6px;">`;
+  sectionNames.forEach(sup=>{
+    const children = sections.get(sup);
+    const totalCount = children.reduce((s,c)=>s+c.count,0);
+    const selected = filterSet.has(sup);
+    html += `<div class="groupe-section" data-super="${U.escHtml(sup)}">
+      <div class="check-item groupe-section-head ${selected?'selected':''}" data-val="${U.escHtml(sup)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${filterSet.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(c.base)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  });
+  flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr')).forEach(f=>{
+    const selected = filterSet.has(f.base);
+    html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
+      <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function wireSanteGroupeFilter(){
+  const list = document.getElementById("sf-list-groupe");
+  if(!list) return;
+  list.querySelectorAll(".check-item[data-val]").forEach(el=>{
+    el.onclick = ()=>{
+      const v = el.dataset.val;
+      if(SFilters.groupes.has(v)) SFilters.groupes.delete(v); else SFilters.groupes.add(v);
+      el.classList.toggle("selected");
+      SFilters.persist();
+      updateSanteApplyButton();
+    };
+  });
+  const search = document.getElementById("sf-search-groupe");
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      list.querySelectorAll(".groupe-section").forEach(sec=>{
+        const supMatch = U.normalize(sec.dataset.super).includes(q);
+        let any=false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || U.normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match?"flex":"none";
+          if(match) any=true;
+        });
+        sec.style.display = (!q||supMatch||any) ? "" : "none";
+      });
+      list.querySelectorAll(".groupe-flat-item").forEach(el=>{
+        const match = !q || U.normalize(el.dataset.val).includes(q);
+        el.style.display = match ? "flex" : "none";
+      });
+    };
+  }
+}
+function updateSanteApplyButton(){
+  document.querySelectorAll(".sante-filter-apply-btn").forEach(btn=>{
+    const n = applySanteFilters(Store.santeItems).length;
+    btn.textContent = "Voir " + n.toLocaleString('fr-FR') + " résultat" + (n>1?"s":"");
+  });
+}
+function applySanteAndClose(){
+  APP.closeOverlay("overlay-filter");
+  APP.refreshCurrentTab();
+}
+function renderSanteFilterSheet(){
+  const sheet = document.getElementById("sheet-filter");
+  const beneficiaires = distinctSante("beneficiaire");
+  const prestations = distinctSante("typePrestation");
+  const statuts = distinctSante("statut");
+  const devises = distinctSante("devise");
+
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Filtres</h2><button class="icon-btn" id="sf-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      ${santeFilterSectionHtml("Bénéficiaire", "sf-list-benef", beneficiaires, SFilters.beneficiaires)}
+      ${santeFilterSectionHtml("Type de soin", "sf-list-prest", prestations, SFilters.prestations)}
+      ${santeFilterSectionHtml("Statut", "sf-list-statut", statuts, SFilters.statuts)}
+      ${santeFilterSectionHtml("Devise", "sf-list-devise", devises, SFilters.devises)}
+      ${santeGroupeFilterHtml()}
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-ghost" id="sf-reset">Réinitialiser tout</button>
+      <button class="btn btn-primary sante-filter-apply-btn" id="sf-apply">Voir les résultats</button>
+    </div>
+  `;
+  document.getElementById("sf-close").onclick = ()=>APP.closeOverlay("overlay-filter");
+  wireSanteChecklist("sf-list-benef", SFilters.beneficiaires);
+  wireSanteChecklist("sf-list-prest", SFilters.prestations);
+  wireSanteChecklist("sf-list-statut", SFilters.statuts);
+  wireSanteChecklist("sf-list-devise", SFilters.devises);
+  wireSanteGroupeFilter();
+  document.getElementById("sf-reset").onclick = ()=>{ SFilters.reset(); SFilters.persist(); applySanteAndClose(); };
+  document.getElementById("sf-apply").onclick = applySanteAndClose;
+  updateSanteApplyButton();
+}
+function openSanteFilterSheet(){
+  renderSanteFilterSheet();
+  APP.openOverlay("overlay-filter");
+}
+window.__SF_SANTE_FILTERSHEET = {openFilterSheet: openSanteFilterSheet};
+
+/* ================= RÉGLAGES SANTÉ (listes personnalisables + Excel dédié) ================= */
+let settingsView = "menu"; // "menu" | une clé de LIST_KEYS | "import"
+
+function renderSanteSettingsMenu(){
+  const sheet = document.getElementById("sheet-santesettings");
+  const lists = Store.settings.sante.lists;
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Réglages · Santé</h2><button class="icon-btn" id="ss-close">${ICONS.close}</button></div>
+    <div class="sheet-body">
+      <div class="field-label" style="margin-top:0;">Listes personnalisables</div>
+      <div class="card" style="padding:4px 6px;">
+        ${LIST_KEYS.map(k=>`
+          <div class="rowline" data-listkey="${k}" style="cursor:pointer;">
+            <span style="font-weight:600;font-size:14.5px;">${LIST_LABELS[k]}</span>
+            <span style="display:flex;align-items:center;gap:8px;color:var(--text-sub);font-size:13px;">
+              <span>${lists[k].length}</span>
+              <span style="display:flex;transform:rotate(180deg);color:var(--text-faint);">${ICONS.arrowLeft}</span>
+            </span>
+          </div>
+        `).join("")}
+      </div>
+      <div class="field-label">Excel</div>
+      <div class="card" style="padding:4px 6px;">
+        <div class="rowline" id="ss-export-xlsx" style="cursor:pointer;">
+          <span class="u-row-label">${ICONS.download} Exporter en Excel (.xlsx)</span>
+        </div>
+        <div class="rowline" id="ss-import-xlsx" style="cursor:pointer;">
+          <span class="u-row-label">${ICONS.upload} Importer un fichier Excel</span>
+        </div>
+      </div>
+      ${Store.lastSanteSaveError ? `
+      <div class="import-summary" style="margin-top:10px;border:1.5px solid var(--expense);">
+        <b style="color:var(--expense);">Dernier enregistrement en échec</b><br>${U.escHtml(Store.lastSanteSaveError)}
+      </div>` : ""}
+    </div>
+  `;
+  document.getElementById("ss-close").onclick = ()=>APP.closeOverlay("overlay-santesettings");
+  sheet.querySelectorAll("[data-listkey]").forEach(el=>{
+    el.onclick = ()=>{ settingsView = el.dataset.listkey; renderSanteSettings(); };
+  });
+  document.getElementById("ss-export-xlsx").onclick = ()=> exportSanteExcel();
+  document.getElementById("ss-import-xlsx").onclick = ()=>{ settingsView = "import"; renderSanteSettings(); };
+}
+
+function renderSanteListEditor(key){
+  const sheet = document.getElementById("sheet-santesettings");
+  const list = Store.settings.sante.lists[key];
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <button class="icon-btn" id="sle-back">${ICONS.arrowLeft}</button>
+      <h2 style="flex:1;text-align:center;">${LIST_LABELS[key]}</h2>
+      <button class="icon-btn" id="ss-close2">${ICONS.close}</button>
+    </div>
+    <div class="sheet-body">
+      <div class="u-desc-sm">Ces valeurs apparaissent dans la liste déroulante correspondante du formulaire ; vous pouvez aussi en ajouter directement depuis le formulaire au moment de la saisie.</div>
+      <div class="check-list" style="max-height:none;">
+        ${list.length ? list.map(v=>`
+          <div class="rowline" style="padding:10px 14px;">
+            <span style="font-size:14px;">${U.escHtml(v)}</span>
+            <button type="button" class="icon-btn" data-del="${U.escHtml(v)}" style="width:34px;height:34px;color:var(--expense);">${ICONS.trash}</button>
+          </div>
+        `).join("") : `<div class="u-empty-note">Aucune valeur pour l'instant</div>`}
+      </div>
+      <div class="field-label">Ajouter</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" class="search-mini" id="sle-newval" style="margin:0;flex:1;" placeholder="${U.escHtml(LIST_PLACEHOLDER[key]||'Nouvelle valeur')}">
+        <button class="btn btn-primary" id="sle-add">${ICONS.plus}</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("sle-back").onclick = ()=>{ settingsView="menu"; renderSanteSettings(); };
+  document.getElementById("ss-close2").onclick = ()=>APP.closeOverlay("overlay-santesettings");
+  sheet.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const v = btn.dataset.del;
+      APP.confirmAction({
+        title:"Retirer « "+v+" » ?",
+        text:"Cette valeur ne sera plus proposée dans la liste déroulante (les soins déjà enregistrés avec cette valeur ne sont pas modifiés).",
+        confirmLabel:"Retirer",
+        onConfirm:()=>{
+          Store.settings.sante.lists[key] = Store.settings.sante.lists[key].filter(x=>x!==v);
+          Store.saveSettings();
+          renderSanteListEditor(key);
+        }
+      });
+    };
+  });
+  const addFn = ()=>{
+    const input = document.getElementById("sle-newval");
+    const v = input.value.trim();
+    if(!v) return;
+    if(!Store.settings.sante.lists[key].includes(v)){
+      Store.settings.sante.lists[key].push(v);
+      Store.saveSettings();
+    }
+    input.value = "";
+    renderSanteListEditor(key);
+  };
+  document.getElementById("sle-add").onclick = addFn;
+  document.getElementById("sle-newval").onkeydown = (e)=>{ if(e.key==="Enter") addFn(); };
+}
+
+/* ---------------- Excel dédié à l'onglet Santé (export/import propres, séparés du reste) ---------------- */
+function isoToDateObjS(iso){
+  if(!iso) return null;
+  const [y,m,d] = String(iso).split("-").map(Number);
+  if(!y||!m||!d) return null;
+  return new Date(y,m-1,d);
+}
+function setDateColFormatS(ws, colIndex, startRow, rowCount){
+  for(let r=startRow;r<startRow+rowCount;r++){
+    const addr = XLSX.utils.encode_cell({r, c:colIndex});
+    const cell = ws[addr];
+    if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
+  }
+}
+const SANTE_XLSX_HEADER = ["Date du soin","Bénéficiaire","Devise","Montant €","Montant devise","Médecin/hôpital","Type de prestation","Statut","Statut mis à jour le",
+  "Remb. tiers payant €","Date remb. tiers","Remb. sécu €","Date remb. sécu","Remb. mutuelle €","Date remb. mutuelle","Groupe","Mutuelle","Part moi (%)"];
+const SANTE_DATE_COLS = [0,8,10,12,14]; // index des colonnes date dans SANTE_XLSX_HEADER
+
+function exportSanteExcel(){
+  if(Store.santeItems.length===0){ APP.showToast("Aucun soin à exporter"); return; }
+  const data = [SANTE_XLSX_HEADER];
+  Store.santeItems.forEach(it=>{
+    data.push([
+      isoToDateObjS(it.dateSoin), it.beneficiaire, it.devise, it.montantEur, it.montantDevise,
+      it.medecin, it.typePrestation, it.statut, isoToDateObjS(it.statutDate),
+      it.rembTiersMontant, isoToDateObjS(it.rembTiersDate),
+      it.rembSecuMontant, isoToDateObjS(it.rembSecuDate),
+      it.rembMutuelleMontant, isoToDateObjS(it.rembMutuelleDate),
+      it.groupe, it.mutuelle, it.partMoi
+    ]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
+  SANTE_DATE_COLS.forEach(col=> setDateColFormatS(ws, col, 1, data.length-1));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Santé");
+  const stamp = U.toISO(new Date());
+  XLSX.writeFile(wb, "suivi_financier_sante_"+stamp+".xlsx");
+  APP.showToast("Export Excel généré");
+}
+
+function rowToSanteItem(row){
+  const norm = {};
+  Object.keys(row).forEach(k=>{ norm[U.normalize(k)] = row[k]; });
+  const dateRaw = norm["date du soin"];
+  if(dateRaw==null || dateRaw==="") return null;
+  const dateObj = U.parseDateValue(dateRaw);
+  if(!dateObj) return null;
+  const numOrNull = (v)=>{
+    if(v==null || v==="") return null;
+    let n = v;
+    if(typeof n==="string") n = parseFloat(n.replace(/\s/g,"").replace(",","."));
+    n = Number(n);
+    return isNaN(n) ? null : n;
+  };
+  const dateOrNull = (v)=>{
+    if(v==null || v==="") return null;
+    const d = U.parseDateValue(v);
+    return d ? U.toISO(d) : null;
+  };
+  const strOr = (v, fallback)=> v!=null && v!=="" ? String(v).trim() : fallback;
+  const it = {
+    dateSoin: U.toISO(dateObj),
+    beneficiaire: strOr(norm["beneficiaire"], ""),
+    devise: strOr(norm["devise"], "€"),
+    montantEur: numOrNull(norm["montant €"]) || 0,
+    montantDevise: numOrNull(norm["montant devise"]),
+    medecin: strOr(norm["medecin/hopital"], ""),
+    typePrestation: strOr(norm["type de prestation"], ""),
+    statut: strOr(norm["statut"], ""),
+    statutDate: dateOrNull(norm["statut mis a jour le"]),
+    rembTiersMontant: numOrNull(norm["remb. tiers payant €"]) || 0,
+    rembTiersDate: dateOrNull(norm["date remb. tiers"]),
+    rembSecuMontant: numOrNull(norm["remb. secu €"]) || 0,
+    rembSecuDate: dateOrNull(norm["date remb. secu"]),
+    rembMutuelleMontant: numOrNull(norm["remb. mutuelle €"]) || 0,
+    rembMutuelleDate: dateOrNull(norm["date remb. mutuelle"]),
+    groupe: strOr(norm["groupe"], ""),
+    mutuelle: strOr(norm["mutuelle"], ""),
+    partMoi: numOrNull(norm["part moi (%)"])
+  };
+  if(it.partMoi==null) it.partMoi = 100;
+  return sanitizeItem(it);
+}
+
+/* mode: "replace" | "merge" — même sémantique que DATA.importTxns (fusion mute Store.santeItems en place,
+   le caller reste responsable de l'enregistrement via Store.saveSanteItems()). */
+function importSanteItems(items, mode){
+  const sanitized = items.map(sanitizeItem);
+  if(mode === "replace"){
+    Store.santeItems = sanitized;
+    Store.santeItems.sort((a,b)=> a.dateSoin.localeCompare(b.dateSoin));
+    return {added: sanitized.length, skippedDup:0, mode};
+  }
+  const existingIds = new Set(Store.santeItems.map(it=>it.id));
+  let added=0, dup=0;
+  sanitized.forEach(it=>{
+    if(existingIds.has(it.id)){ dup++; return; }
+    existingIds.add(it.id);
+    Store.santeItems.push(it);
+    added++;
+  });
+  Store.santeItems.sort((a,b)=> a.dateSoin.localeCompare(b.dateSoin));
+  return {added, skippedDup:dup, mode};
+}
+function importSanteSettings(settings){
+  if(!settings || !settings.lists) return;
+  LIST_KEYS.forEach(k=>{
+    if(Array.isArray(settings.lists[k])){
+      const cur = Store.settings.sante.lists[k];
+      settings.lists[k].forEach(v=>{ if(v && !cur.includes(v)) cur.push(v); });
+    }
+  });
+  Store.saveSettings();
+}
+function registerNewListValuesFromItems(items){
+  const s = Store.settings.sante.lists;
+  items.forEach(it=>{
+    if(it.beneficiaire && !s.beneficiaires.includes(it.beneficiaire)) s.beneficiaires.push(it.beneficiaire);
+    if(it.devise && !s.devises.includes(it.devise)) s.devises.push(it.devise);
+    if(it.medecin && !s.medecins.includes(it.medecin)) s.medecins.push(it.medecin);
+    if(it.typePrestation && !s.prestations.includes(it.typePrestation)) s.prestations.push(it.typePrestation);
+    if(it.statut && !s.statuts.includes(it.statut)) s.statuts.push(it.statut);
+    if(it.mutuelle && !s.mutuelles.includes(it.mutuelle)) s.mutuelles.push(it.mutuelle);
+  });
+  Store.saveSettings();
+}
+window.__SF_SANTE_DATA = {importSanteItems, importSanteSettings, registerNewListValuesFromItems, rowToSanteItem, buildSanteId, sanitizeItem};
+
+let santeParsedImport = null; // {items, skipped, total, fileName}
+
+function renderSanteImportScreen(){
+  const sheet = document.getElementById("sheet-santesettings");
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <button class="icon-btn" id="si-back">${ICONS.arrowLeft}</button>
+      <h2 style="flex:1;text-align:center;">Importer (Santé)</h2>
+      <button class="icon-btn" id="ss-close3">${ICONS.close}</button>
+    </div>
+    <div class="sheet-body">
+      <label class="dropzone" id="si-dropzone">
+        ${ICONS.upload}
+        <p><b style="color:var(--text)">Choisir un fichier</b><br>Excel (.xlsx, .xls) ou CSV exporté depuis cet onglet</p>
+        <input type="file" id="si-file-input" accept=".xlsx,.xls,.csv" style="display:none">
+      </label>
+      <div class="field-label">Colonnes attendues</div>
+      <div class="card" style="box-shadow:none;background:var(--card-alt);padding:12px 14px;font-size:12px;color:var(--text-sub);line-height:1.7;">
+        ${SANTE_XLSX_HEADER.join(" · ")}
+      </div>
+      <div id="si-status" style="margin-top:14px;"></div>
+    </div>
+  `;
+  document.getElementById("si-back").onclick = ()=>{ settingsView="menu"; renderSanteSettings(); };
+  document.getElementById("ss-close3").onclick = ()=>APP.closeOverlay("overlay-santesettings");
+  document.getElementById("si-file-input").onchange = (e)=>{
+    const file = e.target.files[0];
+    if(file) handleSanteFile(file);
+  };
+}
+
+function handleSanteFile(file){
+  const statusEl = document.getElementById("si-status");
+  statusEl.innerHTML = `<div style="text-align:center;color:var(--text-sub);font-size:13.5px;padding:14px;">Analyse du fichier…</div>`;
+  const name = file.name.toLowerCase();
+  const isCsv = name.endsWith(".csv");
+  const reader = new FileReader();
+  reader.onerror = ()=>{
+    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Lecture du fichier impossible.</div>`;
+  };
+  reader.onload = (e)=>{
+    try{
+      let wb;
+      if(isCsv){
+        wb = XLSX.read(e.target.result, {type:"binary", cellDates:true, raw:false});
+      } else {
+        const data = new Uint8Array(e.target.result);
+        wb = XLSX.read(data, {type:"array", cellDates:true, raw:false});
+      }
+      const sheetName = wb.SheetNames.find(n=>U.normalize(n)==="sante") || wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+      const items = [];
+      rows.forEach(r=>{
+        const it = rowToSanteItem(r);
+        if(it) items.push(it);
+      });
+      santeParsedImport = {items, skipped: rows.length-items.length, total: rows.length, fileName: file.name};
+      renderSanteImportSummary();
+    }catch(err){
+      statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Impossible de lire ce fichier : ${U.escHtml(err.message)}</div>`;
+    }
+  };
+  if(isCsv) reader.readAsBinaryString(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+function renderSanteImportSummary(){
+  const statusEl = document.getElementById("si-status");
+  const r = santeParsedImport;
+  if(r.items.length===0){
+    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Aucune ligne exploitable trouvée (vérifiez au minimum la colonne "Date du soin").</div>`;
+    return;
+  }
+  const hasExisting = Store.santeItems.length>0;
+  let mode = hasExisting ? "merge" : "replace";
+  function render(){
+    statusEl.innerHTML = `
+      <div class="import-summary"><b>${U.escHtml(r.fileName)}</b><br>
+        ${r.items.length.toLocaleString('fr-FR')} soin(s) valide(s) sur ${r.total.toLocaleString('fr-FR')} ligne(s)${r.skipped?` · ${r.skipped} ignorée(s)`:""}
+      </div>
+      ${hasExisting ? `
+      <div class="field-label">Que faire de ces soins ?</div>
+      <div class="radio-opt selected" data-mode="merge" id="sim-merge">
+        <span class="rc"></span>
+        <div><div class="rt">Ajouter aux soins existants</div><div class="rd">Les soins déjà enregistrés (identiques) seront ignorés automatiquement.</div></div>
+      </div>
+      <div class="radio-opt" data-mode="replace" id="sim-replace">
+        <span class="rc"></span>
+        <div><div class="rt">Remplacer tous les soins</div><div class="rd">Vos ${Store.santeItems.length.toLocaleString('fr-FR')} soins actuels seront supprimés et remplacés par ce fichier.</div></div>
+      </div>` : ""}
+      <button class="btn btn-primary btn-block" id="si-confirm" style="margin-top:18px;">Importer</button>
+    `;
+    if(hasExisting){
+      document.getElementById("sim-merge").onclick = ()=>{ mode="merge"; document.getElementById("sim-merge").classList.add("selected"); document.getElementById("sim-replace").classList.remove("selected"); };
+      document.getElementById("sim-replace").onclick = ()=>{ mode="replace"; document.getElementById("sim-replace").classList.add("selected"); document.getElementById("sim-merge").classList.remove("selected"); };
+    }
+    document.getElementById("si-confirm").onclick = ()=>{
+      const stats = importSanteItems(r.items, mode);
+      registerNewListValuesFromItems(r.items);
+      Store.saveSanteItems().then(ok=>{
+        APP.showToast(ok ? `${stats.added.toLocaleString('fr-FR')} soin(s) importé(s)${stats.skippedDup?` · ${stats.skippedDup} doublon(s) ignoré(s)`:""}` : "Import réussi, mais la sauvegarde a échoué");
+        settingsView = "menu";
+        renderSanteSettings();
+        APP.refreshCurrentTab();
+      });
+    };
+  }
+  render();
+}
+
+function renderSanteSettings(){
+  if(settingsView==="menu") renderSanteSettingsMenu();
+  else if(settingsView==="import") renderSanteImportScreen();
+  else renderSanteListEditor(settingsView);
+}
+function openSanteSettings(){
+  settingsView = "menu";
+  renderSanteSettings();
+  APP.openOverlay("overlay-santesettings");
+}
+window.__SF_SANTE_SETTINGS = {open: openSanteSettings};
+
+})();
 (function(){
 "use strict";
 const Store = window.__SF_STORE;
@@ -9166,6 +10445,7 @@ async function init(){
   document.getElementById("app").innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:60vh;color:#9AA0AC;font-size:14px;">Chargement…</div>`;
   await Store.load();
   window.__SF_FILTERS.restore();
+  if(window.__SF_SANTE_FILTERS) window.__SF_SANTE_FILTERS.restore();
   APP.buildShell();
   APP.refreshCurrentTab();
 
