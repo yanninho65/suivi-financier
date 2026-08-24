@@ -447,7 +447,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.23.17.10";
+const APP_VERSION = "v 2026.08.24.00.15";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1168,6 +1168,7 @@ function parseParametresSheet(wb){
       mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
       extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
+      excludedAccounts: map["comptes exclus"] ? String(map["comptes exclus"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       periodFrom: map["periode affichee - de"] ? String(map["periode affichee - de"]).trim() : null,
       periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
     };
@@ -1227,8 +1228,73 @@ function parseParametresSheet(wb){
       comparePredefined[key] = Number(String(montant).replace(",",".")) || 0;
     });
   }
-  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !cmpSheetName && !predefSheetName) return null;
-  return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange, categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined};
+  // Réglages généraux (§5, §6.1) — décimales globales + ordre des types de compte.
+  const genSheetName = wb.SheetNames.find(n=>U.normalize(n)==="reglages_generaux");
+  let accountTypeOrder = [];
+  let decimalsImported = null;
+  if(genSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[genSheetName], {defval:null, raw:false, header:1});
+    const map = {};
+    rows.forEach(row=>{ if(!row || row.length<2) return; map[U.normalize(String(row[0]||""))] = row[1]; });
+    if(map["decimales"]!=null && map["decimales"]!==""){
+      decimalsImported = U.normalize(String(map["decimales"]))==="2" ? 2 : 0;
+    }
+    if(map["ordre types de compte"]) accountTypeOrder = String(map["ordre types de compte"]).split("|").map(s=>s.trim()).filter(Boolean);
+  }
+
+  // Soldes personnalisés de l'onglet Comptes (§6.1).
+  const cbSheetName = wb.SheetNames.find(n=>U.normalize(n)==="comptes_soldes_perso");
+  const customBalances = [];
+  if(cbSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[cbSheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const titre = norm["titre"];
+      if(!titre) return;
+      const comptes = norm["comptes"] ? String(norm["comptes"]).split("|").map(s=>s.trim()).filter(Boolean) : [];
+      customBalances.push({title: String(titre).trim(), accounts: comptes});
+    });
+  }
+
+  // Onglet Évolution (§6.4) — vue/base mensuelle + fusions de sections par dimension.
+  const evoRegSheetName = wb.SheetNames.find(n=>U.normalize(n)==="evolution_reglages");
+  let evoView = null, evoMonthBasis = null;
+  if(evoRegSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[evoRegSheetName], {defval:null, raw:false, header:1});
+    const map = {};
+    rows.forEach(row=>{ if(!row || row.length<2) return; map[U.normalize(String(row[0]||""))] = row[1]; });
+    const viewNorm = map["vue"] ? U.normalize(String(map["vue"])) : "";
+    if(["groupe","categorie","personne","compte"].includes(viewNorm)) evoView = viewNorm;
+    const basisNorm = map["base mensuelle"] ? U.normalize(String(map["base mensuelle"])) : "";
+    if(basisNorm.startsWith("transf")) evoMonthBasis = "transformee";
+    else if(basisNorm.startsWith("reel")) evoMonthBasis = "reel";
+  }
+  const evoFusionsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="evolution_fusions");
+  const evoMerges = {groupe:[], categorie:[], personne:[], compte:[]};
+  if(evoFusionsSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[evoFusionsSheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const dimNorm = U.normalize(String(norm["dimension"]||""));
+      const dimKey = ["groupe","categorie","personne","compte"].find(d=>d===dimNorm);
+      const name = norm["nom"];
+      if(!dimKey || !name) return;
+      const membres = norm["membres"] ? String(norm["membres"]).split("|").map(s=>s.trim()).filter(Boolean) : [];
+      evoMerges[dimKey].push({name: String(name).trim(), members: membres});
+    });
+  }
+  let evolutionSettings = null;
+  if(evoView || evoMonthBasis || Object.values(evoMerges).some(a=>a.length)){
+    evolutionSettings = {view: evoView, monthBasis: evoMonthBasis, merges: evoMerges};
+  }
+
+  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !cmpSheetName && !predefSheetName
+     && !genSheetName && !cbSheetName && !evoRegSheetName && !evoFusionsSheetName) return null;
+  return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange,
+    categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined,
+    accountTypeOrder, customBalances, decimals: decimalsImported, evolutionSettings};
 }
 
 function parseFile(file){
@@ -7530,6 +7596,9 @@ function applyParamsImport(params, mode){
   const personRules = params.personRules || [];
   const accountTypes = params.accountTypes || {};
   const accountAcronyms = params.accountAcronyms || {};
+  const accountTypeOrder = params.accountTypeOrder || [];
+  const customBalances = params.customBalances || [];
+  const decimalsImported = params.decimals;
   const groupKind = params.groupKind || {};
   const groupVoyageMonth = params.groupVoyageMonth || {};
   const groupDateRange = params.groupDateRange || {};
@@ -7539,13 +7608,19 @@ function applyParamsImport(params, mode){
   const salaryEntries = params.salaryEntries || null;
   const compareSettings = params.compareSettings || null;
   const comparePredefined = params.comparePredefined || null;
+  const evolutionSettings = params.evolutionSettings || null;
   Store.settings.budget = Store.settings.budget || {};
   Store.settings.budget.compare = Store.settings.budget.compare || {enabled:false, mode:"period", periodFrom:null, periodTo:null, predefined:{}};
+  Store.settings.evolution = Store.settings.evolution || {};
+  if(!Store.settings.evolution.merges) Store.settings.evolution.merges = {};
   if(mode==="replace"){
     Store.settings.groupAliasRules = groupRules.slice();
     Store.settings.personAliasRules = personRules.slice();
     Store.settings.accountTypes = Object.assign({}, accountTypes);
     Store.settings.accountAcronyms = Object.assign({}, accountAcronyms);
+    Store.settings.accountTypeOrder = accountTypeOrder.slice();
+    Store.settings.customBalances = customBalances.map(cb=>({title: cb.title || "", accounts: (cb.accounts||[]).slice()}));
+    if(decimalsImported===2 || decimalsImported===0) Store.settings.decimals = decimalsImported;
     Store.settings.groupKind = Object.assign({}, groupKind);
     Store.settings.groupVoyageMonth = Object.assign({}, groupVoyageMonth);
     Store.settings.groupDateRange = Object.assign({}, groupDateRange);
@@ -7562,6 +7637,7 @@ function applyParamsImport(params, mode){
         amortCategories: (budgetSettings.amortCategories || []).slice(),
         periodFrom: budgetSettings.periodFrom,
         periodTo: budgetSettings.periodTo,
+        excludedAccounts: (budgetSettings.excludedAccounts || []).slice(),
       });
     }
     if(salaryEntries) Store.settings.budget.salaryEntries = Object.assign({}, salaryEntries);
@@ -7575,6 +7651,18 @@ function applyParamsImport(params, mode){
       };
     } else if(comparePredefined){
       Store.settings.budget.compare.predefined = Object.assign({}, comparePredefined);
+    }
+    if(evolutionSettings){
+      if(evolutionSettings.view) Store.settings.evolution.view = evolutionSettings.view;
+      if(evolutionSettings.monthBasis) Store.settings.evolution.monthBasis = evolutionSettings.monthBasis;
+      if(evolutionSettings.merges){
+        Store.settings.evolution.merges = {
+          groupe: (evolutionSettings.merges.groupe || []).slice(),
+          categorie: (evolutionSettings.merges.categorie || []).slice(),
+          personne: (evolutionSettings.merges.personne || []).slice(),
+          compte: (evolutionSettings.merges.compte || []).slice(),
+        };
+      }
     }
     // Sécurité : un ancien backup peut contenir un mode budget aujourd'hui obsolète (ex. l'ancien mode
     // "Brut", supprimé) — normalizeSettings migre silencieusement vers "amorti" le cas échéant.
@@ -7594,10 +7682,30 @@ function applyParamsImport(params, mode){
   const acctAdded = Object.keys(Store.settings.accountTypes).length - acctBefore;
   Store.settings.accountAcronyms = Object.assign({}, Store.settings.accountAcronyms, accountAcronyms);
 
+  // Ordre des types de compte / soldes personnalisés : préférences propres à un agencement d'écran —
+  // on ne les adopte que si rien n'est encore configuré localement, jamais en écrasant un réglage existant.
+  if((!Store.settings.accountTypeOrder || !Store.settings.accountTypeOrder.length) && accountTypeOrder.length){
+    Store.settings.accountTypeOrder = accountTypeOrder.slice();
+  }
+  if((!Store.settings.customBalances || !Store.settings.customBalances.length) && customBalances.length){
+    Store.settings.customBalances = customBalances.map(cb=>({title: cb.title || "", accounts: (cb.accounts||[]).slice()}));
+  }
+
   Store.settings.groupKind = Object.assign({}, Store.settings.groupKind, groupKind);
   Store.settings.groupVoyageMonth = Object.assign({}, Store.settings.groupVoyageMonth, groupVoyageMonth);
   Store.settings.groupDateRange = Object.assign({}, Store.settings.groupDateRange, groupDateRange);
   Store.settings.categoryTypeOverride = Object.assign({}, Store.settings.categoryTypeOverride, categoryTypeOverride);
+
+  // Fusions de sections Évolution : véritablement fusionnées (dédupliquées par nom+membres), comme les
+  // règles de groupe/personne — la vue actuellement affichée (view/monthBasis), elle, n'est jamais touchée
+  // par un import "Ajouter" (état d'affichage courant, pas une donnée à préserver entre appareils).
+  if(evolutionSettings && evolutionSettings.merges){
+    ["groupe","categorie","personne","compte"].forEach(dim=>{
+      const existing = Store.settings.evolution.merges[dim] || (Store.settings.evolution.merges[dim] = []);
+      const incoming = evolutionSettings.merges[dim] || [];
+      mergeRuleList(existing, incoming, m=>[m.name, (m.members||[]).slice().sort().join(",")].join("|"));
+    });
+  }
 
   const existingAdj = Store.settings.budget.adjustments || [];
   mergeRuleList(existingAdj, budgetAdjustments, a=>[a.month,a.groupe,a.categorie||"",a.montant,a.remarque||""].join("|"));
@@ -7613,6 +7721,7 @@ function applyParamsImport(params, mode){
     if(!b.endMonth && budgetSettings.endMonth) b.endMonth = budgetSettings.endMonth;
     if((!b.extraGroups || !b.extraGroups.length) && (budgetSettings.extraGroups||[]).length) b.extraGroups = budgetSettings.extraGroups.slice();
     if((!b.amortCategories || !b.amortCategories.length) && (budgetSettings.amortCategories||[]).length) b.amortCategories = budgetSettings.amortCategories.slice();
+    if((!b.excludedAccounts || !b.excludedAccounts.length) && (budgetSettings.excludedAccounts||[]).length) b.excludedAccounts = budgetSettings.excludedAccounts.slice();
   }
   // Salaires saisis manuellement : par mois, on ne remplit que les mois pas encore renseignés localement
   // (ne remplace jamais une saisie existante avec une valeur importée).
@@ -7915,11 +8024,15 @@ window.__SF_IMPORT = {open: openImportModal, applyParamsImport};
 /* ================= MENU / SETTINGS SHEET ================= */
 function buildParamsPayload(){
   const budget = Store.settings.budget || {};
+  const evo = Store.settings.evolution || {};
   return {
     groupRules: (Store.settings.groupAliasRules || []).slice(),
     personRules: (Store.settings.personAliasRules || []).slice(),
     accountTypes: Object.assign({}, Store.settings.accountTypes || {}),
     accountAcronyms: Object.assign({}, Store.settings.accountAcronyms || {}),
+    accountTypeOrder: (Store.settings.accountTypeOrder || []).slice(),
+    customBalances: (Store.settings.customBalances || []).map(cb=>({title: cb.title || "", accounts: (cb.accounts||[]).slice()})),
+    decimals: Store.settings.decimals === 2 ? 2 : 0,
     groupKind: Object.assign({}, Store.settings.groupKind || {}),
     groupVoyageMonth: Object.assign({}, Store.settings.groupVoyageMonth || {}),
     groupDateRange: Object.assign({}, Store.settings.groupDateRange || {}),
@@ -7935,6 +8048,7 @@ function buildParamsPayload(){
       amortCategories: (budget.amortCategories || []).slice(),
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
+      excludedAccounts: (budget.excludedAccounts || []).slice(),
     },
     salaryEntries: Object.assign({}, budget.salaryEntries || {}),
     compareSettings: {
@@ -7943,7 +8057,17 @@ function buildParamsPayload(){
       periodFrom: (budget.compare && budget.compare.periodFrom) || null,
       periodTo: (budget.compare && budget.compare.periodTo) || null,
     },
-    comparePredefined: Object.assign({}, (budget.compare && budget.compare.predefined) || {})
+    comparePredefined: Object.assign({}, (budget.compare && budget.compare.predefined) || {}),
+    evolutionSettings: {
+      view: evo.view || null,
+      monthBasis: evo.monthBasis || null,
+      merges: {
+        groupe: ((evo.merges && evo.merges.groupe) || []).slice(),
+        categorie: ((evo.merges && evo.merges.categorie) || []).slice(),
+        personne: ((evo.merges && evo.merges.personne) || []).slice(),
+        compte: ((evo.merges && evo.merges.compte) || []).slice(),
+      }
+    }
   };
 }
 
@@ -8083,6 +8207,7 @@ function exportExcel(scope){
       ["Groupe de groupe principal", b.mainGroup||""],
       ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
       ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
+      ["Comptes exclus", (b.excludedAccounts||[]).join(" | ")],
       ["Période affichée - de", b.periodFrom||""],
       ["Période affichée - à", b.periodTo||""],
     ];
@@ -8111,6 +8236,38 @@ function exportExcel(scope){
       return [key, parts[0]||"", parts.length>1?parts[1]:"", montant];
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(predefData), "Budget_Predefini");
+
+    // Réglages généraux (§5, §6.1) — décimales globales + ordre des types de compte (bouton "Réorganiser").
+    const genData = [
+      ["Réglage","Valeur"],
+      ["Décimales", Store.settings.decimals===2 ? "2" : "0"],
+      ["Ordre types de compte", (Store.settings.accountTypeOrder||[]).join(" | ")],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(genData), "Reglages_Generaux");
+
+    // Soldes personnalisés de l'onglet Comptes (§6.1) — jusqu'à 2, chacun une sélection de comptes.
+    const cbHeader = ["Titre","Comptes"];
+    const cbData = [cbHeader].concat((Store.settings.customBalances||[]).map(c=>[c.title||"", (c.accounts||[]).join(" | ")]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cbData), "Comptes_Soldes_Perso");
+
+    // Onglet Évolution (§6.4) — vue/base mensuelle courantes + fusions de sections par dimension.
+    const evoForExport = Store.settings.evolution || {};
+    const evoViewLabel = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
+    const evoBasisLabel = {reel:"Réel", transformee:"Transformé"};
+    const evoRegData = [
+      ["Réglage","Valeur"],
+      ["Vue", evoViewLabel[evoForExport.view]||""],
+      ["Base mensuelle", evoBasisLabel[evoForExport.monthBasis]||""],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(evoRegData), "Evolution_Reglages");
+
+    const evoMergeRows = [];
+    ["groupe","categorie","personne","compte"].forEach(dim=>{
+      ((evoForExport.merges && evoForExport.merges[dim]) || []).forEach(m=>{
+        evoMergeRows.push([evoViewLabel[dim], m.name||"", (m.members||[]).join(" | ")]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Dimension","Nom","Membres"], ...evoMergeRows]), "Evolution_Fusions");
   }
 
   const stamp = U.toISO(new Date());
