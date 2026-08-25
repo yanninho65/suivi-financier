@@ -448,7 +448,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.24.03.00";
+const APP_VERSION = "v 2026.08.24.04.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -7149,17 +7149,19 @@ function revLinesColValue(lines, col, recIndex){ return (lines||[]).reduce((s,l)
 function revLinesTotalValue(lines, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineTotalValue(l,recIndex), 0); }
 
 /* "Avant transfert" = somme des catégories choisies par l'utilisateur (inchangé).
-   "Transfert" = net des transferts (Depuis - Vers) : Vers est toujours affiché en magnitude positive
-   (montant envoyé), Depuis en magnitude positive (montant reçu) — c'est seulement au niveau du total
-   "Transfert" que le sens (+/-) est appliqué.
+   "Transfert" = addition simple de "Vers" + "Depuis" — AUCUN signe structurel par bucket : chaque ligne
+   compte pour sa valeur telle qu'affichée (montant × son propre signe, revLineSign), sans qu'un bucket
+   "Vers"/"Depuis" n'impose automatiquement un sens. Si une ligne doit réduire le total, c'est à l'utilisateur
+   de la basculer en signe négatif (bouton ± de la sheet de gestion) — jamais une convention implicite du
+   bucket.
    "Après transfert" (= Avant + Transfert) est LE total de la personne, utilisé par la ligne "Personne" et
    par le grand Total — comme les deux transferts sont des miroirs exacts l'un de l'autre (cf.
    revSyncTransferLineToMirror), la somme des deux "Après transfert" égale toujours la somme des deux
    "Avant transfert" : les transferts ne font que redistribuer, jamais varier le total du couple. */
 function revPersonBeforeColValue(person, col, recIndex){ return (person.categories||[]).reduce((s,c)=> s+revCategoryColValue(c,col,recIndex), 0); }
 function revPersonBeforeTotalValue(person, recIndex){ return (person.categories||[]).reduce((s,c)=> s+revCategoryTotalValue(c,recIndex), 0); }
-function revPersonTransferColValue(person, col, recIndex){ return revLinesColValue(person.transferIn,col,recIndex) - revLinesColValue(person.transferOut,col,recIndex); }
-function revPersonTransferTotalValue(person, recIndex){ return revLinesTotalValue(person.transferIn,recIndex) - revLinesTotalValue(person.transferOut,recIndex); }
+function revPersonTransferColValue(person, col, recIndex){ return revLinesColValue(person.transferOut,col,recIndex) + revLinesColValue(person.transferIn,col,recIndex); }
+function revPersonTransferTotalValue(person, recIndex){ return revLinesTotalValue(person.transferOut,recIndex) + revLinesTotalValue(person.transferIn,recIndex); }
 function revPersonColValue(person, col, recIndex){ return revPersonBeforeColValue(person,col,recIndex) + revPersonTransferColValue(person,col,recIndex); }
 function revPersonTotalValue(person, recIndex){ return revPersonBeforeTotalValue(person,recIndex) + revPersonTransferTotalValue(person,recIndex); }
 
@@ -7179,10 +7181,15 @@ function revMirrorOf(person, bucket){
   const otherBucket = bucket==="transferOut" ? "transferIn" : "transferOut";
   return {person: otherPerson, bucket: otherBucket};
 }
-/* Recopie type/label/signe et montants (manuel) ou lien récurrent d'une ligne de transfert vers sa ligne
-   miroir (créée si absente). Appelée après toute création/renommage/changement de signe/édition de montant
-   sur une ligne de transferOut/transferIn. Le signe est recopié À L'IDENTIQUE (pas inversé) : il corrige le
-   sens du montant source, qui est le même des deux côtés puisque c'est le même transfert. */
+/* Recopie type/label et montants (manuel) ou lien récurrent d'une ligne de transfert vers sa ligne miroir
+   (créée si absente). Appelée après toute création/renommage/changement de signe/édition de montant sur une
+   ligne de transferOut/transferIn. Le signe, lui, est recopié INVERSÉ (pas à l'identique) : "Transfert" est
+   une addition pure de Vers + Depuis (cf. revPersonTransferColValue/TotalValue, aucun signe structurel de
+   bucket) — c'est ce signe par ligne, opposé d'un côté à l'autre, qui fait qu'un même transfert réduit le
+   total de qui l'envoie et augmente celui de qui le reçoit. Une ligne "Vers" prend par défaut le signe -1 à
+   sa création (cf. openAddTransferLineChoice), sa ligne miroir "Depuis" prend alors +1 automatiquement ici,
+   et inversement — l'utilisateur reste libre de inverser l'un ou l'autre via le bouton ± de la sheet de
+   gestion, la propagation au miroir restant toujours l'inverse exact de ce qui vient d'être réglé. */
 function revSyncTransferLineToMirror(person, bucket, line){
   const mirror = revMirrorOf(person, bucket);
   const cfg = revCfg();
@@ -7191,7 +7198,7 @@ function revSyncTransferLineToMirror(person, bucket, line){
   if(!mLine){ mLine = {id: line.id}; arr.push(mLine); }
   mLine.type = line.type;
   mLine.label = line.label;
-  mLine.sign = line.sign;
+  mLine.sign = -revLineSign(line);
   if(line.type==="recurring"){
     mLine.recurCategorie = line.recurCategorie;
     mLine.recurLabel = line.recurLabel;
@@ -7878,6 +7885,7 @@ function openAddLineChoice(personKey, cat){
    répercutée sur le bucket miroir de l'autre personne (cf. revSyncTransferLineToMirror). */
 function openAddTransferLineChoice(personKey, bucket){
   const cfg = revCfg();
+  const defaultSign = bucket==="transferOut" ? -1 : 1;
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
     <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">Ajouter une ligne</div>
@@ -7895,7 +7903,7 @@ function openAddTransferLineChoice(personKey, bucket){
       onSave: (val)=>{
         const name = String(val||"").trim();
         if(!name) return;
-        const line = {id:U.uid(), type:"manual", label:name, values:{}, sign:1};
+        const line = {id:U.uid(), type:"manual", label:name, values:{}, sign:defaultSign};
         cfg[personKey][bucket] = cfg[personKey][bucket] || [];
         cfg[personKey][bucket].push(line);
         revSyncTransferLineToMirror(personKey, bucket, line);
@@ -7907,7 +7915,7 @@ function openAddTransferLineChoice(personKey, bucket){
   document.getElementById("addtline-recurring").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
     pickRecurringTransaction(null, (recurCategorie, label)=>{
-      const line = {id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:1};
+      const line = {id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:defaultSign};
       cfg[personKey][bucket] = cfg[personKey][bucket] || [];
       cfg[personKey][bucket].push(line);
       revSyncTransferLineToMirror(personKey, bucket, line);
@@ -9154,11 +9162,18 @@ function renderImportSummary(){
   const r = parsedResult;
   const hasExisting = Store.transactions.length>0;
   const hasTxns = r.txns.length>0;
+  function revenusHasContent(rv){
+    if(!rv) return false;
+    return ["moi","conjoint"].some(p=>{
+      const person = rv[p]||{};
+      return (person.categories||[]).length || (person.transferOut||[]).length || (person.transferIn||[]).length;
+    });
+  }
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
     Object.keys(r.params.groupKind||{}).length || (r.params.budgetAdjustments||[]).length || Object.keys(r.params.categoryTypeOverride||{}).length ||
     (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || Object.keys(r.params.salaryEntries||{}).length ||
     (r.params.compareSettings && r.params.compareSettings.enabled) || Object.keys(r.params.comparePredefined||{}).length ||
-    (r.params.revenus && (((r.params.revenus.moi||{}).categories||[]).length || ((r.params.revenus.conjoint||{}).categories||[]).length))));
+    revenusHasContent(r.params.revenus)));
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
@@ -9221,7 +9236,7 @@ function renderImportSummary(){
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
         ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
-        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}${Object.keys(r.params.comparePredefined||{}).length || (r.params.compareSettings && r.params.compareSettings.enabled) ? " · comparaison incluse" : ""}${r.params.revenus && (((r.params.revenus.moi||{}).categories||[]).length || ((r.params.revenus.conjoint||{}).categories||[]).length) ? " · revenus inclus" : ""}
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}${Object.keys(r.params.comparePredefined||{}).length || (r.params.compareSettings && r.params.compareSettings.enabled) ? " · comparaison incluse" : ""}${r.params.revenus && ["moi","conjoint"].some(p=>{const per=(r.params.revenus[p]||{});return (per.categories||[]).length || (per.transferOut||[]).length || (per.transferIn||[]).length;}) ? " · revenus inclus" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
