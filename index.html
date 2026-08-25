@@ -298,7 +298,7 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
 .evo-table th,.evo-table td{box-sizing:border-box;padding:9px 10px;text-align:right;font-size:12.5px;white-space:nowrap;border-bottom:1px solid var(--divider);}
 .evo-table thead th{font-size:10px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.02em;padding-top:10px;padding-bottom:10px;background:var(--card);border-bottom:2px solid var(--divider);}
-.evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;}
+.evo-col-label{position:sticky;left:0;z-index:3;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;white-space:normal !important;line-height:1.28;}
 .evo-col-total{position:sticky;left:132px;z-index:3;background:var(--card);width:74px;min-width:74px;max-width:74px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
 .evo-col-val{width:74px;min-width:74px;max-width:74px;}
 .evo-year-header{cursor:pointer;}
@@ -312,7 +312,7 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .evo-section-row.selected .evo-col-label,.evo-section-row.selected .evo-col-total{background:var(--primary-soft);}
 .evo-section-row.selected{background:var(--primary-soft);}
 .evo-item-row td{color:var(--text-sub);}
-.evo-item-row.hidden{display:none;}
+.evo-table tr.hidden{display:none;}
 .evo-val-cell{cursor:pointer;}
 .evo-val-cell.neg{color:var(--expense);}
 .evo-val-cell.pos{color:var(--income);}
@@ -326,7 +326,7 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
 .bgm-wrap.drag-scroll-active{cursor:grabbing;}
 .bgm-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
 .bgm-table td,.bgm-table th{box-sizing:border-box;padding:7px 6px;text-align:right;white-space:nowrap;}
-.bgm-label-cell{position:sticky;left:0;z-index:2;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;overflow:hidden;text-overflow:ellipsis;padding-left:12px !important;}
+.bgm-label-cell{position:sticky;left:0;z-index:2;background:var(--card);width:132px;min-width:132px;max-width:132px;text-align:left !important;white-space:normal !important;line-height:1.28;padding-left:12px !important;}
 .bgm-total-cell{position:sticky;left:132px;z-index:2;background:var(--card);width:82px;min-width:82px;max-width:82px;font-weight:800;box-shadow:2px 0 4px -2px rgba(0,0,0,.15);}
 .bgm-val-cell{width:72px;min-width:72px;max-width:72px;}
 .bgm-head th{font-size:9px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.2px;padding-top:10px;}
@@ -356,8 +356,6 @@ details[open] > summary .chev-rot{transform:rotate(180deg);}
    colonnes. Le bloc utilise toute la largeur disponible (padding latéral réduit, cf. rendu JS) et les
    colonnes sont compactes pour en laisser apparaître trois à la fois — au-delà, on fait défiler à la main
    (glisser-déposer souris via U.enableDragScroll, ou tactile natif). */
-.recur-table .evo-col-label{width:150px;min-width:150px;max-width:150px;white-space:normal;line-height:1.28;}
-.recur-table .evo-col-total{position:static;box-shadow:none;}
 
 details.card summary{list-style:none;}
 details.card summary::-webkit-details-marker{display:none;}
@@ -450,7 +448,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.24.01.00";
+const APP_VERSION = "v 2026.08.24.02.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -921,14 +919,16 @@ const Store = {
         cat.lines.forEach(l=>{
           if(!l.id) l.id = U.uid();
           if(l.type==="manual" && (!l.values || typeof l.values!=="object")) l.values = {};
+          if(l.sign!==1 && l.sign!==-1) l.sign = 1;
         });
       });
       ["transferOut","transferIn"].forEach(bucket=>{
         if(!Array.isArray(s.revenus[p][bucket])) s.revenus[p][bucket] = [];
         s.revenus[p][bucket].forEach(l=>{
           if(!l.id) l.id = U.uid();
-          l.type = "manual";
-          if(!l.values || typeof l.values!=="object") l.values = {};
+          if(l.type!=="recurring") l.type = "manual";
+          if(l.type==="manual" && (!l.values || typeof l.values!=="object")) l.values = {};
+          if(l.sign!==1 && l.sign!==-1) l.sign = 1;
         });
       });
     });
@@ -1351,12 +1351,20 @@ function parseParametresSheet(wb){
       const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
       const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
       const typeRaw = U.normalize(String(norm["type"]||""));
+      const recurCategorieRaw = norm["categorie recurrente"] ? String(norm["categorie recurrente"]).trim() : "";
+      const sign = String(norm["signe"]||"").trim()==="-1" ? -1 : 1;
       if(!categorie || !ligne) return;
+      let type = "manual";
+      if(typeRaw.indexOf("recur")>=0) type = "recurring";
+      else if(typeRaw.indexOf("salaire")>=0) type = "budgetSalary";
       if(categorie===REV_TRANSFER_OUT_SENTINEL || categorie===REV_TRANSFER_IN_SENTINEL){
         const bucket = categorie===REV_TRANSFER_OUT_SENTINEL ? "transferOut" : "transferIn";
-        const line = {id:U.uid(), type:"manual", label:ligne, values:{}};
+        if(type==="budgetSalary") type = "manual"; // pas de salaire synchronisé dans un bucket de transfert
+        const line = {id:U.uid(), type, label:ligne, sign};
+        if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || ligne; line.recurLabel = ligne; }
+        else { line.values = {}; }
         revenusPeople[personKey][bucket].push(line);
-        revTransferLookup[personKey][bucket].set(ligne, line);
+        if(type==="manual") revTransferLookup[personKey][bucket].set(ligne, line);
         return;
       }
       if(!revCatLookup[personKey][categorie]){
@@ -1365,11 +1373,8 @@ function parseParametresSheet(wb){
         revCatLookup[personKey][categorie] = {cat, lineByLabel:new Map()};
       }
       const entry = revCatLookup[personKey][categorie];
-      let type = "manual";
-      if(typeRaw.indexOf("recur")>=0) type = "recurring";
-      else if(typeRaw.indexOf("salaire")>=0) type = "budgetSalary";
-      const line = {id:U.uid(), type, label:ligne};
-      if(type==="recurring") line.recurLabel = ligne;
+      const line = {id:U.uid(), type, label:ligne, sign};
+      if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || categorie; line.recurLabel = ligne; }
       if(type==="manual") line.values = {};
       entry.cat.lines.push(line);
       if(type==="manual") entry.lineByLabel.set(ligne, line);
@@ -7089,54 +7094,59 @@ function revYearsList(){
    - budgetSalary : lit EN DIRECT Store.settings.budget.salaryEntries — aucune copie, donc synchronisation
      automatique et bidirectionnelle avec l'onglet Budget (cf. openRevValueEditor pour l'écriture)
    - récurrent : montant agrégé des transactions dont la Remarque porte le suffixe YY-MM, retrouvées via
-     l'item (catégorie + libellé de base) dans l'index récurrent */
-function revLineMonthValue(line, categorie, ym, recIndex){
+     l'item (line.recurCategorie + line.recurLabel) dans l'index récurrent. La catégorie récurrente source
+     est portée par la ligne elle-même (pas déduite de son emplacement) : ça permet à une ligne de transfert
+     — qui n'a pas de "catégorie" parente — d'être aussi reliée à une transaction récurrente. */
+function revLineMonthValue(line, ym, recIndex){
   if(line.type==="manual") return (line.values && line.values[ym]) || 0;
   if(line.type==="budgetSalary"){
     const e = (Store.settings.budget.salaryEntries||{})[ym];
     return (e && e.femme!=null) ? Number(e.femme) : 0;
   }
-  const item = revRecurringItemFor(recIndex, categorie, line.recurLabel);
+  const item = revRecurringItemFor(recIndex, line.recurCategorie, line.recurLabel);
   return item ? (item.values.get(ym)||0) : 0;
 }
 /* Montant "année" (suffixe YYYY seul, non réparti sur les mois — cf. buildRecurringIndex) : uniquement
    pertinent pour les lignes récurrentes, affiché dans la colonne spéciale après décembre (comme Récurrent). */
-function revLineYearLump(line, categorie, year, recIndex){
+function revLineYearLump(line, year, recIndex){
   if(line.type!=="recurring") return 0;
-  const item = revRecurringItemFor(recIndex, categorie, line.recurLabel);
+  const item = revRecurringItemFor(recIndex, line.recurCategorie, line.recurLabel);
   return item ? (item.yearValues.get(String(year))||0) : 0;
 }
+/* Signe : multiplicateur +1/-1 propre à chaque ligne (surtout utile pour une ligne "récurrent", dont le
+   montant est importé tel quel des transactions — permet de l'inverser sans devoir le faire à la source). */
+function revLineSign(line){ return line.sign===-1 ? -1 : 1; }
 /* col.type: "year" (vue non zoomée, total des 12 mois + lump, borné à la période) | "month" | "lump"
    (colonne spéciale après décembre en vue zoomée) */
-function revLineColValue(line, categorie, col, recIndex){
+function revLineColValue(line, col, recIndex){
+  const sign = revLineSign(line);
   if(col.type==="year"){
     const cfg = revCfg();
     let sum=0;
     for(let m=1;m<=12;m++){
       const ym = col.year+"-"+U.pad2(m);
       if(ym<cfg.periodFrom || ym>cfg.periodTo) continue;
-      sum += revLineMonthValue(line, categorie, ym, recIndex);
+      sum += revLineMonthValue(line, ym, recIndex);
     }
-    sum += revLineYearLump(line, categorie, col.year, recIndex);
-    return sum;
+    sum += revLineYearLump(line, col.year, recIndex);
+    return sign*sum;
   }
-  if(col.type==="lump") return revLineYearLump(line, categorie, col.year, recIndex);
-  return revLineMonthValue(line, categorie, col.ym, recIndex);
+  if(col.type==="lump") return sign*revLineYearLump(line, col.year, recIndex);
+  return sign*revLineMonthValue(line, col.ym, recIndex);
 }
-function revLineTotalValue(line, categorie, recIndex){
+function revLineTotalValue(line, recIndex){
+  const sign = revLineSign(line);
   if(line.type==="recurring"){
-    const item = revRecurringItemFor(recIndex, categorie, line.recurLabel);
-    return item ? AGG.recurringItemTotal(item) : 0;
+    const item = revRecurringItemFor(recIndex, line.recurCategorie, line.recurLabel);
+    return sign*(item ? AGG.recurringItemTotal(item) : 0);
   }
   const cfg = revCfg();
-  return revMonthsInRange(cfg.periodFrom, cfg.periodTo).reduce((s,ym)=> s+revLineMonthValue(line,categorie,ym,recIndex), 0);
+  return sign*revMonthsInRange(cfg.periodFrom, cfg.periodTo).reduce((s,ym)=> s+revLineMonthValue(line,ym,recIndex), 0);
 }
-function revCategoryColValue(cat, col, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineColValue(l,cat.categorie,col,recIndex), 0); }
-function revCategoryTotalValue(cat, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineTotalValue(l,cat.categorie,recIndex), 0); }
-/* Lignes de transfert (toujours manuelles) : mêmes fonctions de valeur que les lignes normales, la
-   catégorie n'étant pas utilisée pour ce type (cf. revLineMonthValue). */
-function revLinesColValue(lines, col, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineColValue(l,null,col,recIndex), 0); }
-function revLinesTotalValue(lines, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineTotalValue(l,null,recIndex), 0); }
+function revCategoryColValue(cat, col, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineColValue(l,col,recIndex), 0); }
+function revCategoryTotalValue(cat, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineTotalValue(l,recIndex), 0); }
+function revLinesColValue(lines, col, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineColValue(l,col,recIndex), 0); }
+function revLinesTotalValue(lines, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineTotalValue(l,recIndex), 0); }
 
 /* "Avant transfert" = somme des catégories choisies par l'utilisateur (inchangé).
    "Transfert" = net des transferts (Depuis - Vers) : Vers est toujours affiché en magnitude positive
@@ -7169,16 +7179,28 @@ function revMirrorOf(person, bucket){
   const otherBucket = bucket==="transferOut" ? "transferIn" : "transferOut";
   return {person: otherPerson, bucket: otherBucket};
 }
-/* Recopie label + montants d'une ligne de transfert vers sa ligne miroir (créée si absente). Appelée après
-   toute création/renommage/édition de montant sur une ligne de transferOut/transferIn. */
+/* Recopie type/label/signe et montants (manuel) ou lien récurrent d'une ligne de transfert vers sa ligne
+   miroir (créée si absente). Appelée après toute création/renommage/changement de signe/édition de montant
+   sur une ligne de transferOut/transferIn. Le signe est recopié À L'IDENTIQUE (pas inversé) : il corrige le
+   sens du montant source, qui est le même des deux côtés puisque c'est le même transfert. */
 function revSyncTransferLineToMirror(person, bucket, line){
   const mirror = revMirrorOf(person, bucket);
   const cfg = revCfg();
   const arr = cfg[mirror.person][mirror.bucket] = cfg[mirror.person][mirror.bucket] || [];
   let mLine = arr.find(l=>l.id===line.id);
-  if(!mLine){ mLine = {id: line.id, type:"manual", label: line.label, values:{}}; arr.push(mLine); }
+  if(!mLine){ mLine = {id: line.id}; arr.push(mLine); }
+  mLine.type = line.type;
   mLine.label = line.label;
-  mLine.values = Object.assign({}, line.values||{});
+  mLine.sign = line.sign;
+  if(line.type==="recurring"){
+    mLine.recurCategorie = line.recurCategorie;
+    mLine.recurLabel = line.recurLabel;
+    delete mLine.values;
+  } else {
+    mLine.values = Object.assign({}, line.values||{});
+    delete mLine.recurCategorie;
+    delete mLine.recurLabel;
+  }
 }
 function revRemoveTransferLineAndMirror(person, bucket, lineId){
   const cfg = revCfg();
@@ -7283,19 +7305,24 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
       return `<td class="evo-col-val evo-val-cell ${c.type==='lump'?'recur-year-col':''} ${revValClass(v)}">${v ? revFmtVal(v) : "—"}</td>`;
     }).join("");
   }
-  function lineRowHtml(line, categorie, person, secKey, hidden, indent){
-    const lTotal = revLineTotalValue(line, categorie, recIndex);
+  function lineRowHtml(line, person, secKey, hidden, indent){
+    const lTotal = revLineTotalValue(line, recIndex);
     const editable = line.type!=="recurring";
     const lCells = cols.map(c=>{
-      const v = revLineColValue(line, categorie, c, recIndex);
-      const canEdit = editable && c.type==="month";
-      const attrs = canEdit ? `data-edit-line="${U.escHtml(line.id)}" data-edit-person="${person}" data-edit-ym="${c.ym}"` : "";
+      const v = revLineColValue(line, c, recIndex);
+      const canEdit = editable && (c.type==="month" || c.type==="year");
+      const attrs = canEdit
+        ? (c.type==="year"
+            ? `data-edit-line="${U.escHtml(line.id)}" data-edit-person="${person}" data-edit-year="${c.year}"`
+            : `data-edit-line="${U.escHtml(line.id)}" data-edit-person="${person}" data-edit-ym="${c.ym}"`)
+        : "";
       return `<td class="evo-col-val evo-val-cell ${c.type==='lump'?'recur-year-col':''} ${canEdit?'rev-editable':''} ${revValClass(v)}" ${attrs}>${v ? revFmtVal(v) : "—"}</td>`;
     }).join("");
     const typeLabel = line.type==="recurring" ? " · récurrent" : (line.type==="budgetSalary" ? " · budget" : "");
+    const signLabel = revLineSign(line)===-1 ? ` <span style="color:var(--expense);">(signe −)</span>` : "";
     return `
     <tr class="evo-item-row${hidden?' hidden':''}" data-sec-key="${U.escHtml(secKey)}">
-      <td class="evo-col-label" style="padding-left:${indent}px;font-size:12px;">${U.escHtml(line.label)}<span style="color:var(--text-faint);">${typeLabel}</span></td>
+      <td class="evo-col-label" style="padding-left:${indent}px;font-size:12px;">${U.escHtml(line.label)}<span style="color:var(--text-faint);">${typeLabel}</span>${signLabel}</td>
       <td class="evo-col-total evo-val-cell ${revValClass(lTotal)}">${lTotal ? revFmtVal(lTotal) : "—"}</td>
       ${lCells}
     </tr>`;
@@ -7313,7 +7340,8 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
       </tr>
     `;
 
-    // "Avant transfert" + catégories (inchangé, un niveau d'indentation plus profond qu'avant)
+    // "Avant transfert" + catégories — un seul niveau d'indentation pour tout ce qui n'est pas la personne
+    // (format compact façon Récurrent : pas de retrait supplémentaire à chaque niveau imbriqué).
     const avantKey = p+"::avant";
     const avantCollapsed = revCollapsedSections.has(avantKey);
     const avantTotal = revPersonBeforeTotalValue(person, recIndex);
@@ -7330,17 +7358,17 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
       const catHidden = pCollapsed || avantCollapsed;
       const catRow = `
         <tr class="evo-section-row rev-cat-row${catHidden?' hidden':''}" data-sec-toggle="${U.escHtml(catKey)}">
-          <td class="evo-col-label" style="padding-left:38px;"><span class="evo-chev ${catCollapsed?'':'open'}">▸</span>${U.escHtml(cat.categorie)}</td>
+          <td class="evo-col-label" style="padding-left:22px;"><span class="evo-chev ${catCollapsed?'':'open'}">▸</span>${U.escHtml(cat.categorie)}</td>
           <td class="evo-col-total evo-val-cell ${revValClass(revCategoryTotalValue(cat,recIndex))}">${revCategoryTotalValue(cat,recIndex) ? revFmtVal(revCategoryTotalValue(cat,recIndex)) : "—"}</td>
           ${rowCells(c=> revCategoryColValue(cat,c,recIndex))}
         </tr>
       `;
       const lineHidden = catHidden || catCollapsed;
-      const lineRows = (cat.lines||[]).map(line=> lineRowHtml(line, cat.categorie, p, catKey, lineHidden, 54)).join("");
+      const lineRows = (cat.lines||[]).map(line=> lineRowHtml(line, p, catKey, lineHidden, 22)).join("");
       return catRow + lineRows;
     }).join("");
 
-    // "Transfert" (net) + sous-blocs "Vers"/"Depuis"
+    // "Transfert" (net) + sous-blocs "Vers"/"Depuis" — même indentation unique que ci-dessus.
     const transKey = p+"::transfert";
     const transCollapsed = revCollapsedSections.has(transKey);
     const transTotal = revPersonTransferTotalValue(person, recIndex);
@@ -7360,13 +7388,13 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
       const bucketTotal = revLinesTotalValue(lines, recIndex);
       const bucketRow = `
         <tr class="evo-section-row rev-cat-row${transHidden?' hidden':''}" data-sec-toggle="${U.escHtml(bucketKey)}">
-          <td class="evo-col-label" style="padding-left:38px;"><span class="evo-chev ${bucketCollapsed?'':'open'}">▸</span>${U.escHtml(label)}</td>
+          <td class="evo-col-label" style="padding-left:22px;"><span class="evo-chev ${bucketCollapsed?'':'open'}">▸</span>${U.escHtml(label)}</td>
           <td class="evo-col-total evo-val-cell ${revValClass(bucketTotal)}">${bucketTotal ? revFmtVal(bucketTotal) : "—"}</td>
           ${rowCells(c=> revLinesColValue(lines,c,recIndex))}
         </tr>
       `;
       const lineHidden = transHidden || bucketCollapsed;
-      const lineRows = lines.map(line=> lineRowHtml(line, null, p, bucketKey, lineHidden, 54)).join("");
+      const lineRows = lines.map(line=> lineRowHtml(line, p, bucketKey, lineHidden, 22)).join("");
       return bucketRow + lineRows;
     }
     const versBlock = bucketBlock("transferOut", "Vers "+otherLabel);
@@ -7450,11 +7478,68 @@ function wireRevenus(cfg, recIndex, cols){
 
   document.querySelectorAll(".rev-editable[data-edit-line]").forEach(el=>{
     el.onclick = ()=>{
-      openRevValueEditor(el.dataset.editPerson, el.dataset.editLine, el.dataset.editYm);
+      if(el.dataset.editYear!=null) openRevYearEditor(el.dataset.editPerson, el.dataset.editLine, Number(el.dataset.editYear));
+      else openRevValueEditor(el.dataset.editPerson, el.dataset.editLine, el.dataset.editYm);
     };
   });
 }
 
+/* Clic sur le total annuel (vue non zoomée) : modale listant les 12 mois de l'année pour tout saisir
+   d'un coup, sans avoir à zoomer puis toucher chaque mois individuellement. */
+function openRevYearEditor(person, lineId, year){
+  const found = findRevLine(person, lineId);
+  if(!found) return;
+  const line = found.line;
+  const modal = document.getElementById("modal-confirm");
+  function currentFor(ym){
+    if(line.type==="budgetSalary"){
+      const e = (Store.settings.budget.salaryEntries||{})[ym];
+      return (e && e.femme!=null) ? e.femme : "";
+    }
+    return (line.values && line.values[ym]!=null) ? line.values[ym] : "";
+  }
+  const months = Array.from({length:12},(_,m)=> year+"-"+U.pad2(m+1));
+  const rowsHtml = months.map((ym,i)=>{
+    const val = currentFor(ym);
+    return `
+    <div class="detail-row" style="align-items:center;gap:8px;flex-wrap:nowrap;padding:7px 0;">
+      <span style="flex:0 0 70px;font-size:12.5px;font-weight:600;">${U.MONTHS_FR[i]}</span>
+      <input type="number" step="0.01" inputmode="decimal" class="search-mini rye-input" data-ym="${ym}" placeholder="0,00" value="${val!==""?val:""}" style="flex:1;min-width:0;margin:0;">
+    </div>`;
+  }).join("");
+  modal.innerHTML = `
+    <div style="font-weight:800;font-size:16.5px;margin-bottom:4px;">${U.escHtml(line.label)}</div>
+    <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:12px;">${year} · un mois par ligne, laisser vide pour 0</div>
+    <div style="max-height:52vh;overflow-y:auto;">${rowsHtml}</div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="rye-cancel">Annuler</button>
+      <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="rye-save">Enregistrer</button>
+    </div>
+  `;
+  document.getElementById("rye-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("rye-save").onclick = ()=>{
+    modal.querySelectorAll(".rye-input").forEach(input=>{
+      const ym = input.dataset.ym;
+      const num = (input.value==null||input.value==="") ? 0 : Number(input.value);
+      if(line.type==="budgetSalary"){
+        Store.settings.budget.salaryEntries = Store.settings.budget.salaryEntries || {};
+        const cur = Object.assign({}, Store.settings.budget.salaryEntries[ym]);
+        cur.femme = num;
+        Store.settings.budget.salaryEntries[ym] = cur;
+      } else {
+        line.values = line.values || {};
+        if(num) line.values[ym] = num; else delete line.values[ym];
+      }
+    });
+    if(line.type!=="budgetSalary" && (found.location==="transferOut" || found.location==="transferIn")){
+      revSyncTransferLineToMirror(person, found.location, line);
+    }
+    Store.saveSettings();
+    APP.closeOverlay("overlay-confirm");
+    renderRevenus();
+  };
+  APP.openOverlay("overlay-confirm");
+}
 function findRevLine(person, lineId){
   const cfg = revCfg();
   for(const cat of (cfg[person].categories||[])){
@@ -7579,6 +7664,13 @@ function openRevManager(){
   APP.openOverlay("overlay-revmgr");
 }
 
+function signBtnHtml(line, dataAttr){
+  const isNeg = revLineSign(line)===-1;
+  return `<button type="button" class="icon-btn" ${dataAttr} title="Inverser le signe" style="font-weight:800;${isNeg?'color:var(--expense);':''}">${isNeg?'−':'+'}</button>`;
+}
+function lineTypeLabel(l){
+  return l.type==="recurring" ? " · récurrent" : (l.type==="budgetSalary" ? " · salaire (budget)" : " · manuel");
+}
 function categoryCardHtml(cat, idx, total){
   const lines = cat.lines||[];
   return `
@@ -7593,11 +7685,12 @@ function categoryCardHtml(cat, idx, total){
       </div>
       <div style="margin-top:8px;">
         ${lines.length===0 ? `<div style="font-size:12px;color:var(--text-faint);padding:4px 0;">Aucune ligne</div>` : lines.map((l,li)=>`
-          <div class="rowline" style="padding:7px 0;">
-            <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              ${U.escHtml(l.label)}<span style="color:var(--text-faint);font-size:11px;">${l.type==="recurring"?" · récurrent":(l.type==="budgetSalary"?" · salaire (budget)":" · manuel")}</span>
+          <div class="rowline" style="padding:7px 0;align-items:flex-start;">
+            <span style="flex:1;font-size:13px;line-height:1.35;">
+              ${U.escHtml(l.label)}<span style="color:var(--text-faint);font-size:11px;">${lineTypeLabel(l)}</span>
             </span>
             <div style="display:flex;gap:2px;flex:0 0 auto;">
+              ${signBtnHtml(l, `data-line-sign="${U.escHtml(l.id)}"`)}
               <button type="button" class="icon-btn" data-line-up="${U.escHtml(l.id)}" ${li===0?'disabled style="opacity:.3;"':''}>${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(90deg);width:15px;height:15px;" ')}</button>
               <button type="button" class="icon-btn" data-line-down="${U.escHtml(l.id)}" ${li===lines.length-1?'disabled style="opacity:.3;"':''}>${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(-90deg);width:15px;height:15px;" ')}</button>
               ${l.type==="manual" ? `<button type="button" class="icon-btn" data-line-rename="${U.escHtml(l.id)}">${ICONS.edit}</button>` : ""}
@@ -7612,8 +7705,8 @@ function categoryCardHtml(cat, idx, total){
 }
 
 /* Carte "Transfert vers/depuis X" : bucket fixe (ni renommable ni supprimable, contrairement à une
-   catégorie), lignes toujours manuelles. Chaque ajout/renommage/suppression de ligne est répercuté sur le
-   bucket miroir de l'autre personne par wireRevManager (cf. revSyncTransferLineToMirror). */
+   catégorie), lignes manuelles OU récurrentes. Chaque ajout/renommage/suppression/changement de signe est
+   répercuté sur le bucket miroir de l'autre personne par wireRevManager (cf. revSyncTransferLineToMirror). */
 function transferBucketCardHtml(personKey, bucket, label){
   const lines = revCfg()[personKey][bucket] || [];
   const otherLabel = REV_PERSON_LABEL[personKey==="moi"?"conjoint":"moi"];
@@ -7625,10 +7718,11 @@ function transferBucketCardHtml(personKey, bucket, label){
       <div style="font-size:11px;color:var(--text-faint);margin-top:2px;">Répercuté à l'identique chez ${U.escHtml(otherLabel)}.</div>
       <div style="margin-top:8px;">
         ${lines.length===0 ? `<div style="font-size:12px;color:var(--text-faint);padding:4px 0;">Aucune ligne</div>` : lines.map(l=>`
-          <div class="rowline" style="padding:7px 0;">
-            <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(l.label)}</span>
+          <div class="rowline" style="padding:7px 0;align-items:flex-start;">
+            <span style="flex:1;font-size:13px;line-height:1.35;">${U.escHtml(l.label)}<span style="color:var(--text-faint);font-size:11px;">${lineTypeLabel(l)}</span></span>
             <div style="display:flex;gap:2px;flex:0 0 auto;">
-              <button type="button" class="icon-btn" data-tline-rename="${U.escHtml(l.id)}" data-tline-bucket="${bucket}">${ICONS.edit}</button>
+              ${signBtnHtml(l, `data-tline-sign="${U.escHtml(l.id)}" data-tline-bucket="${bucket}"`)}
+              ${l.type==="manual" ? `<button type="button" class="icon-btn" data-tline-rename="${U.escHtml(l.id)}" data-tline-bucket="${bucket}">${ICONS.edit}</button>` : ""}
               <button type="button" class="icon-btn" data-tline-del="${U.escHtml(l.id)}" data-tline-bucket="${bucket}">${ICONS.trash}</button>
             </div>
           </div>
@@ -7662,6 +7756,38 @@ function renderRevManager(){
   wireRevManager();
 }
 
+/* Sélection d'une transaction récurrente à relier à une ligne.
+   - fixedCategorie fourni (catégorie normale) : va directement au choix de l'élément dans cette catégorie.
+   - fixedCategorie absent (bucket de transfert, qui n'a pas de catégorie propre) : demande d'abord la
+     catégorie récurrente source, puis l'élément. onPick(recurCategorie, label) reçoit le choix final. */
+function pickRecurringTransaction(fixedCategorie, onPick){
+  const recIndex = revRecurringIndex();
+  function pickItemIn(categorie){
+    const sec = revRecurringSectionFor(recIndex, categorie);
+    if(!sec || !sec.items.length){
+      APP.showToast("Aucune transaction récurrente dans « "+categorie+" » sur la période sélectionnée");
+      return;
+    }
+    PICKER.openPicker({
+      title: "Choisir une transaction récurrente",
+      options: sec.items.map(it=>it.label),
+      noEmpty: true,
+      onSelect: (label)=>{ if(label) onPick(categorie, label); }
+    });
+  }
+  if(fixedCategorie){ pickItemIn(fixedCategorie); return; }
+  if(!recIndex.sections.length){
+    APP.showToast("Aucune transaction récurrente sur la période sélectionnée");
+    return;
+  }
+  PICKER.openPicker({
+    title: "Choisir une catégorie",
+    options: recIndex.sections.map(s=>s.key),
+    noEmpty: true,
+    onSelect: (categorie)=>{ if(categorie) pickItemIn(categorie); }
+  });
+}
+
 function openAddLineChoice(personKey, cat){
   const modal = document.getElementById("modal-confirm");
   const showBudgetSalary = personKey==="conjoint" && !hasBudgetSalaryLine(revCfg().conjoint);
@@ -7683,7 +7809,7 @@ function openAddLineChoice(personKey, cat){
         const name = String(val||"").trim();
         if(!name) return;
         cat.lines = cat.lines || [];
-        cat.lines.push({id:U.uid(), type:"manual", label:name, values:{}});
+        cat.lines.push({id:U.uid(), type:"manual", label:name, values:{}, sign:1});
         Store.saveSettings();
         renderRevManager();
       }
@@ -7691,23 +7817,11 @@ function openAddLineChoice(personKey, cat){
   };
   document.getElementById("addline-recurring").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    const recIndex = revRecurringIndex();
-    const sec = revRecurringSectionFor(recIndex, cat.categorie);
-    if(!sec || !sec.items.length){
-      APP.showToast("Aucune transaction récurrente dans « "+cat.categorie+" » sur la période sélectionnée");
-      return;
-    }
-    PICKER.openPicker({
-      title: "Choisir une transaction récurrente",
-      options: sec.items.map(it=>it.label),
-      noEmpty: true,
-      onSelect: (label)=>{
-        if(!label) return;
-        cat.lines = cat.lines || [];
-        cat.lines.push({id:U.uid(), type:"recurring", label, recurLabel:label});
-        Store.saveSettings();
-        renderRevManager();
-      }
+    pickRecurringTransaction(cat.categorie, (recurCategorie, label)=>{
+      cat.lines = cat.lines || [];
+      cat.lines.push({id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:1});
+      Store.saveSettings();
+      renderRevManager();
     });
   };
   const salBtn = document.getElementById("addline-salary");
@@ -7717,6 +7831,51 @@ function openAddLineChoice(personKey, cat){
     cat.lines.push({id:U.uid(), type:"budgetSalary", label:"Salaire (Budget)"});
     Store.saveSettings();
     renderRevManager();
+  };
+  APP.openOverlay("overlay-confirm");
+}
+
+/* Équivalent de openAddLineChoice pour un bucket de transfert : pas d'option "Salaire synchronisé" (n'a de
+   sens que sous une catégorie), mais manuel ET récurrent sont proposés. La ligne créée est immédiatement
+   répercutée sur le bucket miroir de l'autre personne (cf. revSyncTransferLineToMirror). */
+function openAddTransferLineChoice(personKey, bucket){
+  const cfg = revCfg();
+  const modal = document.getElementById("modal-confirm");
+  modal.innerHTML = `
+    <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">Ajouter une ligne</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button type="button" class="btn btn-ghost btn-block" id="addtline-manual" style="justify-content:flex-start;">Nom manuel</button>
+      <button type="button" class="btn btn-ghost btn-block" id="addtline-recurring" style="justify-content:flex-start;">Transaction récurrente</button>
+      <button type="button" class="btn btn-ghost btn-block" id="addtline-cancel" style="justify-content:center;color:var(--text-sub);">Annuler</button>
+    </div>
+  `;
+  document.getElementById("addtline-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("addtline-manual").onclick = ()=>{
+    APP.closeOverlay("overlay-confirm");
+    PICKER.openInlineEditor({
+      title:"Nom de la ligne", inputType:"text", value:"", placeholder:"Ex. Loyer, courses…",
+      onSave: (val)=>{
+        const name = String(val||"").trim();
+        if(!name) return;
+        const line = {id:U.uid(), type:"manual", label:name, values:{}, sign:1};
+        cfg[personKey][bucket] = cfg[personKey][bucket] || [];
+        cfg[personKey][bucket].push(line);
+        revSyncTransferLineToMirror(personKey, bucket, line);
+        Store.saveSettings();
+        renderRevManager();
+      }
+    });
+  };
+  document.getElementById("addtline-recurring").onclick = ()=>{
+    APP.closeOverlay("overlay-confirm");
+    pickRecurringTransaction(null, (recurCategorie, label)=>{
+      const line = {id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:1};
+      cfg[personKey][bucket] = cfg[personKey][bucket] || [];
+      cfg[personKey][bucket].push(line);
+      revSyncTransferLineToMirror(personKey, bucket, line);
+      Store.saveSettings();
+      renderRevManager();
+    });
   };
   APP.openOverlay("overlay-confirm");
 }
@@ -7827,24 +7986,20 @@ function wireRevManager(){
   }
   document.querySelectorAll("[data-line-up]").forEach(btn=>{ btn.onclick = ()=> moveLine(btn.dataset.lineUp, -1); });
   document.querySelectorAll("[data-line-down]").forEach(btn=>{ btn.onclick = ()=> moveLine(btn.dataset.lineDown, 1); });
+  document.querySelectorAll("[data-line-sign]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const lineId = btn.dataset.lineSign;
+      let target=null;
+      person.categories.forEach(c=> (c.lines||[]).forEach(l=>{ if(l.id===lineId) target=l; }));
+      if(!target) return;
+      target.sign = revLineSign(target)===-1 ? 1 : -1;
+      Store.saveSettings();
+      renderRevManager();
+    };
+  });
 
   document.querySelectorAll("[data-add-transfer-line]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const bucket = btn.dataset.addTransferLine;
-      PICKER.openInlineEditor({
-        title:"Nom de la ligne", inputType:"text", value:"", placeholder:"Ex. Loyer, courses…",
-        onSave: (val)=>{
-          const name = String(val||"").trim();
-          if(!name) return;
-          const line = {id:U.uid(), type:"manual", label:name, values:{}};
-          person[bucket] = person[bucket] || [];
-          person[bucket].push(line);
-          revSyncTransferLineToMirror(mgrPerson, bucket, line);
-          Store.saveSettings();
-          renderRevManager();
-        }
-      });
-    };
+    btn.onclick = ()=> openAddTransferLineChoice(mgrPerson, btn.dataset.addTransferLine);
   });
   document.querySelectorAll("[data-tline-rename]").forEach(btn=>{
     btn.onclick = ()=>{
@@ -7881,24 +8036,33 @@ function wireRevManager(){
       });
     };
   });
+  document.querySelectorAll("[data-tline-sign]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const bucket = btn.dataset.tlineBucket;
+      const lineId = btn.dataset.tlineSign;
+      const line = (person[bucket]||[]).find(l=>l.id===lineId);
+      if(!line) return;
+      line.sign = revLineSign(line)===-1 ? 1 : -1;
+      revSyncTransferLineToMirror(mgrPerson, bucket, line);
+      Store.saveSettings();
+      renderRevManager();
+    };
+  });
 }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderRevenus = renderRevenus;
 window.__SF_REVENUS = {buildParamsPayloadPart(){
   const r = Store.settings.revenus || {};
-  const stripLines = (cats)=> (cats||[]).map(cat=>({
-    categorie: cat.categorie,
-    lines: (cat.lines||[]).map(l=> l.type==="manual"
-      ? {id:l.id, type:l.type, label:l.label, values:Object.assign({},l.values||{})}
-      : {id:l.id, type:l.type, label:l.label, recurLabel:l.recurLabel||null}
-    )
-  }));
-  const stripTransfer = (lines)=> (lines||[]).map(l=>({id:l.id, type:"manual", label:l.label, values:Object.assign({},l.values||{})}));
+  const packLine = (l)=> l.type==="recurring"
+    ? {id:l.id, type:l.type, label:l.label, recurCategorie:l.recurCategorie||null, recurLabel:l.recurLabel||null, sign:revLineSign(l)}
+    : {id:l.id, type:l.type, label:l.label, values:Object.assign({},l.values||{}), sign:revLineSign(l)};
+  const packLines = (lines)=> (lines||[]).map(packLine);
+  const packCategories = (cats)=> (cats||[]).map(cat=>({categorie: cat.categorie, lines: packLines(cat.lines)}));
   const packPerson = (p)=>({
-    categories: stripLines((p||{}).categories),
-    transferOut: stripTransfer((p||{}).transferOut),
-    transferIn: stripTransfer((p||{}).transferIn)
+    categories: packCategories((p||{}).categories),
+    transferOut: packLines((p||{}).transferOut),
+    transferIn: packLines((p||{}).transferIn)
   });
   return {
     periodFrom: r.periodFrom||null, periodTo: r.periodTo||null,
@@ -7915,11 +8079,14 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
     s.revenus.periodFrom = revenus.periodFrom || s.revenus.periodFrom;
     s.revenus.periodTo = revenus.periodTo || s.revenus.periodTo;
     if(revenus.groupFilter) s.revenus.groupFilter = revenus.groupFilter.slice();
-    const unpackLines = (lines)=> (lines||[]).map(l=>({
+    const unpackLine = (l)=>({
       id: l.id || U.uid(), type: l.type, label: l.label,
+      recurCategorie: l.recurCategorie||undefined,
       recurLabel: l.recurLabel||undefined,
-      values: l.type==="manual" ? Object.assign({}, l.values||{}) : undefined
-    }));
+      values: l.type==="manual" ? Object.assign({}, l.values||{}) : undefined,
+      sign: l.sign===-1 ? -1 : 1
+    });
+    const unpackLines = (lines)=> (lines||[]).map(unpackLine);
     ["moi","conjoint"].forEach(p=>{
       const src = revenus[p] || {};
       s.revenus[p] = {
@@ -9376,28 +9543,24 @@ function exportExcel(scope){
     const REV_TRANSFER_IN_SENTINEL = "(Transfert - depuis)";
     const revLinesRows = [];
     const revMontantsRows = [];
+    function exportRevLine(label, categorieCol, line){
+      revLinesRows.push([label, categorieCol, line.label, revTypeLabel[line.type]||"Manuel",
+        line.type==="recurring" ? (line.recurCategorie||"") : "", line.sign===-1 ? "-1" : "1"]);
+      if(line.type==="manual"){
+        Object.entries(line.values||{}).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([mois,montant])=>{
+          revMontantsRows.push([label, categorieCol, line.label, mois, montant]);
+        });
+      }
+    }
     [["moi","Moi"],["conjoint","Ma femme"]].forEach(([key,label])=>{
       const p = (revData && revData[key]) || {};
       (p.categories||[]).forEach(cat=>{
-        (cat.lines||[]).forEach(line=>{
-          revLinesRows.push([label, cat.categorie, line.label, revTypeLabel[line.type]||"Manuel"]);
-          if(line.type==="manual"){
-            Object.entries(line.values||{}).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([mois,montant])=>{
-              revMontantsRows.push([label, cat.categorie, line.label, mois, montant]);
-            });
-          }
-        });
+        (cat.lines||[]).forEach(line=> exportRevLine(label, cat.categorie, line));
       });
-      [[p.transferOut, REV_TRANSFER_OUT_SENTINEL], [p.transferIn, REV_TRANSFER_IN_SENTINEL]].forEach(([lines, sentinel])=>{
-        (lines||[]).forEach(line=>{
-          revLinesRows.push([label, sentinel, line.label, "Manuel"]);
-          Object.entries(line.values||{}).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([mois,montant])=>{
-            revMontantsRows.push([label, sentinel, line.label, mois, montant]);
-          });
-        });
-      });
+      (p.transferOut||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_OUT_SENTINEL, line));
+      (p.transferIn||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_IN_SENTINEL, line));
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Type"], ...revLinesRows]), "Revenus_Lignes");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Type","Catégorie récurrente","Signe"], ...revLinesRows]), "Revenus_Lignes");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Mois","Montant"], ...revMontantsRows]), "Revenus_Montants");
   }
 
