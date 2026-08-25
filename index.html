@@ -448,7 +448,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.24.02.00";
+const APP_VERSION = "v 2026.08.24.03.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2457,7 +2457,7 @@ function buildRecurringIndex(periodFrom, periodTo, groupFilter){
   }
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
-    if(groupFilter && !groupFilter.has(t.groupeBase || U.baseGroupe(t.groupe))) return;
+    if(groupFilter && !groupFilter.has(t.groupeBase || U.baseGroupe(t.groupe)) && !groupFilter.has(getGroupeDisplay(t))) return;
     const tr = t.transform;
     if(!tr || tr.mode==="same") return;
     let ymKey=null, yearKey=null;
@@ -7400,17 +7400,7 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
     const versBlock = bucketBlock("transferOut", "Vers "+otherLabel);
     const depuisBlock = bucketBlock("transferIn", "Depuis "+otherLabel);
 
-    // "Après transfert" : ligne de synthèse finale, jamais repliable (pas de data-sec-toggle → pas de chevron ni de clic)
-    const apresTotal = revPersonTotalValue(person, recIndex);
-    const apresRow = `
-      <tr class="evo-section-row rev-cat-row${pCollapsed?' hidden':''}" style="cursor:default;">
-        <td class="evo-col-label" style="padding-left:22px;font-weight:700;">Après transfert</td>
-        <td class="evo-col-total evo-val-cell ${revValClass(apresTotal)}">${apresTotal ? revFmtVal(apresTotal) : "—"}</td>
-        ${rowCells(c=> revPersonColValue(person,c,recIndex))}
-      </tr>
-    `;
-
-    return pRow + avantRow + catRows + transRow + versBlock + depuisBlock + apresRow;
+    return pRow + avantRow + catRows + transRow + versBlock + depuisBlock;
   }).join("");
 
   return `<table class="evo-table">${theadHtml}<tbody>${totalRowHtml}${personRows}</tbody></table>`;
@@ -7600,21 +7590,49 @@ function openRevFilterSheet(){
 function renderRevFilterSheet(){
   const sheet = document.getElementById("sheet-revfilter");
   const cfg = revCfg();
-  const bases = AGG.distinctBaseGroupes(Store.transactions);
+  const {sections, flat, preSorted} = AGG.groupeHierarchyChrono(Store.transactions);
+  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  const flatSorted = flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
   const selected = new Set(cfg.groupFilter||[]);
+  const hasAny = sectionNames.length>0 || flatSorted.length>0;
+
+  function sectionHtml(sup){
+    const children = sections.get(sup);
+    const totalCount = children.reduce((s,c)=>s+c.count,0);
+    return `<div class="groupe-section" data-super="${U.escHtml(sup)}">
+      <div class="check-item groupe-section-head ${selected.has(sup)?'selected':''}" data-val="${U.escHtml(sup)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
+        <span class="cnt">${totalCount}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${selected.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${U.escHtml(c.base)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  }
+  const flatHtml = flatSorted.map(f=>`
+    <div class="check-item groupe-flat-item ${selected.has(f.base)?'selected':''}" data-val="${U.escHtml(f.base)}">
+      <span class="cbox">${ICONS.check}</span>
+      <span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
+    </div>
+  `).join("");
+
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Filtrer par groupe</h2><button class="icon-btn" id="revfilter-close">${ICONS.close}</button></div>
     <div class="sheet-body">
       <div style="font-size:12px;color:var(--text-sub);margin-bottom:10px;">Limite les lignes reliées à des transactions récurrentes à ces groupes. Aucune sélection = tous les groupes.</div>
-      ${bases.length===0 ? `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucun groupe disponible</div>` : `
+      ${!hasAny ? `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucun groupe disponible</div>` : `
+      <input type="text" class="search-mini" id="revfilter-search" placeholder="Rechercher…">
       <div class="check-list" style="max-height:none;" id="revfilter-list">
-        ${bases.map(b=>`
-          <div class="check-item ${selected.has(b.base)?'selected':''}" data-val="${U.escHtml(b.base)}">
-            <span class="cbox">${ICONS.check}</span>
-            <span class="lbl">${U.escHtml(b.base)}</span><span class="cnt">${b.count}</span>
-          </div>
-        `).join("")}
+        ${sectionNames.map(sectionHtml).join("")}
+        ${flatHtml}
       </div>`}
     </div>
     <div class="sheet-foot">
@@ -7623,13 +7641,33 @@ function renderRevFilterSheet(){
     </div>
   `;
   document.getElementById("revfilter-close").onclick = ()=>APP.closeOverlay("overlay-revfilter");
-  document.querySelectorAll("#revfilter-list [data-val]").forEach(el=>{
+  document.querySelectorAll("#revfilter-list .check-item[data-val]").forEach(el=>{
     el.onclick = ()=>{
       const val = el.dataset.val;
       if(selected.has(val)) selected.delete(val); else selected.add(val);
       el.classList.toggle("selected");
     };
   });
+  const search = document.getElementById("revfilter-search");
+  if(search){
+    search.oninput = ()=>{
+      const q = U.normalize(search.value);
+      document.querySelectorAll("#revfilter-list .groupe-section").forEach(sec=>{
+        const supMatch = U.normalize(sec.dataset.super).includes(q);
+        let anyChildMatch = false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || U.normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match ? "flex" : "none";
+          if(match) anyChildMatch = true;
+        });
+        sec.style.display = (!q || supMatch || anyChildMatch) ? "" : "none";
+      });
+      document.querySelectorAll("#revfilter-list .groupe-flat-item").forEach(el=>{
+        const match = !q || U.normalize(el.dataset.val).includes(q);
+        el.style.display = match ? "flex" : "none";
+      });
+    };
+  }
   document.getElementById("revfilter-reset").onclick = ()=>{
     cfg.groupFilter = [];
     Store.saveSettings();
