@@ -430,6 +430,8 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .u-scroll-56{max-height:56vh;overflow-y:auto;}
 .u-col-shrink{display:flex;flex-direction:column;min-width:0;}
 .u-tab-btn{flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;}
+.u-period-undef{font-style:italic;font-weight:600;color:var(--text-sub);text-align:center;}
+.u-period-undef-btn{flex:0 0 auto;width:18px;height:18px;padding:0;border:none;background:transparent;color:var(--text-sub);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .u-badge-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
 .u-row-gap10{display:flex;gap:10px;}
 .u-faint-fixed{color:var(--text-faint);flex:0 0 auto;}
@@ -448,7 +450,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.24.04.00";
+const APP_VERSION = "v 2026.08.25.23.00";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -751,7 +753,7 @@ const Store = {
     evolution:{view:"groupe", monthBasis:"reel", merges:{groupe:[], categorie:[], personne:[]}},
     recurrent:{periodFrom:null, periodTo:null, groupsExpanded:false},
     revenus:{periodFrom:null, periodTo:null, groupFilter:[], groupsExpanded:false,
-      moi:{categories:[], transferOut:[], transferIn:[]}, conjoint:{categories:[], transferOut:[], transferIn:[]}},
+      moi:{lines:[], transferOut:[], transferIn:[]}, conjoint:{lines:[], transferOut:[], transferIn:[]}},
     budget:{scope:"perso", mode:"amorti", startMonth:null, mainGroup:null, extraGroups:[],
       amortCategories:[], adjustments:[], excludedAccounts:[]}},
   storageMode: "indexeddb", // "indexeddb" | "localstorage" (repli automatique)
@@ -912,15 +914,20 @@ const Store = {
     if(!Array.isArray(s.revenus.groupFilter)) s.revenus.groupFilter = [];
     if(typeof s.revenus.groupsExpanded!=="boolean") s.revenus.groupsExpanded = false;
     ["moi","conjoint"].forEach(p=>{
-      if(!s.revenus[p] || typeof s.revenus[p]!=="object") s.revenus[p] = {categories:[], transferOut:[], transferIn:[]};
-      if(!Array.isArray(s.revenus[p].categories)) s.revenus[p].categories = [];
-      s.revenus[p].categories.forEach(cat=>{
-        if(!Array.isArray(cat.lines)) cat.lines = [];
-        cat.lines.forEach(l=>{
-          if(!l.id) l.id = U.uid();
-          if(l.type==="manual" && (!l.values || typeof l.values!=="object")) l.values = {};
-          if(l.sign!==1 && l.sign!==-1) l.sign = 1;
-        });
+      if(!s.revenus[p] || typeof s.revenus[p]!=="object") s.revenus[p] = {lines:[], transferOut:[], transferIn:[]};
+      // Rétrocompatibilité : réglages sauvegardés avant la suppression du niveau "Catégorie" (§ Revenus) —
+      // l'ancien format imbriquait les lignes par catégorie (s.revenus[p].categories[].lines) ; on aplatit
+      // silencieusement vers une liste unique, sans grouper.
+      if(!Array.isArray(s.revenus[p].lines)){
+        s.revenus[p].lines = Array.isArray(s.revenus[p].categories)
+          ? s.revenus[p].categories.reduce((acc,cat)=> acc.concat(cat.lines||[]), [])
+          : [];
+      }
+      delete s.revenus[p].categories;
+      s.revenus[p].lines.forEach(l=>{
+        if(!l.id) l.id = U.uid();
+        if(l.type==="manual" && (!l.values || typeof l.values!=="object")) l.values = {};
+        if(l.sign!==1 && l.sign!==-1) l.sign = 1;
       });
       ["transferOut","transferIn"].forEach(bucket=>{
         if(!Array.isArray(s.revenus[p][bucket])) s.revenus[p][bucket] = [];
@@ -1330,8 +1337,8 @@ function parseParametresSheet(wb){
   const REV_TRANSFER_OUT_SENTINEL = "(Transfert - vers)";
   const REV_TRANSFER_IN_SENTINEL = "(Transfert - depuis)";
   let revenusPeriodFrom=null, revenusPeriodTo=null, revenusGroupFilter=[];
-  const revenusPeople = {moi:{categories:[],transferOut:[],transferIn:[]}, conjoint:{categories:[],transferOut:[],transferIn:[]}};
-  const revCatLookup = {moi:{}, conjoint:{}}; // categorie -> {cat, lineByLabel:Map} (catégories normales, lignes manuelles uniquement)
+  const revenusPeople = {moi:{lines:[],transferOut:[],transferIn:[]}, conjoint:{lines:[],transferOut:[],transferIn:[]}};
+  const revLineLookup = {moi:new Map(), conjoint:new Map()}; // libellé -> ligne (lignes normales manuelles uniquement)
   const revTransferLookup = {moi:{transferOut:new Map(), transferIn:new Map()}, conjoint:{transferOut:new Map(), transferIn:new Map()}}; // libellé -> ligne
   if(revRegSheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[revRegSheetName], {defval:null, raw:false, header:1});
@@ -1348,12 +1355,16 @@ function parseParametresSheet(wb){
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
       const personRaw = U.normalize(String(norm["personne"]||""));
       const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
+      // Colonne "Catégorie" conservée pour la compatibilité avec les exports antérieurs à la suppression du
+      // niveau "Catégorie" (§ Revenus) : seules les deux sentinelles de transfert y sont encore
+      // significatives — toute autre valeur (ancien nom de catégorie, ou vide dans un export récent) route
+      // désormais la ligne directement dans la liste à plat de la personne, sans grouper.
       const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
       const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
       const typeRaw = U.normalize(String(norm["type"]||""));
       const recurCategorieRaw = norm["categorie recurrente"] ? String(norm["categorie recurrente"]).trim() : "";
       const sign = String(norm["signe"]||"").trim()==="-1" ? -1 : 1;
-      if(!categorie || !ligne) return;
+      if(!ligne) return;
       let type = "manual";
       if(typeRaw.indexOf("recur")>=0) type = "recurring";
       else if(typeRaw.indexOf("salaire")>=0) type = "budgetSalary";
@@ -1367,17 +1378,11 @@ function parseParametresSheet(wb){
         if(type==="manual") revTransferLookup[personKey][bucket].set(ligne, line);
         return;
       }
-      if(!revCatLookup[personKey][categorie]){
-        const cat = {categorie, lines:[]};
-        revenusPeople[personKey].categories.push(cat);
-        revCatLookup[personKey][categorie] = {cat, lineByLabel:new Map()};
-      }
-      const entry = revCatLookup[personKey][categorie];
       const line = {id:U.uid(), type, label:ligne, sign};
-      if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || categorie; line.recurLabel = ligne; }
+      if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || ligne; line.recurLabel = ligne; }
       if(type==="manual") line.values = {};
-      entry.cat.lines.push(line);
-      if(type==="manual") entry.lineByLabel.set(ligne, line);
+      revenusPeople[personKey].lines.push(line);
+      if(type==="manual") revLineLookup[personKey].set(ligne, line);
     });
   }
   if(revMontantsSheetName){
@@ -1391,15 +1396,14 @@ function parseParametresSheet(wb){
       const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
       const mois = norm["mois"] ? String(norm["mois"]).trim() : "";
       const montant = norm["montant"];
-      if(!categorie || !ligne || !mois || montant==null || montant==="") return;
+      if(!ligne || !mois || montant==null || montant==="") return;
       if(categorie===REV_TRANSFER_OUT_SENTINEL || categorie===REV_TRANSFER_IN_SENTINEL){
         const bucket = categorie===REV_TRANSFER_OUT_SENTINEL ? "transferOut" : "transferIn";
         const line = revTransferLookup[personKey][bucket].get(ligne);
         if(line) line.values[mois] = Number(String(montant).replace(",",".")) || 0;
         return;
       }
-      const entry = revCatLookup[personKey][categorie];
-      const line = entry && entry.lineByLabel.get(ligne);
+      const line = revLineLookup[personKey].get(ligne);
       if(line) line.values[mois] = Number(String(montant).replace(",",".")) || 0;
     });
   }
@@ -3953,7 +3957,9 @@ function budgetToolButtonHtml(id, label, sublabel){
   `;
 }
 
-let periodFrom = null, periodTo = null; // "YYYY-MM"
+let periodFrom = null, periodTo = null; // "YYYY-MM", ou null = "Non définie" (§ periodPickerHtml)
+let periodInitDone = false; // distingue "jamais initialisé cette session" (repli sur le mois courant) d'un
+// null explicitement choisi par l'utilisateur ("Non définie"), qui ne doit pas être réinitialisé
 /* Un compte coché ici est totalement ignoré par tous les calculs du Budget (transactions réelles,
    amortissement, salaire) — les ajustements manuels n'ont pas de compte et ne sont donc jamais concernés. */
 function isAccountExcluded(compte){
@@ -3969,12 +3975,13 @@ function isAccountExcluded(compte){
 let allSectionsOpen = true;
 function isGroupSectionOpen(){ return allSectionsOpen; }
 function ensurePeriod(){
-  if(periodFrom && periodTo) return;
+  if(periodInitDone) return;
+  periodInitDone = true;
   const saved = Store.settings.budget || {};
   const now = new Date();
   const ym = now.getFullYear()+"-"+U.pad2(now.getMonth()+1);
-  periodFrom = periodFrom || saved.periodFrom || ym;
-  periodTo = periodTo || saved.periodTo || ym;
+  periodFrom = saved.periodFrom!==undefined ? saved.periodFrom : ym;
+  periodTo = saved.periodTo!==undefined ? saved.periodTo : ym;
 }
 function persistPeriod(){
   Store.settings.budget = Store.settings.budget || {};
@@ -3982,7 +3989,42 @@ function persistPeriod(){
   Store.settings.budget.periodTo = periodTo;
   Store.saveSettings();
 }
+/* Bornes ["YYYY-MM" min, "YYYY-MM" max] de toutes les données pertinentes au Budget (transactions réelles,
+   saisies de salaire manuelles, ajustements) — le mois en cours est toujours inclus comme borne haute
+   minimale. Sert à résoudre une borne de "période affichée" laissée "Non définie" (§ periodPickerHtml). */
+function budgetDataMonthBounds(){
+  let min=null, max=null;
+  function consider(key){
+    if(!key) return;
+    if(min===null || key<min) min=key;
+    if(max===null || key>max) max=key;
+  }
+  Store.transactions.forEach(t=>{
+    if(t.type==="Transfer") return;
+    const tr = t.transform;
+    if(tr && tr.mode==="yearsplit"){ consider(tr.year+"-01"); consider(tr.year+"-12"); return; }
+    if(tr && tr.mode==="month"){ consider(tr.year+"-"+U.pad2(tr.month+1)); return; }
+    consider(t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
+  });
+  Object.keys(Store.settings.budget.salaryEntries||{}).forEach(consider);
+  (Store.settings.budget.adjustments||[]).forEach(a=>consider(a.month));
+  const now = new Date();
+  const nowKey = now.getFullYear()+"-"+U.pad2(now.getMonth()+1);
+  if(max===null || nowKey>max) max = nowKey;
+  if(min===null) min = nowKey;
+  return {min, max};
+}
+/* from/to "YYYY-MM" inclus ; l'un ou l'autre (ou les deux) peut être null — "Non définie" (§
+   periodPickerHtml) : la borne manquante est alors résolue à l'étendue réelle des données (voir
+   budgetDataMonthBounds) — début non défini = tout ce qui précède la fin, fin non définie = tout ce qui
+   suit le début. */
 function monthsInRange(from, to){
+  if(!from || !to){
+    const bounds = budgetDataMonthBounds();
+    from = from || bounds.min;
+    to = to || bounds.max;
+  }
+  if(from>to){ const t=from; from=to; to=t; }
   const [fy,fm] = from.split("-").map(Number);
   const [ty,tm] = to.split("-").map(Number);
   const out = [];
@@ -4337,11 +4379,15 @@ function computeGroupBudget(superGroupeName, months, opts){
     });
   }
   if(salaryCatKey){
-    const hasManualEntry = months.some(m=>{ const e = salaryEntryFor(m); return e.moi!=null || e.femme!=null; });
+    // Les salaires ne sont jamais comptés en dehors de la période du budget définie dans l'amortissement
+    // (bornes "Mois de début"/"Dernier mois", cf. amortBoundedMonths) — même si la période affichée est plus
+    // large (ex. borne "Non définie", § periodPickerHtml/monthsInRange).
+    const salaryMonths = amortBoundedMonths(months);
+    const hasManualEntry = salaryMonths.some(m=>{ const e = salaryEntryFor(m); return e.moi!=null || e.femme!=null; });
     if(catTotals.has(salaryCatKey) || hasManualEntry){
       const o = ensureCat(salaryCatKey);
       let real = 0, adj = 0;
-      months.forEach(m=>{ const b = salaryMonthBreakdown(superGroupeName, salaryCatKey, m); real += b.real; adj += b.adj; });
+      salaryMonths.forEach(m=>{ const b = salaryMonthBreakdown(superGroupeName, salaryCatKey, m); real += b.real; adj += b.adj; });
       const total = real+adj;
       o.income = total; o.expense = 0;
       o.realIncome = real; o.realExpense = 0;
@@ -4604,13 +4650,26 @@ function groupPickerHierarchy(excludeSet){
   return {sections, flat};
 }
 
+/* Chaque borne (début/fin) peut être laissée "Non définie" : un bouton texte remplace alors le sélecteur de
+   mois, et la période affichée s'étend à toute l'étendue disponible de ce côté (début non défini = tout ce
+   qui précède la fin ; fin non définie = tout ce qui suit le début — voir monthsInRange/
+   budgetDataMonthBounds). Le "✕" à côté d'un mois renseigné bascule cette borne vers "Non définie" ; taper
+   sur "Non définie" redonne un sélecteur de mois (pré-rempli avec l'autre borne, ou le mois courant). */
 function periodPickerHtml(){
+  const fromHtml = periodFrom
+    ? `<input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
+       <button type="button" class="u-period-undef-btn" id="bg-from-clear" title="Non définie">✕</button>`
+    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-from-undef">Non définie</button>`;
+  const toHtml = periodTo
+    ? `<input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
+       <button type="button" class="u-period-undef-btn" id="bg-to-clear" title="Non définie">✕</button>`
+    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-to-undef">Non définie</button>`;
   return `
-    <div style="display:flex;align-items:center;gap:6px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 14px;box-shadow:var(--shadow-1);">
+    <div style="display:flex;align-items:center;gap:4px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 14px;box-shadow:var(--shadow-1);">
       <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
-      <input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
+      ${fromHtml}
       <span class="u-faint-fixed">→</span>
-      <input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
+      ${toHtml}
     </div>
   `;
 }
@@ -4930,7 +4989,7 @@ function openAdjustmentForm(adj, prefill){
   const groups = candidateSuperGroupes();
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
   const isEdit = !!(adj && adj.__idx!=null);
-  const data = adj || Object.assign({month: periodFrom||"", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false, montantScope: cfg.scope}, prefill||{});
+  const data = adj || Object.assign({month: periodFrom || monthsInRange(periodFrom, periodTo)[0] || "", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false, montantScope: cfg.scope}, prefill||{});
   if(!data.montantScope) data.montantScope = cfg.scope;
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
@@ -5616,8 +5675,34 @@ function renderBudget(){
       renderBudget();
     };
   });
-  document.getElementById("bg-from").onchange = (e)=>{ periodFrom = e.target.value; if(periodFrom>periodTo) periodTo=periodFrom; persistPeriod(); renderBudget(); };
-  document.getElementById("bg-to").onchange = (e)=>{ periodTo = e.target.value; if(periodTo<periodFrom) periodFrom=periodTo; persistPeriod(); renderBudget(); };
+  const bgFromEl = document.getElementById("bg-from");
+  if(bgFromEl) bgFromEl.onchange = (e)=>{
+    periodFrom = e.target.value || null;
+    if(periodFrom && periodTo && periodFrom>periodTo) periodTo = periodFrom;
+    persistPeriod(); renderBudget();
+  };
+  const bgFromClear = document.getElementById("bg-from-clear");
+  if(bgFromClear) bgFromClear.onclick = ()=>{ periodFrom = null; persistPeriod(); renderBudget(); };
+  const bgFromUndef = document.getElementById("bg-from-undef");
+  if(bgFromUndef) bgFromUndef.onclick = ()=>{
+    const now = new Date();
+    periodFrom = periodTo || (now.getFullYear()+"-"+U.pad2(now.getMonth()+1));
+    persistPeriod(); renderBudget();
+  };
+  const bgToEl = document.getElementById("bg-to");
+  if(bgToEl) bgToEl.onchange = (e)=>{
+    periodTo = e.target.value || null;
+    if(periodFrom && periodTo && periodTo<periodFrom) periodFrom = periodTo;
+    persistPeriod(); renderBudget();
+  };
+  const bgToClear = document.getElementById("bg-to-clear");
+  if(bgToClear) bgToClear.onclick = ()=>{ periodTo = null; persistPeriod(); renderBudget(); };
+  const bgToUndef = document.getElementById("bg-to-undef");
+  if(bgToUndef) bgToUndef.onclick = ()=>{
+    const now = new Date();
+    periodTo = periodFrom || (now.getFullYear()+"-"+U.pad2(now.getMonth()+1));
+    persistPeriod(); renderBudget();
+  };
   document.querySelectorAll(".budget-cat-row[data-cat]").forEach(el=>{
     el.onclick = ()=>{
       if(isSalaryCategory(el.dataset.cat)) openSalaryEditor(el.dataset.supergroupe, el.dataset.cat);
@@ -7044,10 +7129,8 @@ function ensureRevenusPeriod(){
     consider(tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (tr.year+"-12"));
   });
   ["moi","conjoint"].forEach(p=>{
-    (cfg[p].categories||[]).forEach(cat=>{
-      (cat.lines||[]).forEach(l=>{
-        if(l.type==="manual" && l.values) Object.keys(l.values).forEach(consider);
-      });
+    (cfg[p].lines||[]).forEach(l=>{
+      if(l.type==="manual" && l.values) Object.keys(l.values).forEach(consider);
     });
   });
   Object.keys(Store.settings.budget.salaryEntries||{}).forEach(ym=>{
@@ -7143,12 +7226,11 @@ function revLineTotalValue(line, recIndex){
   const cfg = revCfg();
   return sign*revMonthsInRange(cfg.periodFrom, cfg.periodTo).reduce((s,ym)=> s+revLineMonthValue(line,ym,recIndex), 0);
 }
-function revCategoryColValue(cat, col, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineColValue(l,col,recIndex), 0); }
-function revCategoryTotalValue(cat, recIndex){ return (cat.lines||[]).reduce((s,l)=> s+revLineTotalValue(l,recIndex), 0); }
 function revLinesColValue(lines, col, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineColValue(l,col,recIndex), 0); }
 function revLinesTotalValue(lines, recIndex){ return (lines||[]).reduce((s,l)=> s+revLineTotalValue(l,recIndex), 0); }
 
-/* "Avant transfert" = somme des catégories choisies par l'utilisateur (inchangé).
+/* "Avant transfert" = somme des lignes définies par l'utilisateur (manuelles, récurrentes ou salaire
+   synchronisé), à plat — plus de regroupement par catégorie intermédiaire.
    "Transfert" = addition simple de "Vers" + "Depuis" — AUCUN signe structurel par bucket : chaque ligne
    compte pour sa valeur telle qu'affichée (montant × son propre signe, revLineSign), sans qu'un bucket
    "Vers"/"Depuis" n'impose automatiquement un sens. Si une ligne doit réduire le total, c'est à l'utilisateur
@@ -7158,8 +7240,8 @@ function revLinesTotalValue(lines, recIndex){ return (lines||[]).reduce((s,l)=> 
    par le grand Total — comme les deux transferts sont des miroirs exacts l'un de l'autre (cf.
    revSyncTransferLineToMirror), la somme des deux "Après transfert" égale toujours la somme des deux
    "Avant transfert" : les transferts ne font que redistribuer, jamais varier le total du couple. */
-function revPersonBeforeColValue(person, col, recIndex){ return (person.categories||[]).reduce((s,c)=> s+revCategoryColValue(c,col,recIndex), 0); }
-function revPersonBeforeTotalValue(person, recIndex){ return (person.categories||[]).reduce((s,c)=> s+revCategoryTotalValue(c,recIndex), 0); }
+function revPersonBeforeColValue(person, col, recIndex){ return revLinesColValue(person.lines, col, recIndex); }
+function revPersonBeforeTotalValue(person, recIndex){ return revLinesTotalValue(person.lines, recIndex); }
 function revPersonTransferColValue(person, col, recIndex){ return revLinesColValue(person.transferOut,col,recIndex) + revLinesColValue(person.transferIn,col,recIndex); }
 function revPersonTransferTotalValue(person, recIndex){ return revLinesTotalValue(person.transferOut,recIndex) + revLinesTotalValue(person.transferIn,recIndex); }
 function revPersonColValue(person, col, recIndex){ return revPersonBeforeColValue(person,col,recIndex) + revPersonTransferColValue(person,col,recIndex); }
@@ -7217,12 +7299,11 @@ function revRemoveTransferLineAndMirror(person, bucket, lineId){
 }
 
 /* Toutes les clés de sections repliables (hors "personne", gérée séparément) pour une personne : la
-   section "Avant transfert" + une par catégorie, la section "Transfert" + ses deux sous-blocs Vers/Depuis.
-   Utilisé à la fois pour l'initialisation "replié par défaut" et pour "Tout déplier/replier". */
+   section "Avant transfert", la section "Transfert" + ses deux sous-blocs Vers/Depuis — plus de sous-clé par
+   catégorie (niveau supprimé). Utilisé à la fois pour l'initialisation "replié par défaut" et pour "Tout
+   déplier/replier". */
 function revAllSectionKeysFor(cfg, p){
-  const keys = [p+"::avant", p+"::transfert", p+"::transfert::transferOut", p+"::transfert::transferIn"];
-  (cfg[p].categories||[]).forEach(cat=> keys.push(p+"::avant::"+cat.categorie));
-  return keys;
+  return [p+"::avant", p+"::transfert", p+"::transfert::transferOut", p+"::transfert::transferIn"];
 }
 
 /* ---------------- Rendu principal ---------------- */
@@ -7272,12 +7353,12 @@ function renderRevenus(){
     </div>
   `;
 
-  const hasAnyCategory = ["moi","conjoint"].some(p=>(cfg[p].categories||[]).length || (cfg[p].transferOut||[]).length || (cfg[p].transferIn||[]).length);
-  const tableHtml = hasAnyCategory
+  const hasAnyLine = ["moi","conjoint"].some(p=>(cfg[p].lines||[]).length || (cfg[p].transferOut||[]).length || (cfg[p].transferIn||[]).length);
+  const tableHtml = hasAnyLine
     ? buildRevenusTableHtml(cfg, recIndex, cols)
-    : `<div class="empty-state" style="padding:32px 20px;">${ICONS.inbox}<h3>Aucune catégorie configurée</h3><p>Touchez « Gérer » pour ajouter vos premières catégories de revenus.</p></div>`;
+    : `<div class="empty-state" style="padding:32px 20px;">${ICONS.inbox}<h3>Aucune ligne configurée</h3><p>Touchez « Gérer » pour ajouter vos premières lignes de revenus.</p></div>`;
 
-  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;padding-left:8px;padding-right:8px;">${hasAnyCategory ? `<div class="evo-table-wrap">${tableHtml}</div>` : tableHtml}</div><div style="height:10px;"></div>`;
+  view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;padding-left:8px;padding-right:8px;">${hasAnyLine ? `<div class="evo-table-wrap">${tableHtml}</div>` : tableHtml}</div><div style="height:10px;"></div>`;
   wireRevenus(cfg, recIndex, cols);
 }
 
@@ -7347,8 +7428,9 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
       </tr>
     `;
 
-    // "Avant transfert" + catégories — un seul niveau d'indentation pour tout ce qui n'est pas la personne
-    // (format compact façon Récurrent : pas de retrait supplémentaire à chaque niveau imbriqué).
+    // "Avant transfert" — un seul niveau d'indentation pour tout ce qui n'est pas la personne (format
+    // compact façon Récurrent : pas de retrait supplémentaire par ligne) ; ses lignes (manuelles,
+    // récurrentes ou salaire synchronisé) apparaissent directement dessous, sans regroupement par catégorie.
     const avantKey = p+"::avant";
     const avantCollapsed = revCollapsedSections.has(avantKey);
     const avantTotal = revPersonBeforeTotalValue(person, recIndex);
@@ -7359,21 +7441,8 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
         ${rowCells(c=> revPersonBeforeColValue(person,c,recIndex))}
       </tr>
     `;
-    const catRows = (person.categories||[]).map(cat=>{
-      const catKey = p+"::avant::"+cat.categorie;
-      const catCollapsed = revCollapsedSections.has(catKey);
-      const catHidden = pCollapsed || avantCollapsed;
-      const catRow = `
-        <tr class="evo-section-row rev-cat-row${catHidden?' hidden':''}" data-sec-toggle="${U.escHtml(catKey)}">
-          <td class="evo-col-label" style="padding-left:22px;"><span class="evo-chev ${catCollapsed?'':'open'}">▸</span>${U.escHtml(cat.categorie)}</td>
-          <td class="evo-col-total evo-val-cell ${revValClass(revCategoryTotalValue(cat,recIndex))}">${revCategoryTotalValue(cat,recIndex) ? revFmtVal(revCategoryTotalValue(cat,recIndex)) : "—"}</td>
-          ${rowCells(c=> revCategoryColValue(cat,c,recIndex))}
-        </tr>
-      `;
-      const lineHidden = catHidden || catCollapsed;
-      const lineRows = (cat.lines||[]).map(line=> lineRowHtml(line, p, catKey, lineHidden, 22)).join("");
-      return catRow + lineRows;
-    }).join("");
+    const avantHidden = pCollapsed || avantCollapsed;
+    const avantLineRows = (person.lines||[]).map(line=> lineRowHtml(line, p, avantKey, avantHidden, 22)).join("");
 
     // "Transfert" (net) + sous-blocs "Vers"/"Depuis" — même indentation unique que ci-dessus.
     const transKey = p+"::transfert";
@@ -7407,7 +7476,7 @@ function buildRevenusTableHtml(cfg, recIndex, cols){
     const versBlock = bucketBlock("transferOut", "Vers "+otherLabel);
     const depuisBlock = bucketBlock("transferIn", "Depuis "+otherLabel);
 
-    return pRow + avantRow + catRows + transRow + versBlock + depuisBlock;
+    return pRow + avantRow + avantLineRows + transRow + versBlock + depuisBlock;
   }).join("");
 
   return `<table class="evo-table">${theadHtml}<tbody>${totalRowHtml}${personRows}</tbody></table>`;
@@ -7539,13 +7608,11 @@ function openRevYearEditor(person, lineId, year){
 }
 function findRevLine(person, lineId){
   const cfg = revCfg();
-  for(const cat of (cfg[person].categories||[])){
-    const line = (cat.lines||[]).find(l=>l.id===lineId);
-    if(line) return {location:"category", line};
-  }
+  const line = (cfg[person].lines||[]).find(l=>l.id===lineId);
+  if(line) return {location:"lines", line};
   for(const bucket of ["transferOut","transferIn"]){
-    const line = (cfg[person][bucket]||[]).find(l=>l.id===lineId);
-    if(line) return {location:bucket, line};
+    const l2 = (cfg[person][bucket]||[]).find(l=>l.id===lineId);
+    if(l2) return {location:bucket, line:l2};
   }
   return null;
 }
@@ -7689,18 +7756,9 @@ function renderRevFilterSheet(){
   };
 }
 
-/* ---------------- Gestion des catégories / lignes ---------------- */
-function revCategoryPickerHierarchy(excludeSet){
-  const items = AGG.distinctValuesCategorieSorted(Store.transactions).filter(i=>!excludeSet.has(i.value));
-  const sections = new Map();
-  const inc = items.filter(i=>i.kind==="Income").map(i=>({base:i.value, count:i.count}));
-  const exp = items.filter(i=>i.kind==="Expense").map(i=>({base:i.value, count:i.count}));
-  if(inc.length) sections.set("Revenus", inc);
-  if(exp.length) sections.set("Dépenses", exp);
-  return {sections, flat:[], preSorted:true, selectableHeaders:false, expandedByDefault:true};
-}
+/* ---------------- Gestion des lignes ---------------- */
 function hasBudgetSalaryLine(person){
-  return (person.categories||[]).some(cat=>(cat.lines||[]).some(l=>l.type==="budgetSalary"));
+  return (person.lines||[]).some(l=>l.type==="budgetSalary");
 }
 
 function openRevManager(){
@@ -7716,17 +7774,15 @@ function signBtnHtml(line, dataAttr){
 function lineTypeLabel(l){
   return l.type==="recurring" ? " · récurrent" : (l.type==="budgetSalary" ? " · salaire (budget)" : " · manuel");
 }
-function categoryCardHtml(cat, idx, total){
-  const lines = cat.lines||[];
+/* Carte "Avant transfert" : liste à plat des lignes de la personne (manuelles, récurrentes ou salaire
+   synchronisé), sans regroupement par catégorie — réordonnables, chacune avec son bouton de signe et, pour
+   une ligne manuelle, un renommage. */
+function avantLinesCardHtml(personKey){
+  const lines = revCfg()[personKey].lines || [];
   return `
     <div class="card" style="padding:12px 14px;margin-bottom:10px;box-shadow:none;background:var(--card-alt);">
       <div class="u-row-between-sm">
-        <span style="font-weight:800;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(cat.categorie)}</span>
-        <div style="display:flex;gap:2px;flex:0 0 auto;">
-          <button type="button" class="icon-btn" data-cat-up="${U.escHtml(cat.categorie)}" ${idx===0?'disabled style="opacity:.3;"':''}>${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(90deg);width:16px;height:16px;" ')}</button>
-          <button type="button" class="icon-btn" data-cat-down="${U.escHtml(cat.categorie)}" ${idx===total-1?'disabled style="opacity:.3;"':''}>${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(-90deg);width:16px;height:16px;" ')}</button>
-          <button type="button" class="icon-btn" data-cat-del="${U.escHtml(cat.categorie)}">${ICONS.trash}</button>
-        </div>
+        <span style="font-weight:800;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Avant transfert</span>
       </div>
       <div style="margin-top:8px;">
         ${lines.length===0 ? `<div style="font-size:12px;color:var(--text-faint);padding:4px 0;">Aucune ligne</div>` : lines.map((l,li)=>`
@@ -7743,7 +7799,7 @@ function categoryCardHtml(cat, idx, total){
             </div>
           </div>
         `).join("")}
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;justify-content:center;" data-add-line="${U.escHtml(cat.categorie)}">${ICONS.plus} Ajouter une ligne</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;justify-content:center;" id="revmgr-add-line">${ICONS.plus} Ajouter une ligne</button>
       </div>
     </div>
   `;
@@ -7780,8 +7836,6 @@ function transferBucketCardHtml(personKey, bucket, label){
 
 function renderRevManager(){
   const sheet = document.getElementById("sheet-revmgr");
-  const cfg = revCfg();
-  const person = cfg[mgrPerson];
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Gérer mes revenus</h2><button class="icon-btn" id="revmgr-close">${ICONS.close}</button></div>
@@ -7790,8 +7844,7 @@ function renderRevManager(){
         <button data-p="moi" class="${mgrPerson==='moi'?'active':''}">Moi</button>
         <button data-p="conjoint" class="${mgrPerson==='conjoint'?'active':''}">Ma femme</button>
       </div>
-      ${(person.categories||[]).length===0 ? `<div style="text-align:center;color:var(--text-faint);font-size:13px;padding:20px 0;">Aucune catégorie</div>` : (person.categories||[]).map((cat,idx)=>categoryCardHtml(cat, idx, person.categories.length)).join("")}
-      <button type="button" class="btn btn-primary btn-block" id="revmgr-add-cat" style="margin-top:6px;">${ICONS.plus} Ajouter une catégorie</button>
+      ${avantLinesCardHtml(mgrPerson)}
       <div class="field-label" style="margin-top:18px;">Transferts</div>
       ${transferBucketCardHtml(mgrPerson, "transferOut", "Vers "+REV_PERSON_LABEL[mgrPerson==="moi"?"conjoint":"moi"])}
       ${transferBucketCardHtml(mgrPerson, "transferIn", "Depuis "+REV_PERSON_LABEL[mgrPerson==="moi"?"conjoint":"moi"])}
@@ -7801,11 +7854,10 @@ function renderRevManager(){
   wireRevManager();
 }
 
-/* Sélection d'une transaction récurrente à relier à une ligne.
-   - fixedCategorie fourni (catégorie normale) : va directement au choix de l'élément dans cette catégorie.
-   - fixedCategorie absent (bucket de transfert, qui n'a pas de catégorie propre) : demande d'abord la
-     catégorie récurrente source, puis l'élément. onPick(recurCategorie, label) reçoit le choix final. */
-function pickRecurringTransaction(fixedCategorie, onPick){
+/* Sélection d'une transaction récurrente à relier à une ligne (lignes "Avant transfert" à plat ou bucket de
+   transfert, aucun des deux n'ayant de catégorie propre) : demande d'abord la catégorie récurrente source,
+   puis l'élément. onPick(recurCategorie, label) reçoit le choix final. */
+function pickRecurringTransaction(onPick){
   const recIndex = revRecurringIndex();
   function pickItemIn(categorie){
     const sec = revRecurringSectionFor(recIndex, categorie);
@@ -7820,7 +7872,6 @@ function pickRecurringTransaction(fixedCategorie, onPick){
       onSelect: (label)=>{ if(label) onPick(categorie, label); }
     });
   }
-  if(fixedCategorie){ pickItemIn(fixedCategorie); return; }
   if(!recIndex.sections.length){
     APP.showToast("Aucune transaction récurrente sur la période sélectionnée");
     return;
@@ -7833,8 +7884,9 @@ function pickRecurringTransaction(fixedCategorie, onPick){
   });
 }
 
-function openAddLineChoice(personKey, cat){
+function openAddLineChoice(personKey){
   const modal = document.getElementById("modal-confirm");
+  const person = revCfg()[personKey];
   const showBudgetSalary = personKey==="conjoint" && !hasBudgetSalaryLine(revCfg().conjoint);
   modal.innerHTML = `
     <div style="font-weight:800;font-size:16.5px;margin-bottom:14px;">Ajouter une ligne</div>
@@ -7853,8 +7905,8 @@ function openAddLineChoice(personKey, cat){
       onSave: (val)=>{
         const name = String(val||"").trim();
         if(!name) return;
-        cat.lines = cat.lines || [];
-        cat.lines.push({id:U.uid(), type:"manual", label:name, values:{}, sign:1});
+        person.lines = person.lines || [];
+        person.lines.push({id:U.uid(), type:"manual", label:name, values:{}, sign:1});
         Store.saveSettings();
         renderRevManager();
       }
@@ -7862,9 +7914,9 @@ function openAddLineChoice(personKey, cat){
   };
   document.getElementById("addline-recurring").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    pickRecurringTransaction(cat.categorie, (recurCategorie, label)=>{
-      cat.lines = cat.lines || [];
-      cat.lines.push({id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:1});
+    pickRecurringTransaction((recurCategorie, label)=>{
+      person.lines = person.lines || [];
+      person.lines.push({id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:1});
       Store.saveSettings();
       renderRevManager();
     });
@@ -7872,8 +7924,8 @@ function openAddLineChoice(personKey, cat){
   const salBtn = document.getElementById("addline-salary");
   if(salBtn) salBtn.onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    cat.lines = cat.lines || [];
-    cat.lines.push({id:U.uid(), type:"budgetSalary", label:"Salaire (Budget)"});
+    person.lines = person.lines || [];
+    person.lines.push({id:U.uid(), type:"budgetSalary", label:"Salaire (Budget)"});
     Store.saveSettings();
     renderRevManager();
   };
@@ -7914,7 +7966,7 @@ function openAddTransferLineChoice(personKey, bucket){
   };
   document.getElementById("addtline-recurring").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    pickRecurringTransaction(null, (recurCategorie, label)=>{
+    pickRecurringTransaction((recurCategorie, label)=>{
       const line = {id:U.uid(), type:"recurring", label, recurCategorie, recurLabel:label, sign:defaultSign};
       cfg[personKey][bucket] = cfg[personKey][bucket] || [];
       cfg[personKey][bucket].push(line);
@@ -7934,57 +7986,8 @@ function wireRevManager(){
     b.onclick = ()=>{ mgrPerson = b.dataset.p; renderRevManager(); };
   });
 
-  document.getElementById("revmgr-add-cat").onclick = ()=>{
-    const existing = new Set((person.categories||[]).map(c=>c.categorie));
-    PICKER.openPicker({
-      title: "Ajouter une catégorie",
-      hierarchy: revCategoryPickerHierarchy(existing),
-      noEmpty: true,
-      onSelect: (val)=>{
-        if(!val) return;
-        person.categories = person.categories || [];
-        person.categories.push({categorie: val, lines:[]});
-        Store.saveSettings();
-        renderRevManager();
-      }
-    });
-  };
-
-  document.querySelectorAll("[data-cat-del]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const catName = btn.dataset.catDel;
-      APP.confirmAction({
-        title: "Supprimer cette catégorie ?",
-        text: "« "+catName+" » et ses lignes seront supprimées de la vue de "+REV_PERSON_LABEL[mgrPerson]+".",
-        onConfirm: ()=>{
-          person.categories = (person.categories||[]).filter(c=>c.categorie!==catName);
-          Store.saveSettings();
-          renderRevManager();
-        }
-      });
-    };
-  });
-  document.querySelectorAll("[data-cat-up]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const arr = person.categories;
-      const i = arr.findIndex(c=>c.categorie===btn.dataset.catUp);
-      if(i>0){ const tmp=arr[i-1]; arr[i-1]=arr[i]; arr[i]=tmp; Store.saveSettings(); renderRevManager(); }
-    };
-  });
-  document.querySelectorAll("[data-cat-down]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const arr = person.categories;
-      const i = arr.findIndex(c=>c.categorie===btn.dataset.catDown);
-      if(i>=0 && i<arr.length-1){ const tmp=arr[i+1]; arr[i+1]=arr[i]; arr[i]=tmp; Store.saveSettings(); renderRevManager(); }
-    };
-  });
-
-  document.querySelectorAll("[data-add-line]").forEach(btn=>{
-    btn.onclick = ()=>{
-      const cat = person.categories.find(c=>c.categorie===btn.dataset.addLine);
-      if(cat) openAddLineChoice(mgrPerson, cat);
-    };
-  });
+  const addLineBtn = document.getElementById("revmgr-add-line");
+  if(addLineBtn) addLineBtn.onclick = ()=> openAddLineChoice(mgrPerson);
 
   document.querySelectorAll("[data-line-del]").forEach(btn=>{
     btn.onclick = ()=>{
@@ -7992,7 +7995,7 @@ function wireRevManager(){
       APP.confirmAction({
         title: "Supprimer cette ligne ?",
         onConfirm: ()=>{
-          person.categories.forEach(c=>{ c.lines = (c.lines||[]).filter(l=>l.id!==lineId); });
+          person.lines = (person.lines||[]).filter(l=>l.id!==lineId);
           Store.saveSettings();
           renderRevManager();
         }
@@ -8002,8 +8005,7 @@ function wireRevManager(){
   document.querySelectorAll("[data-line-rename]").forEach(btn=>{
     btn.onclick = ()=>{
       const lineId = btn.dataset.lineRename;
-      let target=null;
-      person.categories.forEach(c=> (c.lines||[]).forEach(l=>{ if(l.id===lineId) target=l; }));
+      const target = (person.lines||[]).find(l=>l.id===lineId);
       if(!target) return;
       PICKER.openInlineEditor({
         title: "Nom de la ligne", inputType:"text", value: target.label, placeholder:"Nom",
@@ -8018,25 +8020,21 @@ function wireRevManager(){
     };
   });
   function moveLine(lineId, dir){
-    for(const cat of person.categories){
-      const arr = cat.lines||[];
-      const i = arr.findIndex(l=>l.id===lineId);
-      if(i<0) continue;
-      const j = i+dir;
-      if(j<0 || j>=arr.length) return;
-      const tmp = arr[i]; arr[i]=arr[j]; arr[j]=tmp;
-      Store.saveSettings();
-      renderRevManager();
-      return;
-    }
+    const arr = person.lines||[];
+    const i = arr.findIndex(l=>l.id===lineId);
+    if(i<0) return;
+    const j = i+dir;
+    if(j<0 || j>=arr.length) return;
+    const tmp = arr[i]; arr[i]=arr[j]; arr[j]=tmp;
+    Store.saveSettings();
+    renderRevManager();
   }
   document.querySelectorAll("[data-line-up]").forEach(btn=>{ btn.onclick = ()=> moveLine(btn.dataset.lineUp, -1); });
   document.querySelectorAll("[data-line-down]").forEach(btn=>{ btn.onclick = ()=> moveLine(btn.dataset.lineDown, 1); });
   document.querySelectorAll("[data-line-sign]").forEach(btn=>{
     btn.onclick = ()=>{
       const lineId = btn.dataset.lineSign;
-      let target=null;
-      person.categories.forEach(c=> (c.lines||[]).forEach(l=>{ if(l.id===lineId) target=l; }));
+      const target = (person.lines||[]).find(l=>l.id===lineId);
       if(!target) return;
       target.sign = revLineSign(target)===-1 ? 1 : -1;
       Store.saveSettings();
@@ -8104,9 +8102,8 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
     ? {id:l.id, type:l.type, label:l.label, recurCategorie:l.recurCategorie||null, recurLabel:l.recurLabel||null, sign:revLineSign(l)}
     : {id:l.id, type:l.type, label:l.label, values:Object.assign({},l.values||{}), sign:revLineSign(l)};
   const packLines = (lines)=> (lines||[]).map(packLine);
-  const packCategories = (cats)=> (cats||[]).map(cat=>({categorie: cat.categorie, lines: packLines(cat.lines)}));
   const packPerson = (p)=>({
-    categories: packCategories((p||{}).categories),
+    lines: packLines((p||{}).lines),
     transferOut: packLines((p||{}).transferOut),
     transferIn: packLines((p||{}).transferIn)
   });
@@ -8119,8 +8116,8 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
   if(!revenus) return;
   const s = Store.settings;
   s.revenus = s.revenus || {periodFrom:null, periodTo:null, groupFilter:[], groupsExpanded:false,
-    moi:{categories:[],transferOut:[],transferIn:[]}, conjoint:{categories:[],transferOut:[],transferIn:[]}};
-  const isEmpty = !["moi","conjoint"].some(p=> (s.revenus[p].categories||[]).length || (s.revenus[p].transferOut||[]).length || (s.revenus[p].transferIn||[]).length);
+    moi:{lines:[],transferOut:[],transferIn:[]}, conjoint:{lines:[],transferOut:[],transferIn:[]}};
+  const isEmpty = !["moi","conjoint"].some(p=> (s.revenus[p].lines||[]).length || (s.revenus[p].transferOut||[]).length || (s.revenus[p].transferIn||[]).length);
   if(mode==="replace" || isEmpty){
     s.revenus.periodFrom = revenus.periodFrom || s.revenus.periodFrom;
     s.revenus.periodTo = revenus.periodTo || s.revenus.periodTo;
@@ -8135,8 +8132,13 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
     const unpackLines = (lines)=> (lines||[]).map(unpackLine);
     ["moi","conjoint"].forEach(p=>{
       const src = revenus[p] || {};
+      // Rétrocompatibilité : un export JSON réalisé avant la suppression du niveau "Catégorie" (§ Revenus)
+      // contient encore src.categories (catégorie -> lignes) au lieu de src.lines (à plat) — on aplatit
+      // silencieusement, sans perte de lignes.
+      const flatLines = Array.isArray(src.lines) ? src.lines
+        : (src.categories||[]).reduce((acc,cat)=> acc.concat(cat.lines||[]), []);
       s.revenus[p] = {
-        categories: (src.categories||[]).map(cat=>({categorie: cat.categorie, lines: unpackLines(cat.lines)})),
+        lines: unpackLines(flatLines),
         transferOut: unpackLines(src.transferOut),
         transferIn: unpackLines(src.transferIn)
       };
@@ -9166,7 +9168,10 @@ function renderImportSummary(){
     if(!rv) return false;
     return ["moi","conjoint"].some(p=>{
       const person = rv[p]||{};
-      return (person.categories||[]).length || (person.transferOut||[]).length || (person.transferIn||[]).length;
+      // rv peut venir d'un JSON exporté avant la suppression du niveau "Catégorie" (§ Revenus) : encore
+      // au format imbriqué categories[].lines[] au lieu de lines[] à plat — les deux sont détectés ici.
+      const lineCount = (person.lines||[]).length || (person.categories||[]).reduce((s,c)=>s+(c.lines||[]).length,0);
+      return lineCount || (person.transferOut||[]).length || (person.transferIn||[]).length;
     });
   }
   const hasParams = !!(r.params && ((r.params.groupRules||[]).length || (r.params.personRules||[]).length || Object.keys(r.params.accountTypes||{}).length ||
@@ -9236,7 +9241,7 @@ function renderImportSummary(){
         <b>Paramètres détectés</b><br>
         ${(r.params.groupRules||[]).length} règle(s) de groupe · ${(r.params.personRules||[]).length} règle(s) de personne · ${Object.keys(r.params.accountTypes||{}).length} type(s) de compte<br>
         ${Object.keys(r.params.groupKind||{}).length} type(s) de groupe (budget) · ${(r.params.budgetAdjustments||[]).length} ajustement(s) de budget<br>
-        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}${Object.keys(r.params.comparePredefined||{}).length || (r.params.compareSettings && r.params.compareSettings.enabled) ? " · comparaison incluse" : ""}${r.params.revenus && ["moi","conjoint"].some(p=>{const per=(r.params.revenus[p]||{});return (per.categories||[]).length || (per.transferOut||[]).length || (per.transferIn||[]).length;}) ? " · revenus inclus" : ""}
+        ${Object.keys(r.params.categoryTypeOverride||{}).length} classement(s) de catégorie forcé(s)${r.params.budgetSettings && r.params.budgetSettings.mainGroup ? " · réglages du budget inclus" : ""}${Object.keys(r.params.salaryEntries||{}).length ? " · salaires inclus" : ""}${Object.keys(r.params.comparePredefined||{}).length || (r.params.compareSettings && r.params.compareSettings.enabled) ? " · comparaison incluse" : ""}${revenusHasContent(r.params.revenus) ? " · revenus inclus" : ""}
       </div>
       <div class="field-label">Que faire de ces paramètres ?</div>
       <div class="radio-opt selected" data-pmode="merge" id="pmode-merge">
@@ -9577,7 +9582,8 @@ function exportExcel(scope){
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Dimension","Nom","Membres"], ...evoMergeRows]), "Evolution_Fusions");
 
-    // Onglet Revenus (Moi / Ma femme) — réglages (période, filtre groupes), catégories/lignes dans l'ordre
+    // Onglet Revenus (Moi / Ma femme) — réglages (période, filtre groupes), lignes à plat (manuelles,
+    // récurrentes ou salaire synchronisé, plus de regroupement par catégorie intermédiaire) dans l'ordre
     // d'affichage, et montants des lignes manuelles (les lignes "récurrent" et "salaire (budget)" ne
     // stockent pas de montant : ils sont recalculés depuis les transactions / Budget_Salaires à l'import).
     const revData = (window.__SF_REVENUS && window.__SF_REVENUS.buildParamsPayloadPart()) || null;
@@ -9590,8 +9596,9 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(revRegData), "Revenus_Reglages");
 
     const revTypeLabel = {manual:"Manuel", recurring:"Récurrent", budgetSalary:"Salaire (Budget)"};
-    // Sentinelles reconnues par le parseur d'import pour router une ligne vers transferOut/transferIn au
-    // lieu d'une catégorie normale (cf. parseParametresSheet) — jamais des noms de catégorie réels.
+    // Colonne "Catégorie" conservée uniquement pour porter les sentinelles de transfert (compatibilité avec
+    // le format antérieur à la suppression du niveau "Catégorie", cf. parseParametresSheet) — vide pour une
+    // ligne normale, qui n'appartient plus à aucun regroupement.
     const REV_TRANSFER_OUT_SENTINEL = "(Transfert - vers)";
     const REV_TRANSFER_IN_SENTINEL = "(Transfert - depuis)";
     const revLinesRows = [];
@@ -9607,9 +9614,7 @@ function exportExcel(scope){
     }
     [["moi","Moi"],["conjoint","Ma femme"]].forEach(([key,label])=>{
       const p = (revData && revData[key]) || {};
-      (p.categories||[]).forEach(cat=>{
-        (cat.lines||[]).forEach(line=> exportRevLine(label, cat.categorie, line));
-      });
+      (p.lines||[]).forEach(line=> exportRevLine(label, "", line));
       (p.transferOut||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_OUT_SENTINEL, line));
       (p.transferIn||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_IN_SENTINEL, line));
     });
