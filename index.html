@@ -450,7 +450,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.25.23.00";
+const APP_VERSION = "v 2026.08.25.23.30";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4654,22 +4654,32 @@ function groupPickerHierarchy(excludeSet){
    mois, et la période affichée s'étend à toute l'étendue disponible de ce côté (début non défini = tout ce
    qui précède la fin ; fin non définie = tout ce qui suit le début — voir monthsInRange/
    budgetDataMonthBounds). Le "✕" à côté d'un mois renseigné bascule cette borne vers "Non définie" ; taper
-   sur "Non définie" redonne un sélecteur de mois (pré-rempli avec l'autre borne, ou le mois courant). */
+   sur "Non définie" redonne un sélecteur de mois (pré-rempli avec l'autre borne, ou le mois courant).
+   Bloc sur deux lignes (libellé "Période" au-dessus, dates en pleine largeur en dessous) plutôt qu'une pilule
+   compressée : les mois longs (ex. "septembre 2026") ont besoin de place, et ce bloc est déjà imbriqué dans
+   une carte avec son propre padding — pas de marge propre ni de forme pilule qui grignoteraient la largeur
+   utile. */
 function periodPickerHtml(){
   const fromHtml = periodFrom
-    ? `<input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
-       <button type="button" class="u-period-undef-btn" id="bg-from-clear" title="Non définie">✕</button>`
-    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-from-undef">Non définie</button>`;
+    ? `<span style="display:flex;align-items:center;gap:0;flex:1;min-width:0;">
+         <input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
+         <button type="button" class="u-period-undef-btn" id="bg-from-clear" title="Non définie">✕</button>
+       </span>`
+    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-from-undef" style="flex:1;text-align:left;">Non définie</button>`;
   const toHtml = periodTo
-    ? `<input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
-       <button type="button" class="u-period-undef-btn" id="bg-to-clear" title="Non définie">✕</button>`
-    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-to-undef">Non définie</button>`;
+    ? `<span style="display:flex;align-items:center;gap:0;flex:1;min-width:0;">
+         <input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
+         <button type="button" class="u-period-undef-btn" id="bg-to-clear" title="Non définie">✕</button>
+       </span>`
+    : `<button type="button" class="u-tab-btn u-period-undef" id="bg-to-undef" style="flex:1;text-align:left;">Non définie</button>`;
   return `
-    <div style="display:flex;align-items:center;gap:4px;background:var(--card);border-radius:100px;padding:7px 8px 7px 16px;margin:0 4px 14px;box-shadow:var(--shadow-1);">
-      <span style="font-size:12px;font-weight:700;color:var(--text-sub);flex:0 0 auto;">Période</span>
-      ${fromHtml}
-      <span class="u-faint-fixed">→</span>
-      ${toHtml}
+    <div style="background:var(--card-alt);border-radius:14px;padding:8px 10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:4px;">Période</div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        ${fromHtml}
+        <span class="u-faint-fixed">→</span>
+        ${toHtml}
+      </div>
     </div>
   `;
 }
