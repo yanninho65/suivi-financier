@@ -527,6 +527,22 @@ function toggleMoneyDecimals(){
   s.decimals = (s.decimals===2) ? 0 : 2;
   window.__SF_STORE.saveSettings();
 }
+/* Bouton "masquer les comptes à 0,00 €" — réglage propre à l'onglet Comptes (n'affecte aucun autre
+   onglet), affiché juste à côté du bouton décimales. */
+function hideZeroAccountsBtnHtml(id){
+  const active = !!(window.__SF_STORE && window.__SF_STORE.settings && window.__SF_STORE.settings.hideZeroAccounts);
+  return `<button type="button" id="${escHtml(id)}" title="${active?'Afficher les comptes à 0 €':'Masquer les comptes à 0 €'}" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:4px 10px;border:none;border-radius:100px;font-size:11px;font-weight:800;cursor:pointer;background:${active?'var(--primary)':'var(--card-alt)'};color:${active?'#fff':'var(--text-sub)'};">0€</button>`;
+}
+function toggleHideZeroAccounts(){
+  const s = window.__SF_STORE.settings;
+  s.hideZeroAccounts = !s.hideZeroAccounts;
+  window.__SF_STORE.saveSettings();
+}
+/* Un compte est considéré "à 0,00 €" s'il s'arrondit à 0 au centime près (couvre aussi les résidus de
+   calcul flottant du type -0.0000000001), indépendamment du réglage d'affichage des décimales. */
+function isZeroBalance(bal){
+  return Math.round((bal||0)*100)/100 === 0;
+}
 const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 const MONTHS_FR_SHORT = ["jan.","fév.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
 const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
@@ -663,7 +679,7 @@ function enableDragScroll(el){
 
 window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
   fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,baseRemarque,
-  decimalsToggleBtnHtml,toggleMoneyDecimals,enableDragScroll};
+  decimalsToggleBtnHtml,toggleMoneyDecimals,hideZeroAccountsBtnHtml,toggleHideZeroAccounts,isZeroBalance,enableDragScroll};
 })();
 (function(){
 "use strict";
@@ -748,9 +764,9 @@ function idbDelete(key){
 const Store = {
   transactions: [], // array of txn objects
   santeItems: [], // array d'objets "soin" (onglet Santé)
-  settings: {theme:"auto", dateBasis:"indiquee", decimals:0, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
+  settings: {theme:"auto", dateBasis:"indiquee", decimals:0, hideZeroAccounts:false, groupAliasRules:[], accountTypes:{}, accountAcronyms:{}, personAliasRules:[],
     groupKind:{}, groupVoyageMonth:{}, groupDateRange:{},
-    evolution:{view:"groupe", monthBasis:"reel", merges:{groupe:[], categorie:[], personne:[]}},
+    evolution:{view:"groupe", monthBasis:"reel", cumulative:false, merges:{groupe:[], categorie:[], personne:[]}},
     recurrent:{periodFrom:null, periodTo:null, groupsExpanded:false},
     revenus:{periodFrom:null, periodTo:null, groupFilter:[], groupsExpanded:false,
       moi:{lines:[], transferOut:[], transferIn:[]}, conjoint:{lines:[], transferOut:[], transferIn:[]}},
@@ -892,6 +908,7 @@ const Store = {
   normalizeSettings(){
     const s = this.settings;
     if(s.decimals!==2) s.decimals = 0;
+    if(typeof s.hideZeroAccounts!=="boolean") s.hideZeroAccounts = false;
     if(!s.groupKind) s.groupKind = {};
     if(!s.groupVoyageMonth) s.groupVoyageMonth = {};
     if(!s.groupDateRange) s.groupDateRange = {};
@@ -902,6 +919,7 @@ const Store = {
     if(!s.evolution || typeof s.evolution!=="object") s.evolution = {};
     if(!["groupe","categorie","personne","compte"].includes(s.evolution.view)) s.evolution.view = "groupe";
     if(s.evolution.monthBasis!=="reel" && s.evolution.monthBasis!=="transformee") s.evolution.monthBasis = "reel";
+    if(typeof s.evolution.cumulative!=="boolean") s.evolution.cumulative = false;
     if(!s.evolution.merges || typeof s.evolution.merges!=="object") s.evolution.merges = {};
     ["groupe","categorie","personne","compte"].forEach(d=>{ if(!Array.isArray(s.evolution.merges[d])) s.evolution.merges[d] = []; });
     if(!s.recurrent || typeof s.recurrent!=="object") s.recurrent = {};
@@ -2438,6 +2456,21 @@ function evolutionYearsList(evoIndex){
   }));
   return Array.from(years).sort((a,b)=>a-b);
 }
+/* Valeurs cumulées (vue Évolution, mode "Cumulé") : somme de toutes les valeurs depuis le début des
+   données jusqu'à la période donnée incluse (comparaison lexicographique sur "YYYY-MM", valide car le
+   mois est toujours sur 2 chiffres). La colonne "Total" reste toujours la somme brute (itemTotalValue /
+   sectionTotalValue), jamais cette version cumulée. */
+function itemCumulativeThrough(item, ymLimit){
+  let s=0; item.values.forEach((v,ym)=>{ if(ym<=ymLimit) s+=v; }); return s;
+}
+function itemCumulativeYearValue(item, year){ return itemCumulativeThrough(item, year+"-12"); }
+function sectionCumulativeYearValue(section, year){
+  let s=0; section.items.forEach(it=> s+=itemCumulativeYearValue(it, year)); return s;
+}
+function itemCumulativeMonthValue(item, year, month){ return itemCumulativeThrough(item, year+"-"+U.pad2(month+1)); }
+function sectionCumulativeMonthValue(section, year, month){
+  let s=0; section.items.forEach(it=> s+=itemCumulativeMonthValue(it, year, month)); return s;
+}
 
 /* ---------------- Onglet Récurrent ---------------- */
 /* Index des transactions "récurrentes" : uniquement celles dont la Remarque porte un suffixe de date
@@ -2527,6 +2560,7 @@ window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountB
   getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
   buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList,
+  itemCumulativeYearValue, sectionCumulativeYearValue, itemCumulativeMonthValue, sectionCumulativeMonthValue,
   buildRecurringIndex, recurringItemTotal, recurringSectionTotal, recurringItemMonthValue, recurringSectionMonthValue,
   recurringItemYearLumpValue, recurringSectionYearLumpValue, recurringColumns};
 })();
@@ -3557,11 +3591,10 @@ function openPicker(opts){
   APP.openOverlay("overlay-picker");
 }
 
-/* Éditeur compact (popup centrée, réutilise modal-confirm/overlay-confirm — même mécanisme que
-   openMergeNameModal) pour un champ à valeur libre (Montant, Date, Remarque) : un seul input, Annuler /
-   Enregistrer. opts: {title, inputType:'text'|'number'|'date', multiline, value, placeholder, min, step,
-   onSave(value)}. Utilisé par la fiche transaction pour éditer un champ au simple tap, sans passer par un
-   mode "Modifier" séparé. */
+/* Éditeur compact (popup centrée, réutilise modal-confirm/overlay-confirm) pour un champ à valeur libre
+   (Montant, Date, Remarque) : un seul input, Annuler / Enregistrer. opts: {title, inputType:'text'|'number'
+   |'date', multiline, value, placeholder, min, step, onSave(value)}. Utilisé par la fiche transaction pour
+   éditer un champ au simple tap, sans passer par un mode "Modifier" séparé. */
 function openInlineEditor(opts){
   const modal = document.getElementById("modal-confirm");
   const inputHtml = opts.multiline
@@ -3695,6 +3728,15 @@ function renderAccounts(){
   });
   const typeGroups = orderAccountTypeGroups(Array.from(byType.values()));
 
+  // Masquage des comptes à 0,00 € (réglage propre à cet onglet, cf. U.isZeroBalance) : ne touche ni au
+  // total, ni aux soldes personnalisés, ni à la copie Excel — seul l'affichage des cartes est filtré. Un
+  // groupe de type de compte qui n'a plus aucun compte visible n'est simplement pas rendu.
+  const hideZero = !!Store.settings.hideZeroAccounts;
+  const visibleTypeGroups = (hideZero
+    ? typeGroups.map(g=>({...g, accounts: g.accounts.filter(a=>!U.isZeroBalance(a.balance))}))
+    : typeGroups
+  ).filter(g=>g.accounts.length>0);
+
   // Soldes personnalisés (jusqu'à 2), calculés sur la sélection de comptes choisie par l'utilisateur ;
   // seuls les soldes avec un titre renseigné sont affichés.
   const customBalancesData = (Store.settings.customBalances||[]).slice(0,2).map(cb=>{
@@ -3721,14 +3763,16 @@ function renderAccounts(){
         ` : ""}
       </div>
     </div>
-    <div class="section" style="padding-top:14px;display:flex;gap:8px;">
-      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.copy||''} Copie Excel</button>
-      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;justify-content:center;padding:8px 10px;">${ICONS.list||''} Réorganiser</button>` : ""}
+    <div class="section" style="padding-top:14px;display:flex;gap:8px;flex-wrap:nowrap;">
+      <button type="button" class="btn btn-ghost btn-sm" id="acc-copy-btn" style="flex:1;min-width:0;justify-content:center;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ICONS.copy||''} Copie Excel</button>
+      ${typeGroups.length>1 ? `<button type="button" class="btn btn-ghost btn-sm" id="acc-reorder-btn" style="flex:1;min-width:0;justify-content:center;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ICONS.list||''} Réorganiser</button>` : ""}
       ${U.decimalsToggleBtnHtml("acc-decimals-btn")}
+      ${U.hideZeroAccountsBtnHtml("acc-hidezero-btn")}
     </div>
   `];
   view.innerHTML = view_html.join("");
   document.getElementById("acc-decimals-btn").onclick = ()=>{ U.toggleMoneyDecimals(); renderAccounts(); };
+  document.getElementById("acc-hidezero-btn").onclick = ()=>{ U.toggleHideZeroAccounts(); renderAccounts(); };
   document.getElementById("acc-copy-btn").onclick = async ()=>{
     const text = buildAccountsClipboardText(typeGroups, total);
     const ok = await copyTextToClipboard(text);
@@ -3738,7 +3782,7 @@ function renderAccounts(){
   if(reorderBtn) reorderBtn.onclick = ()=> openAccountTypeReorderSheet(typeGroups.map(g=>g.type));
   document.getElementById("acc-balance-edit-btn").onclick = ()=> openCustomBalancesSheet(balances);
 
-  typeGroups.forEach(g=>{
+  visibleTypeGroups.forEach(g=>{
     const typeSection = document.createElement("div");
     typeSection.className = "section";
     typeSection.innerHTML = `
@@ -6432,8 +6476,6 @@ const ICONS = U.ICONS;
 let drillYear = null;              // null = colonnes "années" ; sinon année dont on affiche les 12 mois
 let collapsedSections = new Set(); // clés de section repliées (par défaut : tout replié)
 let sectionsInitialized = false;   // pour ne "tout replier" par défaut qu'au premier rendu
-let mergeMode = false;
-let mergeSelection = new Set();
 
 const VIEW_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
 
@@ -6475,34 +6517,45 @@ function renderEvolution(){
           <button data-v="personne" class="${dimension==='personne'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Personne</button>
           <button data-v="compte" class="${dimension==='compte'?'active':''}" style="font-size:11.5px;padding:9px 4px;">Compte</button>
         </div>
-        <div class="seg seg-sm" id="evo-monthbasis-seg">
+        <div class="seg seg-sm" id="evo-monthbasis-seg" style="margin-bottom:10px;">
           <button data-v="reel" class="${cfg.monthBasis==='reel'?'active':''}">Mois réel</button>
           <button data-v="transformee" class="${cfg.monthBasis==='transformee'?'active':''}">Mois transformé</button>
         </div>
-      </div>
-      <div style="display:flex;gap:8px;margin:0 4px 12px;align-items:center;flex-wrap:wrap;">
-        <button type="button" class="btn btn-ghost btn-sm" id="evo-merge-toggle-btn">${mergeMode? "Annuler la fusion" : "Fusionner des "+VIEW_LABEL[dimension].toLowerCase()+"s"}</button>
-        ${mergeMode ? `<button type="button" class="btn btn-primary btn-sm" id="evo-merge-apply-btn" ${mergeSelection.size<2?'disabled':''}>Fusionner (${mergeSelection.size})</button>` : ""}
+        <div class="seg seg-sm" id="evo-cumul-seg">
+          <button data-v="normal" class="${!cfg.cumulative?'active':''}">Normal</button>
+          <button data-v="cumule" class="${cfg.cumulative?'active':''}">Cumulé</button>
+        </div>
       </div>
       ${merges.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 4px 12px;">
         ${merges.map(m=>`<span class="evo-merge-chip">${U.escHtml(m.name)}<button type="button" data-unmerge="${U.escHtml(m.name)}">${ICONS.close}</button></span>`).join("")}
       </div>` : ""}
-      ${mergeMode ? `<div style="font-size:12px;color:var(--text-sub);margin:0 4px 12px;line-height:1.4;">Touchez le nom de plusieurs ${VIEW_LABEL[dimension].toLowerCase()}s ci-dessous pour les sélectionner, puis validez.</div>` : ""}
       ${drillYear!=null ? `<button type="button" class="btn btn-ghost btn-sm" id="evo-back-btn" style="margin:0 4px 12px;">${ICONS.arrowLeft} Retour aux années</button>` : ""}
     </div>
   `;
 
-  const tableHtml = buildTableHtml(evoIndex, dimension, years);
+  const tableHtml = buildTableHtml(evoIndex, dimension, years, cfg.cumulative);
 
   view.innerHTML = headerHtml + `<div class="section" style="padding-top:0;padding-left:8px;padding-right:8px;"><div class="evo-table-wrap">${tableHtml}</div></div><div style="height:10px;"></div>`;
 
   wireEvolution(evoIndex, dimension, years);
 }
 
-function buildTableHtml(evoIndex, dimension, years){
+function buildTableHtml(evoIndex, dimension, years, cumulative){
   const cols = drillYear!=null
     ? Array.from({length:12}, (_,m)=>({type:"month", year:drillYear, month:m, label:U.MONTHS_FR_SHORT[m]}))
     : years.map(y=>({type:"year", year:y, label:String(y)}));
+
+  /* Valeur d'une colonne (année ou mois) pour une section/un item : brute par défaut, ou cumulée depuis le
+     début des données jusqu'à cette colonne incluse en mode "Cumulé". La colonne "Total" (secTotal/itTotal/
+     grandTotal ci-dessous) n'utilise jamais ces fonctions — elle reste toujours la somme brute. */
+  function secColValue(sec, c){
+    if(cumulative) return c.type==="year" ? AGG.sectionCumulativeYearValue(sec,c.year) : AGG.sectionCumulativeMonthValue(sec,c.year,c.month);
+    return c.type==="year" ? AGG.sectionYearValue(sec,c.year) : AGG.sectionMonthValue(sec,c.year,c.month);
+  }
+  function itemColValue(it, c){
+    if(cumulative) return c.type==="year" ? AGG.itemCumulativeYearValue(it,c.year) : AGG.itemCumulativeMonthValue(it,c.year,c.month);
+    return c.type==="year" ? AGG.itemYearValue(it,c.year) : AGG.itemMonthValue(it,c.year,c.month);
+  }
 
   const theadHtml = `
     <thead><tr>
@@ -6523,7 +6576,7 @@ function buildTableHtml(evoIndex, dimension, years){
       <td class="evo-col-label">Total</td>
       <td class="evo-col-total evo-val-cell ${valClass(grandTotal)}" data-global="1" ${drillYear!=null?`data-year="${drillYear}"`:""}>${grandTotal ? fmtVal(grandTotal) : "—"}</td>
       ${cols.map(c=>{
-        const v = evoIndex.sections.reduce((s,sec)=> s + (c.type==="year" ? AGG.sectionYearValue(sec,c.year) : AGG.sectionMonthValue(sec,c.year,c.month)), 0);
+        const v = evoIndex.sections.reduce((s,sec)=> s + secColValue(sec,c), 0);
         const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
         return `<td class="evo-col-val evo-val-cell ${valClass(v)}" data-global="1" ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
       }).join("")}
@@ -6532,11 +6585,10 @@ function buildTableHtml(evoIndex, dimension, years){
 
   const bodyRows = evoIndex.sections.map(sec=>{
     const secTotal = drillYear!=null ? AGG.sectionYearValue(sec, drillYear) : AGG.sectionTotalValue(sec);
-    const secSelected = mergeMode && mergeSelection.has(sec.key);
     const secIsMerge = !!sec.__merged;
     const collapsed = collapsedSections.has(sec.key);
     const secCells = cols.map(c=>{
-      const v = c.type==="year" ? AGG.sectionYearValue(sec, c.year) : AGG.sectionMonthValue(sec, c.year, c.month);
+      const v = secColValue(sec, c);
       const dataAttrs = secIsMerge
         ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"`
         : `data-section="${U.escHtml(sec.key)}"`;
@@ -6545,7 +6597,7 @@ function buildTableHtml(evoIndex, dimension, years){
     }).join("");
     const totalAttrs = (secIsMerge ? `data-section-members="${U.escHtml(sec.__members.join('||'))}"` : `data-section="${U.escHtml(sec.key)}"`) + (drillYear!=null ? ` data-year="${drillYear}"` : "");
     const secRow = `
-      <tr class="evo-section-row${secSelected?' selected':''}" data-section-toggle="${U.escHtml(sec.key)}">
+      <tr class="evo-section-row" data-section-toggle="${U.escHtml(sec.key)}">
         <td class="evo-col-label"><span class="evo-chev ${collapsed?'':'open'}">▸</span>${U.escHtml(sec.label)}</td>
         <td class="evo-col-total evo-val-cell ${valClass(secTotal)}" ${totalAttrs}>${secTotal ? fmtVal(secTotal) : "—"}</td>
         ${secCells}
@@ -6554,7 +6606,7 @@ function buildTableHtml(evoIndex, dimension, years){
     const itemRows = sec.items.map(it=>{
       const itTotal = drillYear!=null ? AGG.itemYearValue(it, drillYear) : AGG.itemTotalValue(it);
       const itCells = cols.map(c=>{
-        const v = c.type==="year" ? AGG.itemYearValue(it, c.year) : AGG.itemMonthValue(it, c.year, c.month);
+        const v = itemColValue(it, c);
         const periodAttrs = c.type==="year" ? `data-year="${c.year}"` : `data-year="${c.year}" data-month="${c.month}"`;
         return `<td class="evo-col-val evo-val-cell ${valClass(v)}" data-item="${U.escHtml(it.label)}" ${periodAttrs}>${v ? fmtVal(v) : "—"}</td>`;
       }).join("");
@@ -6581,7 +6633,7 @@ function wireEvolution(evoIndex, dimension, years){
     b.onclick = ()=>{
       cfg.view = b.dataset.v;
       Store.saveSettings();
-      drillYear = null; sectionsInitialized = false; mergeMode = false; mergeSelection.clear();
+      drillYear = null; sectionsInitialized = false;
       renderEvolution();
     };
   });
@@ -6592,17 +6644,15 @@ function wireEvolution(evoIndex, dimension, years){
       renderEvolution();
     };
   });
+  document.querySelectorAll("#evo-cumul-seg button").forEach(b=>{
+    b.onclick = ()=>{
+      cfg.cumulative = (b.dataset.v==="cumule");
+      Store.saveSettings();
+      renderEvolution();
+    };
+  });
   const backBtn = document.getElementById("evo-back-btn");
   if(backBtn) backBtn.onclick = ()=>{ drillYear = null; renderEvolution(); };
-
-  const mergeToggleBtn = document.getElementById("evo-merge-toggle-btn");
-  if(mergeToggleBtn) mergeToggleBtn.onclick = ()=>{
-    mergeMode = !mergeMode;
-    mergeSelection.clear();
-    renderEvolution();
-  };
-  const mergeApplyBtn = document.getElementById("evo-merge-apply-btn");
-  if(mergeApplyBtn) mergeApplyBtn.onclick = ()=> openMergeNameModal(dimension);
 
   document.querySelectorAll("[data-unmerge]").forEach(el=>{
     el.onclick = (e)=>{
@@ -6622,13 +6672,6 @@ function wireEvolution(evoIndex, dimension, years){
   document.querySelectorAll(".evo-section-row[data-section-toggle]").forEach(row=>{
     row.querySelector(".evo-col-label").onclick = ()=>{
       const key = row.dataset.sectionToggle;
-      if(mergeMode){
-        const sec = evoIndex.sections.find(s=>s.key===key);
-        if(sec && sec.__merged) return; // une section déjà fusionnée ne peut pas re-participer à une fusion
-        if(mergeSelection.has(key)) mergeSelection.delete(key); else mergeSelection.add(key);
-        renderEvolution();
-        return;
-      }
       if(collapsedSections.has(key)) collapsedSections.delete(key); else collapsedSections.add(key);
       renderEvolution();
     };
@@ -6638,8 +6681,8 @@ function wireEvolution(evoIndex, dimension, years){
   document.querySelectorAll(".evo-val-cell").forEach(el=>{
     el.onclick = (e)=>{
       e.stopPropagation();
-      if(mergeMode) return;
       const opts = {monthBasis: cfg.monthBasis, catTypeMap};
+      if(cfg.cumulative) opts.cumulative = true;
       if(el.dataset.global!=null) opts.global = true;
       else if(el.dataset.item!=null) opts.itemKey = el.dataset.item;
       else if(el.dataset.sectionMembers!=null) opts.sectionMembers = el.dataset.sectionMembers.split("||");
@@ -6649,33 +6692,6 @@ function wireEvolution(evoIndex, dimension, years){
       openEvolutionTxnSheet(dimension, opts);
     };
   });
-}
-
-function openMergeNameModal(dimension){
-  const modal = document.getElementById("modal-confirm");
-  const members = Array.from(mergeSelection);
-  modal.innerHTML = `
-    <div style="font-weight:800;font-size:16.5px;margin-bottom:10px;">Fusionner ${members.length} ${VIEW_LABEL[dimension].toLowerCase()}s</div>
-    <div style="font-size:12.5px;color:var(--text-sub);margin-bottom:12px;">${members.map(m=>U.escHtml(m)).join(", ")}</div>
-    <input type="text" class="search-mini" id="evo-merge-name-input" style="margin:0 0 16px;" placeholder="Nom du groupe fusionné">
-    <div style="display:flex;gap:8px;">
-      <button type="button" class="btn btn-ghost" style="flex:1;justify-content:center;" id="evo-merge-cancel">Annuler</button>
-      <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="evo-merge-confirm">Fusionner</button>
-    </div>
-  `;
-  document.getElementById("evo-merge-cancel").onclick = ()=> APP.closeOverlay("overlay-confirm");
-  document.getElementById("evo-merge-confirm").onclick = ()=>{
-    const name = document.getElementById("evo-merge-name-input").value.trim();
-    if(!name){ APP.showToast("Merci d'indiquer un nom"); return; }
-    const cfg = evoCfg();
-    cfg.merges[dimension] = cfg.merges[dimension] || [];
-    cfg.merges[dimension].push({name, members});
-    Store.saveSettings();
-    APP.closeOverlay("overlay-confirm");
-    mergeMode = false; mergeSelection.clear();
-    renderEvolution();
-  };
-  APP.openOverlay("overlay-confirm");
 }
 
 /* ---------------- Feuille de détail transactions ---------------- */
@@ -6688,9 +6704,13 @@ function txnBucketsFor(t, monthBasis){
   if(tr.mode==="month") return [{year:tr.year, month:tr.month}];
   return [{year:t.date.getFullYear(), month:t.date.getMonth()}];
 }
-function txnMatchesPeriod(t, monthBasis, year, month){
+function txnMatchesPeriod(t, monthBasis, year, month, cumulative){
   if(year==null) return true;
   const buckets = txnBucketsFor(t, monthBasis);
+  if(cumulative){
+    const limit = year*12 + (month==null ? 11 : month);
+    return buckets.some(b=> (b.year*12+b.month) <= limit);
+  }
   return buckets.some(b=> b.year===year && (month==null || b.month===month));
 }
 function matchesSectionForAccount(compteName, opts){
@@ -6750,15 +6770,16 @@ function openEvolutionTxnSheet(dimension, opts){
   Store.transactions.forEach(t=>{
     if(dimension!=="compte" && t.type==="Transfer") return;
     if(!txnMatchesDimTarget(t, dimension, opts)) return;
-    if(!txnMatchesPeriod(t, opts.monthBasis, opts.year!=null?opts.year:null, opts.month!=null?opts.month:null)) return;
+    if(!txnMatchesPeriod(t, opts.monthBasis, opts.year!=null?opts.year:null, opts.month!=null?opts.month:null, opts.cumulative)) return;
     rows.push({t, amt: dimension==="compte" ? evoSignedAmountForCompte(t, opts) : t.montant});
   });
   rows.sort((a,b)=> b.t.date-a.t.date);
   const total = rows.reduce((s,r)=>s+r.amt,0);
   const label = opts.global ? "Total" : (opts.itemKey || opts.sectionKey || (opts.sectionMembers ? opts.sectionMembers.join(" + ") : ""));
+  const periodPoint = opts.month==null ? String(opts.year) : U.MONTHS_FR[opts.month]+" "+opts.year;
   const periodLabel = opts.year==null ? "Toute la période"
-    : opts.month==null ? String(opts.year)
-    : U.MONTHS_FR[opts.month]+" "+opts.year;
+    : opts.cumulative ? "Jusqu'à "+periodPoint+" (cumulé)"
+    : periodPoint;
 
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
