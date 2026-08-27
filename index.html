@@ -397,6 +397,14 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .radio-opt.selected .rc::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--primary);}
 .radio-opt .rt{font-weight:700;font-size:14.5px;}
 .radio-opt .rd{font-size:12.5px;color:var(--text-sub);margin-top:2px;}
+.checkbox-opt{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:16px;border:1.5px solid var(--divider);cursor:pointer;}
+.checkbox-opt + .checkbox-opt{margin-top:10px;}
+.checkbox-opt.selected{border-color:var(--primary);background:var(--primary-soft);}
+.checkbox-opt .cc{width:20px;height:20px;border-radius:6px;border:2px solid var(--text-faint);flex:0 0 auto;margin-top:1px;display:flex;align-items:center;justify-content:center;}
+.checkbox-opt.selected .cc{border-color:var(--primary);background:var(--primary);}
+.checkbox-opt.selected .cc::after{content:"";width:9px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px);}
+.checkbox-opt .rt{font-weight:700;font-size:14.5px;}
+.checkbox-opt .rd{font-size:12.5px;color:var(--text-sub);margin-top:2px;}
 .import-summary{background:var(--card-alt);border-radius:16px;padding:14px;font-size:13.5px;margin-top:14px;line-height:1.6;}
 .import-summary b{color:var(--text);}
 
@@ -450,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.25.23.30";
+const APP_VERSION = "v 2026.08.27.23.52";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1215,16 +1223,12 @@ function parseParametresSheet(wb){
       map[key] = row[1];
     });
     budgetSettings = {
-      mode: map["mode"] ? String(map["mode"]).trim() : null,
-      scope: map["vue (perso/couple)"] ? String(map["vue (perso/couple)"]).trim() : null,
       startMonth: map["mois de debut"] ? String(map["mois de debut"]).trim() : null,
       endMonth: map["dernier mois"] ? String(map["dernier mois"]).trim() : null,
       mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
       extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
       excludedAccounts: map["comptes exclus"] ? String(map["comptes exclus"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
-      periodFrom: map["periode affichee - de"] ? String(map["periode affichee - de"]).trim() : null,
-      periodTo: map["periode affichee - a"] ? String(map["periode affichee - a"]).trim() : null,
     };
   }
   const salSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_salaires");
@@ -1243,24 +1247,6 @@ function parseParametresSheet(wb){
       const femme = (femmeRaw==null || femmeRaw==="") ? null : (Number(String(femmeRaw).replace(",",".")) || 0);
       salaryEntries[String(month).trim()] = {moi, femme};
     });
-  }
-  const cmpSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_comparaison");
-  let compareSettings = null;
-  if(cmpSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[cmpSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{
-      if(!row || row.length<2) return;
-      map[U.normalize(String(row[0]||""))] = row[1];
-    });
-    const activeRaw = U.normalize(String(map["activee"]||""));
-    const modeRaw = U.normalize(String(map["mode"]||""));
-    compareSettings = {
-      enabled: activeRaw==="oui" || activeRaw==="yes" || activeRaw==="true" || activeRaw==="1",
-      mode: modeRaw.startsWith("budget") ? "predefined" : "period",
-      periodFrom: map["periode comparee - de"] ? String(map["periode comparee - de"]).trim() : null,
-      periodTo: map["periode comparee - a"] ? String(map["periode comparee - a"]).trim() : null,
-    };
   }
   const predefSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_predefini");
   let comparePredefined = null;
@@ -1282,107 +1268,36 @@ function parseParametresSheet(wb){
       comparePredefined[key] = Number(String(montant).replace(",",".")) || 0;
     });
   }
-  // Réglages généraux (§5, §6.1) — décimales globales + ordre des types de compte.
-  const genSheetName = wb.SheetNames.find(n=>U.normalize(n)==="reglages_generaux");
-  let accountTypeOrder = [];
-  let decimalsImported = null;
-  if(genSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[genSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{ if(!row || row.length<2) return; map[U.normalize(String(row[0]||""))] = row[1]; });
-    if(map["decimales"]!=null && map["decimales"]!==""){
-      decimalsImported = U.normalize(String(map["decimales"]))==="2" ? 2 : 0;
-    }
-    if(map["ordre types de compte"]) accountTypeOrder = String(map["ordre types de compte"]).split("|").map(s=>s.trim()).filter(Boolean);
-  }
 
-  // Soldes personnalisés de l'onglet Comptes (§6.1).
-  const cbSheetName = wb.SheetNames.find(n=>U.normalize(n)==="comptes_soldes_perso");
-  const customBalances = [];
-  if(cbSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[cbSheetName], {defval:null, raw:false});
-    rows.forEach(r=>{
-      const norm = {};
-      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
-      const titre = norm["titre"];
-      if(!titre) return;
-      const comptes = norm["comptes"] ? String(norm["comptes"]).split("|").map(s=>s.trim()).filter(Boolean) : [];
-      customBalances.push({title: String(titre).trim(), accounts: comptes});
-    });
-  }
-
-  // Onglet Évolution (§6.4) — vue/base mensuelle + fusions de sections par dimension.
-  const evoRegSheetName = wb.SheetNames.find(n=>U.normalize(n)==="evolution_reglages");
-  let evoView = null, evoMonthBasis = null;
-  if(evoRegSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[evoRegSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{ if(!row || row.length<2) return; map[U.normalize(String(row[0]||""))] = row[1]; });
-    const viewNorm = map["vue"] ? U.normalize(String(map["vue"])) : "";
-    if(["groupe","categorie","personne","compte"].includes(viewNorm)) evoView = viewNorm;
-    const basisNorm = map["base mensuelle"] ? U.normalize(String(map["base mensuelle"])) : "";
-    if(basisNorm.startsWith("transf")) evoMonthBasis = "transformee";
-    else if(basisNorm.startsWith("reel")) evoMonthBasis = "reel";
-  }
-  const evoFusionsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="evolution_fusions");
-  const evoMerges = {groupe:[], categorie:[], personne:[], compte:[]};
-  if(evoFusionsSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[evoFusionsSheetName], {defval:null, raw:false});
-    rows.forEach(r=>{
-      const norm = {};
-      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
-      const dimNorm = U.normalize(String(norm["dimension"]||""));
-      const dimKey = ["groupe","categorie","personne","compte"].find(d=>d===dimNorm);
-      const name = norm["nom"];
-      if(!dimKey || !name) return;
-      const membres = norm["membres"] ? String(norm["membres"]).split("|").map(s=>s.trim()).filter(Boolean) : [];
-      evoMerges[dimKey].push({name: String(name).trim(), members: membres});
-    });
-  }
-  let evolutionSettings = null;
-  if(evoView || evoMonthBasis || Object.values(evoMerges).some(a=>a.length)){
-    evolutionSettings = {view: evoView, monthBasis: evoMonthBasis, merges: evoMerges};
-  }
-
-  // Onglet Revenus (Moi / Ma femme) — catégories/lignes définies par l'utilisateur, dans l'ordre des
-  // lignes du classeur (pas de colonne "Ordre" : le premier "Personne+Catégorie" rencontré fixe la
-  // position de la catégorie, la première apparition d'une ligne fixe sa position dans la catégorie).
-  const revRegSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_reglages");
-  const revLinesSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_lignes");
-  const revMontantsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_montants");
+  // Onglet Revenus (Moi / Ma femme) — anciennement scindé en Revenus_Lignes / Revenus_Montants / Revenus_Reglages
+  // (ce dernier, période + filtre groupes, supprimé : géré uniquement via JSON/Gist désormais) — un seul
+  // onglet "Revenus" avec les deux blocs de colonnes côte à côte (lignes en A:F, montants en H:L, séparés
+  // par une colonne vide en G, cf. exportExcel). Lu par position de colonne plutôt que par nom d'en-tête :
+  // les deux blocs partagent des intitulés identiques (Personne/Catégorie/Ligne), ce qui rendrait une
+  // lecture par nom ambiguë (SheetJS suffixe les doublons en "_1", peu robuste face à une modification
+  // manuelle des largeurs/ordres de colonnes).
+  const revSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus");
   // Sentinelles de la colonne "Catégorie" identifiant une ligne de transfert (jamais une vraie catégorie) —
   // doivent rester identiques à celles écrites par exportExcel.
   const REV_TRANSFER_OUT_SENTINEL = "(Transfert - vers)";
   const REV_TRANSFER_IN_SENTINEL = "(Transfert - depuis)";
-  let revenusPeriodFrom=null, revenusPeriodTo=null, revenusGroupFilter=[];
   const revenusPeople = {moi:{lines:[],transferOut:[],transferIn:[]}, conjoint:{lines:[],transferOut:[],transferIn:[]}};
   const revLineLookup = {moi:new Map(), conjoint:new Map()}; // libellé -> ligne (lignes normales manuelles uniquement)
   const revTransferLookup = {moi:{transferOut:new Map(), transferIn:new Map()}, conjoint:{transferOut:new Map(), transferIn:new Map()}}; // libellé -> ligne
-  if(revRegSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revRegSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{ if(!row || row.length<2) return; map[U.normalize(String(row[0]||""))] = row[1]; });
-    if(map["periode - de"]) revenusPeriodFrom = String(map["periode - de"]).trim();
-    if(map["periode - a"]) revenusPeriodTo = String(map["periode - a"]).trim();
-    if(map["groupes filtres"]) revenusGroupFilter = String(map["groupes filtres"]).split("|").map(s=>s.trim()).filter(Boolean);
-  }
-  if(revLinesSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revLinesSheetName], {defval:null, raw:false});
-    rows.forEach(r=>{
-      const norm = {};
-      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
-      const personRaw = U.normalize(String(norm["personne"]||""));
-      const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
-      // Colonne "Catégorie" conservée pour la compatibilité avec les exports antérieurs à la suppression du
-      // niveau "Catégorie" (§ Revenus) : seules les deux sentinelles de transfert y sont encore
-      // significatives — toute autre valeur (ancien nom de catégorie, ou vide dans un export récent) route
-      // désormais la ligne directement dans la liste à plat de la personne, sans grouper.
-      const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
-      const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
-      const typeRaw = U.normalize(String(norm["type"]||""));
-      const recurCategorieRaw = norm["categorie recurrente"] ? String(norm["categorie recurrente"]).trim() : "";
-      const sign = String(norm["signe"]||"").trim()==="-1" ? -1 : 1;
+  if(revSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revSheetName], {defval:null, raw:false, header:1});
+    const dataRows = rows.slice(1); // ignore la ligne d'en-tête
+    // Passe 1 : bloc "Lignes" (colonnes A:F) — crée les lignes (manuelle/récurrente/salaire) dans l'ordre.
+    dataRows.forEach(row=>{
+      if(!row) return;
+      const personRaw = U.normalize(String(row[0]||""));
+      const categorie = row[1] ? String(row[1]).trim() : "";
+      const ligne = row[2] ? String(row[2]).trim() : "";
+      const typeRaw = U.normalize(String(row[3]||""));
+      const recurCategorieRaw = row[4] ? String(row[4]).trim() : "";
+      const sign = String(row[5]||"").trim()==="-1" ? -1 : 1;
       if(!ligne) return;
+      const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
       let type = "manual";
       if(typeRaw.indexOf("recur")>=0) type = "recurring";
       else if(typeRaw.indexOf("salaire")>=0) type = "budgetSalary";
@@ -1402,19 +1317,17 @@ function parseParametresSheet(wb){
       revenusPeople[personKey].lines.push(line);
       if(type==="manual") revLineLookup[personKey].set(ligne, line);
     });
-  }
-  if(revMontantsSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revMontantsSheetName], {defval:null, raw:false});
-    rows.forEach(r=>{
-      const norm = {};
-      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
-      const personRaw = U.normalize(String(norm["personne"]||""));
-      const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
-      const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
-      const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
-      const mois = norm["mois"] ? String(norm["mois"]).trim() : "";
-      const montant = norm["montant"];
+    // Passe 2 : bloc "Montants" (colonnes H:L, décalées de 7 après la colonne vide G) — alimente les valeurs
+    // mensuelles des lignes manuelles créées ci-dessus.
+    dataRows.forEach(row=>{
+      if(!row) return;
+      const personRaw = U.normalize(String(row[7]||""));
+      const categorie = row[8] ? String(row[8]).trim() : "";
+      const ligne = row[9] ? String(row[9]).trim() : "";
+      const mois = row[10] ? String(row[10]).trim() : "";
+      const montant = row[11];
       if(!ligne || !mois || montant==null || montant==="") return;
+      const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
       if(categorie===REV_TRANSFER_OUT_SENTINEL || categorie===REV_TRANSFER_IN_SENTINEL){
         const bucket = categorie===REV_TRANSFER_OUT_SENTINEL ? "transferOut" : "transferIn";
         const line = revTransferLookup[personKey][bucket].get(ligne);
@@ -1426,26 +1339,21 @@ function parseParametresSheet(wb){
     });
   }
   let revenusData = null;
-  if(revRegSheetName || revLinesSheetName || revMontantsSheetName){
-    revenusData = {periodFrom:revenusPeriodFrom, periodTo:revenusPeriodTo, groupFilter:revenusGroupFilter,
-      moi:revenusPeople.moi, conjoint:revenusPeople.conjoint};
+  if(revSheetName){
+    revenusData = {periodFrom:null, periodTo:null, groupFilter:[], moi:revenusPeople.moi, conjoint:revenusPeople.conjoint};
   }
 
-  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !cmpSheetName && !predefSheetName
-     && !genSheetName && !cbSheetName && !evoRegSheetName && !evoFusionsSheetName
-     && !revRegSheetName && !revLinesSheetName && !revMontantsSheetName) return null;
+  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !predefSheetName && !revSheetName) return null;
   // Présence par onglet — permet à un import "Remplacer" ciblé de ne réinitialiser que les réglages dont
   // l'onglet source est effectivement présent dans le classeur, sans toucher au reste (cf. applyParamsImport).
   const sheetsPresent = {
     parametres: !!sheetName, budget: !!budgetSheetName, budget_reglages: !!bsSheetName,
-    budget_salaires: !!salSheetName, budget_comparaison: !!cmpSheetName, budget_predefini: !!predefSheetName,
-    reglages_generaux: !!genSheetName, comptes_soldes_perso: !!cbSheetName,
-    evolution_reglages: !!evoRegSheetName, evolution_fusions: !!evoFusionsSheetName,
-    revenus: !!(revRegSheetName || revLinesSheetName || revMontantsSheetName),
+    budget_salaires: !!salSheetName, budget_predefini: !!predefSheetName,
+    revenus: !!revSheetName,
   };
   return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange,
-    categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, compareSettings, comparePredefined,
-    accountTypeOrder, customBalances, decimals: decimalsImported, evolutionSettings, revenus: revenusData, sheetsPresent};
+    categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, comparePredefined,
+    revenus: revenusData, sheetsPresent};
 }
 
 function parseFile(file){
@@ -1473,7 +1381,23 @@ function parseFile(file){
           if(t) txns.push(t); else skipped++;
         });
         const params = isCsv ? null : parseParametresSheet(wb);
-        resolve({txns, skipped, total: rows.length, params});
+        // Onglet "Santé" détecté dans le même classeur (proposé depuis l'export unifié Transactions/
+        // Paramètres/Santé, cf. window.__SF_MENU.exportExcel) — importé indépendamment du scope
+        // Transactions/Paramètres choisi à l'écran suivant, comme pour une sauvegarde JSON (cf.
+        // renderImportSummary). Absent si le classeur n'a pas cet onglet (ex. CSV, ou export sans Santé).
+        let santeItems = null;
+        if(!isCsv){
+          const santeSheetName = wb.SheetNames.find(n=>U.normalize(n)==="sante");
+          if(santeSheetName && window.__SF_SANTE_DATA){
+            const santeRows = XLSX.utils.sheet_to_json(wb.Sheets[santeSheetName], {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+            santeItems = [];
+            santeRows.forEach(r=>{
+              const it = window.__SF_SANTE_DATA.rowToSanteItem(r);
+              if(it) santeItems.push(it);
+            });
+          }
+        }
+        resolve({txns, skipped, total: rows.length, params, santeItems});
       }catch(err){ reject(err); }
     };
     if(isCsv) reader.readAsBinaryString(file);
@@ -8152,7 +8076,10 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
   if(mode==="replace" || isEmpty){
     s.revenus.periodFrom = revenus.periodFrom || s.revenus.periodFrom;
     s.revenus.periodTo = revenus.periodTo || s.revenus.periodTo;
-    if(revenus.groupFilter) s.revenus.groupFilter = revenus.groupFilter.slice();
+    // Un tableau vide est "truthy" en JS : sans le test de longueur, un import Excel (qui ne fournit plus
+    // jamais de filtre de groupes depuis la suppression de l'onglet Revenus_Reglages) effacerait
+    // systématiquement le filtre déjà configuré localement.
+    if(revenus.groupFilter && revenus.groupFilter.length) s.revenus.groupFilter = revenus.groupFilter.slice();
     const unpackLine = (l)=>({
       id: l.id || U.uid(), type: l.type, label: l.label,
       recurCategorie: l.recurCategorie||undefined,
@@ -8951,6 +8878,11 @@ function applyParamsImport(params, mode){
       Store.settings.budget.adjustments = budgetAdjustments.slice();
     }
     if(budgetSettings){
+      // periodFrom/periodTo (comme mode/scope ci-dessus) : repli sur la valeur actuelle si absente de
+      // l'import — nécessaire depuis la suppression de "Mode/Vue/Période affichée" de l'onglet
+      // Budget_Reglages (§ simplification Excel) : ces champs ne sont plus jamais fournis par un import
+      // Excel et ne doivent donc plus jamais être écrasés à null par ce chemin (JSON/Gist restent
+      // inchangés, cf. buildParamsPayload qui alimente toujours ces 4 champs).
       Object.assign(Store.settings.budget, {
         mode: budgetSettings.mode || Store.settings.budget.mode,
         scope: budgetSettings.scope || Store.settings.budget.scope,
@@ -8959,8 +8891,8 @@ function applyParamsImport(params, mode){
         mainGroup: budgetSettings.mainGroup,
         extraGroups: (budgetSettings.extraGroups || []).slice(),
         amortCategories: (budgetSettings.amortCategories || []).slice(),
-        periodFrom: budgetSettings.periodFrom,
-        periodTo: budgetSettings.periodTo,
+        periodFrom: budgetSettings.periodFrom || Store.settings.budget.periodFrom,
+        periodTo: budgetSettings.periodTo || Store.settings.budget.periodTo,
         excludedAccounts: (budgetSettings.excludedAccounts || []).slice(),
       });
     }
@@ -9210,12 +9142,13 @@ function renderImportSummary(){
     (r.params.budgetSettings && r.params.budgetSettings.mainGroup) || Object.keys(r.params.salaryEntries||{}).length ||
     (r.params.compareSettings && r.params.compareSettings.enabled) || Object.keys(r.params.comparePredefined||{}).length ||
     revenusHasContent(r.params.revenus)));
+  const hasSante = !!(r.santeItems && r.santeItems.length);
   chosenMode = hasExisting ? "merge" : "replace";
   chosenParamsMode = "merge";
   chosenImportScope = "both";
 
-  if(!hasTxns && !hasParams){
-    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Aucune donnée exploitable trouvée dans ce fichier (ni transactions, ni paramètres). Vérifiez les noms de colonnes et le format des dates.</div>`;
+  if(!hasTxns && !hasParams && !hasSante){
+    statusEl.innerHTML = `<div style="color:var(--expense);font-size:13.5px;padding:10px;">Aucune donnée exploitable trouvée dans ce fichier (ni transactions, ni paramètres, ni soins). Vérifiez les noms de colonnes et le format des dates.</div>`;
     return;
   }
 
@@ -9286,6 +9219,16 @@ function renderImportSummary(){
     `;
   }
 
+  function santeSectionHtml(){
+    if(!hasSante) return "";
+    return `
+      <div class="import-summary" style="margin-top:14px;">
+        <b>Onglet Santé détecté</b><br>
+        ${r.santeItems.length.toLocaleString('fr-FR')} soin${r.santeItems.length>1?"s":""} — importé${r.santeItems.length>1?"s":""} indépendamment du choix ci-dessus, comme pour une sauvegarde JSON.
+      </div>
+    `;
+  }
+
   function render(){
     const showTxnSection = hasTxns && (chosenImportScope==="both" || chosenImportScope==="transactions");
     const showParamsSection = hasParams && (chosenImportScope==="both" || chosenImportScope==="params");
@@ -9294,6 +9237,7 @@ function renderImportSummary(){
       ${scopeChoiceHtml()}
       ${showTxnSection ? txnSectionHtml() : ""}
       ${showParamsSection ? paramsSectionHtml() : ""}
+      ${santeSectionHtml()}
       <button class="btn btn-primary btn-block" id="import-confirm" style="margin-top:18px;">Importer</button>
     `;
     if(showBoth){
@@ -9338,11 +9282,15 @@ function renderImportSummary(){
           msg = stats.mode==="replace" ? `${stats.added.toLocaleString('fr-FR')} transactions importées` :
             `${stats.added.toLocaleString('fr-FR')} ajoutée(s)` + (stats.skippedDup? `, ${stats.skippedDup} doublon(s) ignoré(s)`:"");
           if(doParams) msg += ` · paramètres mis à jour`;
-        } else {
+        } else if(doParams){
           msg = "Paramètres mis à jour";
+        } else {
+          // Ni transactions ni paramètres (ex. classeur ne contenant qu'un onglet Santé) : le message se
+          // construit entièrement à partir de santeStats juste en dessous.
+          msg = "";
         }
-        if(santeStats) msg += ` · ${santeStats.added.toLocaleString('fr-FR')} soin(s) importé(s)`;
-        APP.showToast(msg);
+        if(santeStats) msg += (msg ? ` · ` : ``) + `${santeStats.added.toLocaleString('fr-FR')} soin(s) importé(s)`;
+        APP.showToast(msg || "Import terminé");
       };
       const afterTxnSave = (ok)=>{
         if(santeStats) Store.saveSanteItems().then(()=>finish(ok));
@@ -9460,11 +9408,13 @@ function setColumnDateFormatDDMMYYYY(ws, colIndex, startRow, rowCount){
     if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
   }
 }
+/* scope: {transactions:bool, params:bool, sante:bool} — au moins un true (cf. openExportExcelScopeChoice).
+   Indépendant du format de scope utilisé par exportBackup (JSON), qui reste inchangé. */
 function exportExcel(scope){
-  scope = scope || "both";
+  scope = scope || {transactions:true, params:true, sante:false};
   const wb = XLSX.utils.book_new();
 
-  if(scope==="both" || scope==="transactions"){
+  if(scope.transactions){
     const header = ["Date","Type","Montant","Catégorie","Personne","Compte","Compte cible","Groupe","Remarque"];
     const typeLabelFr = {Income:"Revenu", Expense:"Dépense", Transfer:"Transfert"};
     const data = [header];
@@ -9478,10 +9428,11 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, wsTxn, "Transactions");
   }
 
-  if(scope==="both" || scope==="params"){
+  if(scope.params){
     const pHeader = ["Groupe","Groupe de groupe",
-      "Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Date début (jours)","Date fin (jours)",
-      "Compte","Type de compte","Acronyme","Personne","Groupe de personnes",
+      "Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Date début (jours)","Date fin (jours)","",
+      "Compte","Type de compte","Acronyme","",
+      "Personne","Groupe de personnes","",
       "Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
     const rules = Store.settings.groupAliasRules || [];
     const kindMap = Store.settings.groupKind || {};
@@ -9526,8 +9477,11 @@ function exportExcel(scope){
         g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", g?g.voyageMonth:"",
         (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"",
         (g&&g.daysTo)?(g.daysTo===AGG.GROUP_DATE_TODAY_SENTINEL ? "Aujourd'hui" : isoToDateObj(g.daysTo)):"",
+        "",
         a?a[0]:"", a?a[1]:"", a?a[2]:"",
+        "",
         p?p.personne:"", p?p.superPersonne:"",
+        "",
         co?co[0]:"", co?(co[1]==="Income"?"Revenus":"Dépenses"):""
       ]);
     }
@@ -9544,16 +9498,12 @@ function exportExcel(scope){
     const b = Store.settings.budget || {};
     const bsData = [
       ["Réglage","Valeur"],
-      ["Mode", b.mode||""],
-      ["Vue (perso/couple)", b.scope||""],
       ["Mois de début", b.startMonth||""],
       ["Dernier mois", b.endMonth||""],
       ["Groupe de groupe principal", b.mainGroup||""],
       ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
       ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
       ["Comptes exclus", (b.excludedAccounts||[]).join(" | ")],
-      ["Période affichée - de", b.periodFrom||""],
-      ["Période affichée - à", b.periodTo||""],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bsData), "Budget_Reglages");
 
@@ -9563,15 +9513,6 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salData), "Budget_Salaires");
 
     const cmp = b.compare || {};
-    const cmpData = [
-      ["Réglage","Valeur"],
-      ["Activée", cmp.enabled ? "Oui" : "Non"],
-      ["Mode", cmp.mode==="predefined" ? "Budget prédéfini" : "Autre période"],
-      ["Période comparée - de", cmp.periodFrom||""],
-      ["Période comparée - à", cmp.periodTo||""],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cmpData), "Budget_Comparaison");
-
     const predefEntries = Object.entries(cmp.predefined || {}).sort((x,y)=>x[0].localeCompare(y[0]));
     const predefHeader = ["Clé","Groupe","Catégorie","Montant mensuel"];
     const predefData = [predefHeader].concat(predefEntries.map(([key, montant])=>{
@@ -9581,51 +9522,14 @@ function exportExcel(scope){
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(predefData), "Budget_Predefini");
 
-    // Réglages généraux (§5, §6.1) — décimales globales + ordre des types de compte (bouton "Réorganiser").
-    const genData = [
-      ["Réglage","Valeur"],
-      ["Décimales", Store.settings.decimals===2 ? "2" : "0"],
-      ["Ordre types de compte", (Store.settings.accountTypeOrder||[]).join(" | ")],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(genData), "Reglages_Generaux");
-
-    // Soldes personnalisés de l'onglet Comptes (§6.1) — jusqu'à 2, chacun une sélection de comptes.
-    const cbHeader = ["Titre","Comptes"];
-    const cbData = [cbHeader].concat((Store.settings.customBalances||[]).map(c=>[c.title||"", (c.accounts||[]).join(" | ")]));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cbData), "Comptes_Soldes_Perso");
-
-    // Onglet Évolution (§6.4) — vue/base mensuelle courantes + fusions de sections par dimension.
-    const evoForExport = Store.settings.evolution || {};
-    const evoViewLabel = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
-    const evoBasisLabel = {reel:"Réel", transformee:"Transformé"};
-    const evoRegData = [
-      ["Réglage","Valeur"],
-      ["Vue", evoViewLabel[evoForExport.view]||""],
-      ["Base mensuelle", evoBasisLabel[evoForExport.monthBasis]||""],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(evoRegData), "Evolution_Reglages");
-
-    const evoMergeRows = [];
-    ["groupe","categorie","personne","compte"].forEach(dim=>{
-      ((evoForExport.merges && evoForExport.merges[dim]) || []).forEach(m=>{
-        evoMergeRows.push([evoViewLabel[dim], m.name||"", (m.members||[]).join(" | ")]);
-      });
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Dimension","Nom","Membres"], ...evoMergeRows]), "Evolution_Fusions");
-
-    // Onglet Revenus (Moi / Ma femme) — réglages (période, filtre groupes), lignes à plat (manuelles,
-    // récurrentes ou salaire synchronisé, plus de regroupement par catégorie intermédiaire) dans l'ordre
-    // d'affichage, et montants des lignes manuelles (les lignes "récurrent" et "salaire (budget)" ne
-    // stockent pas de montant : ils sont recalculés depuis les transactions / Budget_Salaires à l'import).
+    // Onglet Revenus (Moi / Ma femme) — lignes à plat (manuelles, récurrentes ou salaire synchronisé, plus
+    // de regroupement par catégorie intermédiaire) dans l'ordre d'affichage, et montants des lignes
+    // manuelles (les lignes "récurrent" et "salaire (budget)" ne stockent pas de montant : ils sont
+    // recalculés depuis les transactions / Budget_Salaires à l'import) — les deux blocs de colonnes
+    // cohabitent désormais dans un seul onglet "Revenus", côte à côte, séparés par une colonne vide
+    // (period/filtre groupes de l'ex-onglet "Revenus_Reglages" supprimés : gérés uniquement via la
+    // sauvegarde JSON / synchro Gist désormais).
     const revData = (window.__SF_REVENUS && window.__SF_REVENUS.buildParamsPayloadPart()) || null;
-    const revRegData = [
-      ["Réglage","Valeur"],
-      ["Période - de", (revData && revData.periodFrom)||""],
-      ["Période - à", (revData && revData.periodTo)||""],
-      ["Groupes filtrés", (revData && (revData.groupFilter||[]).join(" | "))||""],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(revRegData), "Revenus_Reglages");
-
     const revTypeLabel = {manual:"Manuel", recurring:"Récurrent", budgetSalary:"Salaire (Budget)"};
     // Colonne "Catégorie" conservée uniquement pour porter les sentinelles de transfert (compatibilité avec
     // le format antérieur à la suppression du niveau "Catégorie", cf. parseParametresSheet) — vide pour une
@@ -9649,14 +9553,78 @@ function exportExcel(scope){
       (p.transferOut||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_OUT_SENTINEL, line));
       (p.transferIn||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_IN_SENTINEL, line));
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Type","Catégorie récurrente","Signe"], ...revLinesRows]), "Revenus_Lignes");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Mois","Montant"], ...revMontantsRows]), "Revenus_Montants");
+    const revRowCount = Math.max(revLinesRows.length, revMontantsRows.length);
+    const revBlankLine = ["","","","","",""];
+    const revBlankMontant = ["","","","",""];
+    const revCombinedHeader = ["Personne","Catégorie","Ligne","Type","Catégorie récurrente","Signe","",
+      "Personne","Catégorie","Ligne","Mois","Montant"];
+    const revCombinedData = [revCombinedHeader];
+    for(let i=0;i<revRowCount;i++){
+      revCombinedData.push([...(revLinesRows[i]||revBlankLine), "", ...(revMontantsRows[i]||revBlankMontant)]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(revCombinedData), "Revenus");
   }
 
+  if(scope.sante && window.__SF_SANTE_DATA && window.__SF_SANTE_DATA.buildSanteExportRows && Store.santeItems.length){
+    const s = window.__SF_SANTE_DATA.buildSanteExportRows();
+    const sData = [s.header, ...s.rows];
+    const wsSante = XLSX.utils.aoa_to_sheet(sData, {cellDates:true});
+    s.dateCols.forEach(col=> setColumnDateFormatDDMMYYYY(wsSante, col, 1, sData.length-1));
+    XLSX.utils.book_append_sheet(wb, wsSante, "Santé");
+  }
+
+  const parts = [];
+  if(scope.transactions) parts.push("transactions");
+  if(scope.params) parts.push("parametres");
+  if(scope.sante) parts.push("sante");
+  const suffix = parts.length===3 ? "" : "_"+parts.join("_");
   const stamp = U.toISO(new Date());
-  const suffix = scope==="transactions" ? "_transactions" : scope==="params" ? "_parametres" : "";
   XLSX.writeFile(wb, "suivi_financier"+suffix+"_"+stamp+".xlsx");
   APP.showToast("Export Excel généré");
+}
+
+/* Modal dédiée à l'export Excel : Transactions / Paramètres / Santé sont indépendants (cases à cocher),
+   1, 2 ou 3 peuvent être sélectionnés à la fois (au moins un requis) — contrairement à openExportScopeChoice
+   (JSON) qui reste un choix exclusif "both/transactions/params" et n'inclut pas Santé (déjà toujours
+   présent dans la sauvegarde JSON, cf. exportBackup). onConfirm({transactions,params,sante}) à la validation. */
+function openExportExcelScopeChoice(onConfirm){
+  const modal = document.getElementById("modal-confirm");
+  const hasSante = Store.santeItems.length>0;
+  const sel = {transactions:true, params:true, sante:false};
+  function render(){
+    const noneSelected = !sel.transactions && !sel.params && !sel.sante;
+    modal.innerHTML = `
+      <h3 style="margin:0 0 14px;font-size:18px;">Exporter en Excel</h3>
+      <div class="checkbox-opt ${sel.transactions?'selected':''}" data-key="transactions">
+        <span class="cc"></span>
+        <div><div class="rt">Transactions</div></div>
+      </div>
+      <div class="checkbox-opt ${sel.params?'selected':''}" data-key="params">
+        <span class="cc"></span>
+        <div><div class="rt">Paramètres</div><div class="rd">Groupes, personnes, types de compte, réglages et ajustements du budget, classement des catégories, revenus.</div></div>
+      </div>
+      ${hasSante ? `
+      <div class="checkbox-opt ${sel.sante?'selected':''}" data-key="sante">
+        <span class="cc"></span>
+        <div><div class="rt">Santé</div><div class="rd">${Store.santeItems.length.toLocaleString('fr-FR')} soin${Store.santeItems.length>1?'s':''}.</div></div>
+      </div>` : ""}
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button class="btn btn-ghost" style="flex:1;" id="esc-cancel">Annuler</button>
+        <button class="btn btn-primary" style="flex:1;" id="esc-confirm" ${noneSelected?"disabled":""}>Exporter</button>
+      </div>
+    `;
+    modal.querySelectorAll("[data-key]").forEach(el=>{
+      el.onclick = ()=>{ const k = el.dataset.key; sel[k] = !sel[k]; render(); };
+    });
+    document.getElementById("esc-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+    document.getElementById("esc-confirm").onclick = ()=>{
+      if(!sel.transactions && !sel.params && !sel.sante) return;
+      APP.closeOverlay("overlay-confirm");
+      onConfirm({transactions:sel.transactions, params:sel.params, sante:sel.sante});
+    };
+  }
+  render();
+  APP.openOverlay("overlay-confirm");
 }
 
 /* Small modal letting the user pick what to export: Transactions / Paramètres / Both.
@@ -9799,7 +9767,7 @@ function renderMenuSheet(){
       APP.showToast("Aucune donnée à exporter"); return;
     }
     APP.closeOverlay("overlay-menu");
-    openExportScopeChoice("Exporter en Excel", (scope)=>exportExcel(scope));
+    openExportExcelScopeChoice((scope)=>exportExcel(scope));
   };
   document.getElementById("menu-export").onclick = ()=>{
     if(Store.transactions.length===0 && Object.keys(Store.settings.accountTypes||{}).length===0 && (Store.settings.groupAliasRules||[]).length===0){
@@ -11780,27 +11748,34 @@ const SANTE_XLSX_HEADER = ["Date du soin","Bénéficiaire","Devise","Montant €
   "Remb. tiers payant €","Date remb. tiers","Remb. sécu €","Date remb. sécu","Remb. mutuelle €","Date remb. mutuelle","Groupe","Mutuelle","Part moi (%)","Terminé"];
 const SANTE_DATE_COLS = [0,8,10,12,14]; // index des colonnes date dans SANTE_XLSX_HEADER
 
+/* Construit les lignes (avec objets Date, pas encore de worksheet) de l'onglet Santé — factorisé pour être
+   réutilisé à la fois par l'export dédié ci-dessous (exportSanteExcel) et par l'export unifié Transactions/
+   Paramètres/Santé du module Menu (cf. window.__SF_MENU / exportExcel), qui compose son propre classeur. */
+function buildSanteExportRows(){
+  const rows = Store.santeItems.map(it=>[
+    isoToDateObjS(it.dateSoin), it.beneficiaire, it.devise, it.montantEur, it.montantDevise,
+    it.medecin, it.typePrestation, it.statut, isoToDateObjS(it.statutDate),
+    it.rembTiersMontant, isoToDateObjS(it.rembTiersDate),
+    it.rembSecuMontant, isoToDateObjS(it.rembSecuDate),
+    it.rembMutuelleMontant, isoToDateObjS(it.rembMutuelleDate),
+    it.groupe, it.mutuelle, it.partMoi, it.termine ? "Oui" : "Non"
+  ]);
+  return {header: SANTE_XLSX_HEADER.slice(), rows, dateCols: SANTE_DATE_COLS.slice()};
+}
+
 function exportSanteExcel(){
   if(Store.santeItems.length===0){ APP.showToast("Aucun soin à exporter"); return; }
-  const data = [SANTE_XLSX_HEADER];
-  Store.santeItems.forEach(it=>{
-    data.push([
-      isoToDateObjS(it.dateSoin), it.beneficiaire, it.devise, it.montantEur, it.montantDevise,
-      it.medecin, it.typePrestation, it.statut, isoToDateObjS(it.statutDate),
-      it.rembTiersMontant, isoToDateObjS(it.rembTiersDate),
-      it.rembSecuMontant, isoToDateObjS(it.rembSecuDate),
-      it.rembMutuelleMontant, isoToDateObjS(it.rembMutuelleDate),
-      it.groupe, it.mutuelle, it.partMoi, it.termine ? "Oui" : "Non"
-    ]);
-  });
+  const {header, rows, dateCols} = buildSanteExportRows();
+  const data = [header, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
-  SANTE_DATE_COLS.forEach(col=> setDateColFormatS(ws, col, 1, data.length-1));
+  dateCols.forEach(col=> setDateColFormatS(ws, col, 1, data.length-1));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Santé");
   const stamp = U.toISO(new Date());
   XLSX.writeFile(wb, "suivi_financier_sante_"+stamp+".xlsx");
   APP.showToast("Export Excel généré");
 }
+
 
 function rowToSanteItem(row){
   const norm = {};
@@ -11889,7 +11864,7 @@ function registerNewListValuesFromItems(items){
   });
   Store.saveSettings();
 }
-window.__SF_SANTE_DATA = {importSanteItems, importSanteSettings, registerNewListValuesFromItems, rowToSanteItem, buildSanteId, sanitizeItem};
+window.__SF_SANTE_DATA = {importSanteItems, importSanteSettings, registerNewListValuesFromItems, rowToSanteItem, buildSanteId, sanitizeItem, buildSanteExportRows};
 
 let santeParsedImport = null; // {items, skipped, total, fileName}
 
