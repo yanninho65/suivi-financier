@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.28.00.16";
+const APP_VERSION = "v 2026.08.28.02.15";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -941,15 +941,7 @@ const Store = {
     if(typeof s.revenus.groupsExpanded!=="boolean") s.revenus.groupsExpanded = false;
     ["moi","conjoint"].forEach(p=>{
       if(!s.revenus[p] || typeof s.revenus[p]!=="object") s.revenus[p] = {lines:[], transferOut:[], transferIn:[]};
-      // Rétrocompatibilité : réglages sauvegardés avant la suppression du niveau "Catégorie" (§ Revenus) —
-      // l'ancien format imbriquait les lignes par catégorie (s.revenus[p].categories[].lines) ; on aplatit
-      // silencieusement vers une liste unique, sans grouper.
-      if(!Array.isArray(s.revenus[p].lines)){
-        s.revenus[p].lines = Array.isArray(s.revenus[p].categories)
-          ? s.revenus[p].categories.reduce((acc,cat)=> acc.concat(cat.lines||[]), [])
-          : [];
-      }
-      delete s.revenus[p].categories;
+      if(!Array.isArray(s.revenus[p].lines)) s.revenus[p].lines = [];
       s.revenus[p].lines.forEach(l=>{
         if(!l.id) l.id = U.uid();
         if(l.type==="manual" && (!l.values || typeof l.values!=="object")) l.values = {};
@@ -1123,10 +1115,8 @@ function parseParametresSheet(wb){
       const personne = norm["personne"];
       const superPersonne = norm["groupe de personnes"];
       const kType = norm["type budget (quotidien/voyage)"];
-      // "Mois voyage" est désormais une vraie date Excel (toujours le 1er du mois, affichée dd/mm/yyyy) —
-      // ancien nom de colonne "Mois voyage (AAAA-MM)" (texte libre "AAAA-MM") accepté en repli pour les
-      // classeurs exportés avant ce changement, sans avoir besoin de les régénérer.
-      const kMonth = norm["mois voyage"]!=null ? norm["mois voyage"] : norm["mois voyage (aaaa-mm)"];
+      // "Mois voyage" est une vraie date Excel (toujours le 1er du mois, affichée dd/mm/yyyy).
+      const kMonth = norm["mois voyage"];
       const daysFrom = norm["date debut (jours)"];
       const daysTo = norm["date fin (jours)"];
       const catForced = norm["categorie (classement force)"];
@@ -1171,18 +1161,11 @@ function parseParametresSheet(wb){
       if(groupeStr && kType){
         groupKind[groupeStr] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
         if(kMonth){
-          // Repli "AAAA-MM" texte (anciens classeurs) d'abord, testé sans passer par une conversion de
-          // date pour éviter tout décalage de fuseau horaire ; sinon on interprète la cellule comme une
-          // vraie date (dd/mm/yyyy écrit par exportExcel, numéro de série Excel, ou objet Date) via
-          // U.parseDateValue, et on n'en retient que l'année/le mois (le jour est toujours le 1er).
-          const kMonthStr = String(kMonth).trim();
-          const ymMatch = kMonthStr.match(/^(\d{4})-(\d{1,2})$/);
-          if(ymMatch){
-            groupVoyageMonth[groupeStr] = ymMatch[1] + "-" + U.pad2(parseInt(ymMatch[2],10));
-          } else {
-            const kMonthDate = U.parseDateValue(kMonth);
-            if(kMonthDate) groupVoyageMonth[groupeStr] = kMonthDate.getFullYear() + "-" + U.pad2(kMonthDate.getMonth()+1);
-          }
+          // Cellule interprétée comme une vraie date (dd/mm/yyyy écrit par exportExcel, numéro de série
+          // Excel, ou objet Date) via U.parseDateValue ; on n'en retient que l'année/le mois (le jour est
+          // toujours le 1er).
+          const kMonthDate = U.parseDateValue(kMonth);
+          if(kMonthDate) groupVoyageMonth[groupeStr] = kMonthDate.getFullYear() + "-" + U.pad2(kMonthDate.getMonth()+1);
         }
       }
       if(groupeStr && daysFrom && daysTo){
@@ -8091,13 +8074,8 @@ window.__SF_REVENUS = {buildParamsPayloadPart(){
     const unpackLines = (lines)=> (lines||[]).map(unpackLine);
     ["moi","conjoint"].forEach(p=>{
       const src = revenus[p] || {};
-      // Rétrocompatibilité : un export JSON réalisé avant la suppression du niveau "Catégorie" (§ Revenus)
-      // contient encore src.categories (catégorie -> lignes) au lieu de src.lines (à plat) — on aplatit
-      // silencieusement, sans perte de lignes.
-      const flatLines = Array.isArray(src.lines) ? src.lines
-        : (src.categories||[]).reduce((acc,cat)=> acc.concat(cat.lines||[]), []);
       s.revenus[p] = {
-        lines: unpackLines(flatLines),
+        lines: unpackLines(src.lines),
         transferOut: unpackLines(src.transferOut),
         transferIn: unpackLines(src.transferIn)
       };
@@ -8856,9 +8834,11 @@ function applyParamsImport(params, mode){
   Store.settings.evolution = Store.settings.evolution || {};
   if(!Store.settings.evolution.merges) Store.settings.evolution.merges = {};
   if(mode==="replace"){
-    // Import "Remplacer" ciblé : un onglet absent du classeur importé laisse le réglage correspondant
-    // intact au lieu de le vider — seuls les onglets réellement présents écrasent l'existant.
-    if(sheetsPresent.parametres){
+    // Import "Remplacer" ciblé par onglet (Excel) : un onglet absent du classeur importé laisse le réglage
+    // correspondant intact au lieu de le vider — seuls les onglets réellement présents écrasent l'existant.
+    // Une sauvegarde JSON ou une synchro Gist n'a pas cette notion de "feuille absente" (pas de
+    // sheetsPresent) et s'applique donc toujours intégralement.
+    if(!params.sheetsPresent || sheetsPresent.parametres){
       Store.settings.groupAliasRules = groupRules.slice();
       Store.settings.personAliasRules = personRules.slice();
       Store.settings.accountTypes = Object.assign({}, accountTypes);
@@ -8868,14 +8848,15 @@ function applyParamsImport(params, mode){
       Store.settings.groupDateRange = Object.assign({}, groupDateRange);
       Store.settings.categoryTypeOverride = Object.assign({}, categoryTypeOverride);
     }
-    if(sheetsPresent.reglages_generaux){
+    // Ordre des types de compte, décimales, soldes personnalisés : n'existent plus dans aucun onglet Excel
+    // (Reglages_Generaux / Comptes_Soldes_Perso supprimés, § simplification Excel) — gérés uniquement via
+    // JSON/Gist désormais, jamais touchés par un import Excel.
+    if(!params.sheetsPresent){
       Store.settings.accountTypeOrder = accountTypeOrder.slice();
       if(decimalsImported===2 || decimalsImported===0) Store.settings.decimals = decimalsImported;
-    }
-    if(sheetsPresent.comptes_soldes_perso){
       Store.settings.customBalances = customBalances.map(cb=>({title: cb.title || "", accounts: (cb.accounts||[]).slice()}));
     }
-    if(sheetsPresent.budget){
+    if(!params.sheetsPresent || sheetsPresent.budget){
       Store.settings.budget.adjustments = budgetAdjustments.slice();
     }
     if(budgetSettings){
@@ -8912,7 +8893,9 @@ function applyParamsImport(params, mode){
     if(evolutionSettings){
       if(evolutionSettings.view) Store.settings.evolution.view = evolutionSettings.view;
       if(evolutionSettings.monthBasis) Store.settings.evolution.monthBasis = evolutionSettings.monthBasis;
-      if(sheetsPresent.evolution_fusions && evolutionSettings.merges){
+      // Fusions de sections Évolution : n'existent plus dans aucun onglet Excel (Evolution_Fusions
+      // supprimé), gérées uniquement via JSON/Gist désormais.
+      if(!params.sheetsPresent && evolutionSettings.merges){
         Store.settings.evolution.merges = {
           groupe: (evolutionSettings.merges.groupe || []).slice(),
           categorie: (evolutionSettings.merges.categorie || []).slice(),
@@ -9132,9 +9115,7 @@ function renderImportSummary(){
     if(!rv) return false;
     return ["moi","conjoint"].some(p=>{
       const person = rv[p]||{};
-      // rv peut venir d'un JSON exporté avant la suppression du niveau "Catégorie" (§ Revenus) : encore
-      // au format imbriqué categories[].lines[] au lieu de lines[] à plat — les deux sont détectés ici.
-      const lineCount = (person.lines||[]).length || (person.categories||[]).reduce((s,c)=>s+(c.lines||[]).length,0);
+      const lineCount = (person.lines||[]).length;
       return lineCount || (person.transferOut||[]).length || (person.transferIn||[]).length;
     });
   }
