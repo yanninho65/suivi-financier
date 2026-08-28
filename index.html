@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.27.23.52";
+const APP_VERSION = "v 2026.08.28.00.16";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1123,7 +1123,10 @@ function parseParametresSheet(wb){
       const personne = norm["personne"];
       const superPersonne = norm["groupe de personnes"];
       const kType = norm["type budget (quotidien/voyage)"];
-      const kMonth = norm["mois voyage (aaaa-mm)"];
+      // "Mois voyage" est désormais une vraie date Excel (toujours le 1er du mois, affichée dd/mm/yyyy) —
+      // ancien nom de colonne "Mois voyage (AAAA-MM)" (texte libre "AAAA-MM") accepté en repli pour les
+      // classeurs exportés avant ce changement, sans avoir besoin de les régénérer.
+      const kMonth = norm["mois voyage"]!=null ? norm["mois voyage"] : norm["mois voyage (aaaa-mm)"];
       const daysFrom = norm["date debut (jours)"];
       const daysTo = norm["date fin (jours)"];
       const catForced = norm["categorie (classement force)"];
@@ -1167,7 +1170,20 @@ function parseParametresSheet(wb){
       // sur le libellé complet exact (groupeStr), jamais sur un nom de base dérivé.
       if(groupeStr && kType){
         groupKind[groupeStr] = U.normalize(kType).startsWith("voy") ? "voyage" : "quotidien";
-        if(kMonth) groupVoyageMonth[groupeStr] = String(kMonth).trim();
+        if(kMonth){
+          // Repli "AAAA-MM" texte (anciens classeurs) d'abord, testé sans passer par une conversion de
+          // date pour éviter tout décalage de fuseau horaire ; sinon on interprète la cellule comme une
+          // vraie date (dd/mm/yyyy écrit par exportExcel, numéro de série Excel, ou objet Date) via
+          // U.parseDateValue, et on n'en retient que l'année/le mois (le jour est toujours le 1er).
+          const kMonthStr = String(kMonth).trim();
+          const ymMatch = kMonthStr.match(/^(\d{4})-(\d{1,2})$/);
+          if(ymMatch){
+            groupVoyageMonth[groupeStr] = ymMatch[1] + "-" + U.pad2(parseInt(ymMatch[2],10));
+          } else {
+            const kMonthDate = U.parseDateValue(kMonth);
+            if(kMonthDate) groupVoyageMonth[groupeStr] = kMonthDate.getFullYear() + "-" + U.pad2(kMonthDate.getMonth()+1);
+          }
+        }
       }
       if(groupeStr && daysFrom && daysTo){
         const dFrom = U.parseDateValue(daysFrom);
@@ -1212,25 +1228,6 @@ function parseParametresSheet(wb){
       }
     });
   }
-  const bsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_reglages");
-  let budgetSettings = null;
-  if(bsSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[bsSheetName], {defval:null, raw:false, header:1});
-    const map = {};
-    rows.forEach(row=>{
-      if(!row || row.length<2) return;
-      const key = U.normalize(String(row[0]||""));
-      map[key] = row[1];
-    });
-    budgetSettings = {
-      startMonth: map["mois de debut"] ? String(map["mois de debut"]).trim() : null,
-      endMonth: map["dernier mois"] ? String(map["dernier mois"]).trim() : null,
-      mainGroup: map["groupe de groupe principal"] ? String(map["groupe de groupe principal"]).trim() : null,
-      extraGroups: map["groupes de groupe additionnels"] ? String(map["groupes de groupe additionnels"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
-      amortCategories: map["categories amorties"] ? String(map["categories amorties"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
-      excludedAccounts: map["comptes exclus"] ? String(map["comptes exclus"]).split("|").map(s=>s.trim()).filter(Boolean) : [],
-    };
-  }
   const salSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_salaires");
   let salaryEntries = null;
   if(salSheetName){
@@ -1269,14 +1266,13 @@ function parseParametresSheet(wb){
     });
   }
 
-  // Onglet Revenus (Moi / Ma femme) — anciennement scindé en Revenus_Lignes / Revenus_Montants / Revenus_Reglages
-  // (ce dernier, période + filtre groupes, supprimé : géré uniquement via JSON/Gist désormais) — un seul
-  // onglet "Revenus" avec les deux blocs de colonnes côte à côte (lignes en A:F, montants en H:L, séparés
-  // par une colonne vide en G, cf. exportExcel). Lu par position de colonne plutôt que par nom d'en-tête :
-  // les deux blocs partagent des intitulés identiques (Personne/Catégorie/Ligne), ce qui rendrait une
-  // lecture par nom ambiguë (SheetJS suffixe les doublons en "_1", peu robuste face à une modification
-  // manuelle des largeurs/ordres de colonnes).
-  const revSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus");
+  // Onglet Revenus (Moi / Ma femme) — deux onglets séparés Revenus_Lignes / Revenus_Montants (cardinalités
+  // différentes : une ligne par ligne définie vs une ligne par mois renseigné) plutôt qu'un onglet combiné à
+  // colonnes dupliquées (Personne/Catégorie/Ligne identiques dans les deux blocs) — lus par nom d'en-tête,
+  // robuste à un réordonnancement/ajout de colonne fait à la main dans Excel (contrairement à une lecture
+  // par position). Revenus_Reglages (période + filtre groupes) supprimé : géré uniquement via JSON/Gist.
+  const revLinesSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_lignes");
+  const revMontantsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_montants");
   // Sentinelles de la colonne "Catégorie" identifiant une ligne de transfert (jamais une vraie catégorie) —
   // doivent rester identiques à celles écrites par exportExcel.
   const REV_TRANSFER_OUT_SENTINEL = "(Transfert - vers)";
@@ -1284,20 +1280,23 @@ function parseParametresSheet(wb){
   const revenusPeople = {moi:{lines:[],transferOut:[],transferIn:[]}, conjoint:{lines:[],transferOut:[],transferIn:[]}};
   const revLineLookup = {moi:new Map(), conjoint:new Map()}; // libellé -> ligne (lignes normales manuelles uniquement)
   const revTransferLookup = {moi:{transferOut:new Map(), transferIn:new Map()}, conjoint:{transferOut:new Map(), transferIn:new Map()}}; // libellé -> ligne
-  if(revSheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revSheetName], {defval:null, raw:false, header:1});
-    const dataRows = rows.slice(1); // ignore la ligne d'en-tête
-    // Passe 1 : bloc "Lignes" (colonnes A:F) — crée les lignes (manuelle/récurrente/salaire) dans l'ordre.
-    dataRows.forEach(row=>{
-      if(!row) return;
-      const personRaw = U.normalize(String(row[0]||""));
-      const categorie = row[1] ? String(row[1]).trim() : "";
-      const ligne = row[2] ? String(row[2]).trim() : "";
-      const typeRaw = U.normalize(String(row[3]||""));
-      const recurCategorieRaw = row[4] ? String(row[4]).trim() : "";
-      const sign = String(row[5]||"").trim()==="-1" ? -1 : 1;
-      if(!ligne) return;
+  if(revLinesSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revLinesSheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const personRaw = U.normalize(String(norm["personne"]||""));
       const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
+      // Colonne "Catégorie" conservée pour la compatibilité avec les exports antérieurs à la suppression du
+      // niveau "Catégorie" (§ Revenus) : seules les deux sentinelles de transfert y sont encore
+      // significatives — toute autre valeur (ancien nom de catégorie, ou vide dans un export récent) route
+      // désormais la ligne directement dans la liste à plat de la personne, sans grouper.
+      const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
+      const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
+      const typeRaw = U.normalize(String(norm["type"]||""));
+      const recurCategorieRaw = norm["categorie recurrente"] ? String(norm["categorie recurrente"]).trim() : "";
+      const sign = String(norm["signe"]||"").trim()==="-1" ? -1 : 1;
+      if(!ligne) return;
       let type = "manual";
       if(typeRaw.indexOf("recur")>=0) type = "recurring";
       else if(typeRaw.indexOf("salaire")>=0) type = "budgetSalary";
@@ -1317,17 +1316,19 @@ function parseParametresSheet(wb){
       revenusPeople[personKey].lines.push(line);
       if(type==="manual") revLineLookup[personKey].set(ligne, line);
     });
-    // Passe 2 : bloc "Montants" (colonnes H:L, décalées de 7 après la colonne vide G) — alimente les valeurs
-    // mensuelles des lignes manuelles créées ci-dessus.
-    dataRows.forEach(row=>{
-      if(!row) return;
-      const personRaw = U.normalize(String(row[7]||""));
-      const categorie = row[8] ? String(row[8]).trim() : "";
-      const ligne = row[9] ? String(row[9]).trim() : "";
-      const mois = row[10] ? String(row[10]).trim() : "";
-      const montant = row[11];
-      if(!ligne || !mois || montant==null || montant==="") return;
+  }
+  if(revMontantsSheetName){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[revMontantsSheetName], {defval:null, raw:false});
+    rows.forEach(r=>{
+      const norm = {};
+      Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
+      const personRaw = U.normalize(String(norm["personne"]||""));
       const personKey = personRaw.indexOf("femme")>=0 || personRaw==="conjoint" ? "conjoint" : "moi";
+      const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
+      const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
+      const mois = norm["mois"] ? String(norm["mois"]).trim() : "";
+      const montant = norm["montant"];
+      if(!ligne || !mois || montant==null || montant==="") return;
       if(categorie===REV_TRANSFER_OUT_SENTINEL || categorie===REV_TRANSFER_IN_SENTINEL){
         const bucket = categorie===REV_TRANSFER_OUT_SENTINEL ? "transferOut" : "transferIn";
         const line = revTransferLookup[personKey][bucket].get(ligne);
@@ -1339,20 +1340,20 @@ function parseParametresSheet(wb){
     });
   }
   let revenusData = null;
-  if(revSheetName){
+  if(revLinesSheetName || revMontantsSheetName){
     revenusData = {periodFrom:null, periodTo:null, groupFilter:[], moi:revenusPeople.moi, conjoint:revenusPeople.conjoint};
   }
 
-  if(!sheetName && !budgetSheetName && !bsSheetName && !salSheetName && !predefSheetName && !revSheetName) return null;
+  if(!sheetName && !budgetSheetName && !salSheetName && !predefSheetName && !revLinesSheetName && !revMontantsSheetName) return null;
   // Présence par onglet — permet à un import "Remplacer" ciblé de ne réinitialiser que les réglages dont
   // l'onglet source est effectivement présent dans le classeur, sans toucher au reste (cf. applyParamsImport).
   const sheetsPresent = {
-    parametres: !!sheetName, budget: !!budgetSheetName, budget_reglages: !!bsSheetName,
+    parametres: !!sheetName, budget: !!budgetSheetName,
     budget_salaires: !!salSheetName, budget_predefini: !!predefSheetName,
-    revenus: !!revSheetName,
+    revenus: !!(revLinesSheetName || revMontantsSheetName),
   };
   return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange,
-    categoryTypeOverride, budgetAdjustments, budgetSettings, salaryEntries, comparePredefined,
+    categoryTypeOverride, budgetAdjustments, salaryEntries, comparePredefined,
     revenus: revenusData, sheetsPresent};
 }
 
@@ -8878,11 +8879,11 @@ function applyParamsImport(params, mode){
       Store.settings.budget.adjustments = budgetAdjustments.slice();
     }
     if(budgetSettings){
-      // periodFrom/periodTo (comme mode/scope ci-dessus) : repli sur la valeur actuelle si absente de
-      // l'import — nécessaire depuis la suppression de "Mode/Vue/Période affichée" de l'onglet
-      // Budget_Reglages (§ simplification Excel) : ces champs ne sont plus jamais fournis par un import
-      // Excel et ne doivent donc plus jamais être écrasés à null par ce chemin (JSON/Gist restent
-      // inchangés, cf. buildParamsPayload qui alimente toujours ces 4 champs).
+      // Ce bloc n'est plus jamais déclenché par un import Excel — l'onglet Budget_Reglages a été
+      // entièrement supprimé (§ simplification Excel), Store.settings.budget n'est donc plus modifiable
+      // que via une sauvegarde JSON ou une synchro Gist (cf. buildParamsPayload, seule source restante de
+      // budgetSettings). periodFrom/periodTo/mode/scope gardent leur repli sur la valeur actuelle si
+      // absents de l'import, par cohérence avec le reste de ce bloc.
       Object.assign(Store.settings.budget, {
         mode: budgetSettings.mode || Store.settings.budget.mode,
         scope: budgetSettings.scope || Store.settings.budget.scope,
@@ -9399,6 +9400,17 @@ function isoToDateObj(iso){
   if(!y || !m || !d) return null;
   return new Date(y, m-1, d);
 }
+/* Convertit un mois "YYYY-MM" (mois voyage forcé d'un groupe) en objet Date au 1er du mois, pour écriture
+   Excel en tant que vraie cellule date (affichée dd/mm/yyyy, donc toujours "01/MM/AAAA") plutôt qu'en texte
+   "AAAA-MM" — le stockage interne (Store.settings.groupVoyageMonth) reste "YYYY-MM", seule la
+   représentation Excel change (cf. parseParametresSheet pour la conversion inverse à l'import).
+   null/"" → null. */
+function voyageMonthToDateObj(ym){
+  if(!ym) return null;
+  const [y,m] = String(ym).split("-").map(Number);
+  if(!y || !m) return null;
+  return new Date(y, m-1, 1);
+}
 /* Applique le format d'affichage JJ/MM/AAAA aux cellules de type date (t==='d') d'une colonne donnée
    (0-indexée), sur toutes les lignes à partir de startRow (1 = sous l'en-tête). */
 function setColumnDateFormatDDMMYYYY(ws, colIndex, startRow, rowCount){
@@ -9430,7 +9442,7 @@ function exportExcel(scope){
 
   if(scope.params){
     const pHeader = ["Groupe","Groupe de groupe",
-      "Type budget (Quotidien/Voyage)","Mois voyage (AAAA-MM)","Date début (jours)","Date fin (jours)","",
+      "Type budget (Quotidien/Voyage)","Mois voyage","Date début (jours)","Date fin (jours)","",
       "Compte","Type de compte","Acronyme","",
       "Personne","Groupe de personnes","",
       "Catégorie (classement forcé)","Type forcé (Revenus/Dépenses)"];
@@ -9474,7 +9486,7 @@ function exportExcel(scope){
       const g = groupRows[i], a = acct[i], p = personRules[i], co = catOverrideEntries[i];
       pData.push([
         g?g.groupe:"", g?g.superGroupe:"",
-        g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", g?g.voyageMonth:"",
+        g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", (g&&g.voyageMonth)?voyageMonthToDateObj(g.voyageMonth):"",
         (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"",
         (g&&g.daysTo)?(g.daysTo===AGG.GROUP_DATE_TODAY_SENTINEL ? "Aujourd'hui" : isoToDateObj(g.daysTo)):"",
         "",
@@ -9486,6 +9498,7 @@ function exportExcel(scope){
       ]);
     }
     const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
+    setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
     setColumnDateFormatDDMMYYYY(wsParams, 4, 1, pData.length-1);
     setColumnDateFormatDDMMYYYY(wsParams, 5, 1, pData.length-1);
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
@@ -9496,17 +9509,6 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "Budget");
 
     const b = Store.settings.budget || {};
-    const bsData = [
-      ["Réglage","Valeur"],
-      ["Mois de début", b.startMonth||""],
-      ["Dernier mois", b.endMonth||""],
-      ["Groupe de groupe principal", b.mainGroup||""],
-      ["Groupes de groupe additionnels", (b.extraGroups||[]).join(" | ")],
-      ["Catégories amorties", (b.amortCategories||[]).join(" | ")],
-      ["Comptes exclus", (b.excludedAccounts||[]).join(" | ")],
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bsData), "Budget_Reglages");
-
     const salEntries = Object.entries(b.salaryEntries || {}).sort((x,y)=>x[0].localeCompare(y[0]));
     const salHeader = ["Mois","Moi","Ma femme"];
     const salData = [salHeader].concat(salEntries.map(([month, e])=>[month, e.moi==null?"":e.moi, e.femme==null?"":e.femme]));
@@ -9525,10 +9527,12 @@ function exportExcel(scope){
     // Onglet Revenus (Moi / Ma femme) — lignes à plat (manuelles, récurrentes ou salaire synchronisé, plus
     // de regroupement par catégorie intermédiaire) dans l'ordre d'affichage, et montants des lignes
     // manuelles (les lignes "récurrent" et "salaire (budget)" ne stockent pas de montant : ils sont
-    // recalculés depuis les transactions / Budget_Salaires à l'import) — les deux blocs de colonnes
-    // cohabitent désormais dans un seul onglet "Revenus", côte à côte, séparés par une colonne vide
-    // (period/filtre groupes de l'ex-onglet "Revenus_Reglages" supprimés : gérés uniquement via la
-    // sauvegarde JSON / synchro Gist désormais).
+    // recalculés depuis les transactions / Budget_Salaires à l'import) — deux onglets séparés (Lignes /
+    // Montants, cardinalités différentes : une ligne par ligne définie vs une ligne par mois renseigné)
+    // plutôt qu'un seul onglet à colonnes dupliquées (Personne/Catégorie/Ligne identiques dans les deux
+    // blocs), qui serait fragile à l'édition manuelle dans Excel (insertion/suppression de colonne, tri)
+    // et ambigu pour Excel/tableur lui-même (en-têtes en double) — période/filtre groupes de l'ex-onglet
+    // "Revenus_Reglages" supprimés : gérés uniquement via la sauvegarde JSON / synchro Gist désormais.
     const revData = (window.__SF_REVENUS && window.__SF_REVENUS.buildParamsPayloadPart()) || null;
     const revTypeLabel = {manual:"Manuel", recurring:"Récurrent", budgetSalary:"Salaire (Budget)"};
     // Colonne "Catégorie" conservée uniquement pour porter les sentinelles de transfert (compatibilité avec
@@ -9553,16 +9557,8 @@ function exportExcel(scope){
       (p.transferOut||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_OUT_SENTINEL, line));
       (p.transferIn||[]).forEach(line=> exportRevLine(label, REV_TRANSFER_IN_SENTINEL, line));
     });
-    const revRowCount = Math.max(revLinesRows.length, revMontantsRows.length);
-    const revBlankLine = ["","","","","",""];
-    const revBlankMontant = ["","","","",""];
-    const revCombinedHeader = ["Personne","Catégorie","Ligne","Type","Catégorie récurrente","Signe","",
-      "Personne","Catégorie","Ligne","Mois","Montant"];
-    const revCombinedData = [revCombinedHeader];
-    for(let i=0;i<revRowCount;i++){
-      revCombinedData.push([...(revLinesRows[i]||revBlankLine), "", ...(revMontantsRows[i]||revBlankMontant)]);
-    }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(revCombinedData), "Revenus");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Type","Catégorie récurrente","Signe"], ...revLinesRows]), "Revenus_Lignes");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Personne","Catégorie","Ligne","Mois","Montant"], ...revMontantsRows]), "Revenus_Montants");
   }
 
   if(scope.sante && window.__SF_SANTE_DATA && window.__SF_SANTE_DATA.buildSanteExportRows && Store.santeItems.length){
