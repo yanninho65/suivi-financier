@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.28.03.05";
+const APP_VERSION = "v 2026.08.28.14.17";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -2481,6 +2481,8 @@ let txnFullyShownGroup = null; // clé du groupe actuellement en "Afficher tout"
 let txnOpenGroups = new Map(); // clé de groupe -> true/false (dépassement individuel du réglage "tout déplier/replier")
 let pendingImport = null; // {txns, skipped, total, fileName, isJson}
 let detailTxnId = null;
+let txnNavActive = null; // {prev(), next()} exposé par la fiche transaction quand elle a une liste de
+  // navigation (prev/suiv) ; lu par le listener clavier global ; remis à null par closeOverlay("overlay-detail")
 
 const DIM_FIELD = {groupe:"groupe", categorie:"categorie", personne:"personne", compte:"compte"};
 const DIM_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne", compte:"Compte"};
@@ -2626,6 +2628,22 @@ function buildShell(){
   };
   document.getElementById("overlay-revfilter").onclick = (e)=>{ if(e.target.id==="overlay-revfilter") closeOverlay("overlay-revfilter"); };
 
+  // Navigation clavier (flèches gauche/droite) entre transactions dans la fiche détail, quand elle a été
+  // ouverte avec un contexte de liste (cf. txnNavActive, posé par renderTxnDetail). Un seul listener global
+  // posé une fois ; il ne fait rien tant que txnNavActive est vide, et s'efface si un autre panneau
+  // (confirmation, sélecteur) est ouvert par-dessus ou qu'on tape dans un champ texte.
+  document.addEventListener("keydown", (e)=>{
+    if(!txnNavActive) return;
+    if(e.key!=="ArrowLeft" && e.key!=="ArrowRight") return;
+    const ae = document.activeElement;
+    if(ae && (ae.tagName==="INPUT" || ae.tagName==="TEXTAREA")) return;
+    if(!document.getElementById("overlay-detail").classList.contains("open")) return;
+    if(document.getElementById("overlay-confirm").classList.contains("open")) return;
+    if(document.getElementById("overlay-picker").classList.contains("open")) return;
+    e.preventDefault();
+    if(e.key==="ArrowLeft") txnNavActive.prev(); else txnNavActive.next();
+  });
+
   applyThemeToDom();
 }
 
@@ -2661,7 +2679,17 @@ function openMoreMenu(){
   openOverlay("overlay-more");
 }
 
-function closeOverlay(id){ document.getElementById(id).classList.remove("open"); }
+function closeOverlay(id){
+  document.getElementById(id).classList.remove("open");
+  if(id==="overlay-detail"){
+    // modal-detail est réutilisé par de nombreuses fiches (transaction, réordonner comptes, soldes
+    // personnalisés, budget…) : on nettoie systématiquement l'état et les gestes de swipe de la fiche
+    // transaction pour éviter qu'ils ne restent actifs par erreur sur la prochaine fiche affichée.
+    txnNavActive = null;
+    const modalEl = document.getElementById("modal-detail");
+    if(modalEl){ modalEl.ontouchstart = null; modalEl.ontouchend = null; }
+  }
+}
 function openOverlay(id){ document.getElementById(id).classList.add("open"); }
 
 /* Boîte de dialogue de confirmation générique (utilisée avant toute action de suppression).
@@ -2775,7 +2803,8 @@ window.__SF_APP = {
          get txnPerGroupShown(){return txnPerGroupShown;},
          get txnFullyShownGroup(){return txnFullyShownGroup;}, set txnFullyShownGroup(v){txnFullyShownGroup=v;},
          get txnOpenGroups(){return txnOpenGroups;},
-         get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;}},
+         get detailTxnId(){return detailTxnId;}, set detailTxnId(v){detailTxnId=v;},
+         get txnNavActive(){return txnNavActive;}, set txnNavActive(v){txnNavActive=v;}},
   DIM_FIELD, DIM_LABEL, GROUPBY_LABEL, PALETTE,
   pendingImportRef:{get(){return pendingImport;}, set(v){pendingImport=v;}}
 };
@@ -2835,7 +2864,7 @@ function txnLine3(t){
 }
 
 /* ================= TRANSACTIONS LIST ================= */
-function makeTxnItemEl(t){
+function makeTxnItemEl(t, navIds){
   const el = document.createElement("div");
   el.className = "txn-item";
   const cls = txnTypeClass(t);
@@ -2851,7 +2880,7 @@ function makeTxnItemEl(t){
       <div class="txn-amt ${cls}">${t.type==="Transfer" ? U.fmtMoney(t.montant) : U.fmtMoneySigned(t.montant)}</div>
     </div>
   `;
-  el.onclick = ()=> openTxnDetail(t.id);
+  el.onclick = ()=> openTxnDetail(t.id, navIds);
   return el;
 }
 
@@ -2913,6 +2942,16 @@ function computeTxnGroups(filtered, groupBy){
   return arr;
 }
 
+/* Ordre "à plat" (toutes les transactions filtrées, tous groupes confondus, dans l'ordre visuel exact —
+   groupes puis éléments triés comme dans computeTxnGroups) : sert de base à la navigation précédent/suivant
+   de la fiche transaction, indépendamment des groupes repliés ou du nombre d'éléments actuellement affichés
+   (pagination/scroll infini n'en tronquent pas la portée). */
+function flattenTxnGroupIds(arr){
+  const ids = [];
+  arr.forEach(g=> g.items.forEach(t=> ids.push(t.id)));
+  return ids;
+}
+
 let txnScrollObserver = null;
 
 function renderTransactions(){
@@ -2963,7 +3002,8 @@ function renderTransactions(){
   const sentinel = document.getElementById("txn-scroll-sentinel");
 
   const arr = computeTxnGroups(filtered, groupBy);
-  renderTxnGroupCards(listSection, arr);
+  const navIds = flattenTxnGroupIds(arr);
+  renderTxnGroupCards(listSection, arr, navIds);
   setupTxnInfiniteScroll(sentinel, arr);
 }
 
@@ -2988,7 +3028,7 @@ function wireViewIndicator(){
    (Store.settings.txnGroupsExpanded, persistant) ; un dépassement individuel (clic sur un groupe
    précis) est mémorisé le temps de la session (APP.state.txnOpenGroups) afin de survivre aux
    re-rendus déclenchés par "Afficher plus" ou par le chargement automatique au scroll. */
-function renderTxnGroupCards(listSection, arr){
+function renderTxnGroupCards(listSection, arr, navIds){
   const groupsShown = APP.state.txnGroupsShown;
   const shownGroups = arr.slice(0, groupsShown);
   const perGroupMap = APP.state.txnPerGroupShown;
@@ -3025,7 +3065,7 @@ function renderTxnGroupCards(listSection, arr){
     const body = document.createElement("div");
     body.style.cssText = "padding:0 0 10px;";
     itemsToShow.forEach(t=>{
-      const el = makeTxnItemEl(t);
+      const el = makeTxnItemEl(t, navIds);
       el.style.margin = "6px 6px 0";
       body.appendChild(el);
     });
@@ -3116,11 +3156,11 @@ const TYPE_LABEL_FR = {Income:"Revenu", Expense:"Dépense", Transfer:"Transfert"
 const TYPE_LABEL_FR_TO_CODE = {"Revenu":"Income", "Dépense":"Expense", "Transfert":"Transfer"};
 const TAP_CHEVRON = `<span style="color:var(--text-faint);display:inline-flex;vertical-align:middle;margin-left:4px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:12px;height:12px;transform:rotate(180deg);" ')}</span>`;
 
-function openTxnDetail(id){ renderTxnDetail(id, null); }
+function openTxnDetail(id, navIds){ renderTxnDetail(id, null, navIds||null); }
 function openTxnNew(){ renderTxnDetail(null, null); }
 function openTxnEdit(id){ renderTxnDetail(id, null); } // alias conservé (compat)
 
-function renderTxnDetail(id, seed){
+function renderTxnDetail(id, seed, navList){
   const isNew = !id;
   let currentId = id;
   const draft = !isNew ? null : Object.assign({
@@ -3132,7 +3172,25 @@ function renderTxnDetail(id, seed){
     montant:seed.montant, montantSet:true, dateISO:seed.dateISO
   } : {});
 
+  /* Navigation précédent/suivant : `nav` est un instantané figé (copie) de l'ordre d'affichage au moment
+     de l'ouverture — jamais recalculé depuis les filtres tant que la fiche reste ouverte. Ainsi, changer un
+     champ qui ferait sortir la transaction du filtre actif (ex. changer de groupe alors qu'on est filtré sur
+     un groupe) ne la fait pas disparaître de la séquence de navigation, et plusieurs modifications à la
+     suite restent naviguables. `nav[navIndex]` est mis à jour avec le nouvel id à chaque modification
+     (l'id est dérivé du contenu, cf. buildTxnId) pour que la position suive la transaction éditée. */
+  let nav = (!isNew && Array.isArray(navList) && navList.length>1 && navList.indexOf(id)!==-1) ? navList.slice() : null;
+  let navIndex = nav ? nav.indexOf(id) : -1;
+
   function current(){ return isNew ? draft : Store.transactions.find(x=>x.id===currentId); }
+
+  function goToNavIndex(newIndex){
+    if(!nav || newIndex<0 || newIndex>=nav.length) return;
+    navIndex = newIndex;
+    currentId = nav[navIndex];
+    render();
+  }
+  function goPrev(){ goToNavIndex(navIndex-1); }
+  function goNext(){ goToNavIndex(navIndex+1); }
 
   /* Fusionne `patch` (un ou plusieurs champs) dans la transaction et enregistre. Pour une transaction
      existante, reconstruit une ligne complète (rowToTxn a besoin de tous les champs à la fois) et remplace
@@ -3160,6 +3218,7 @@ function renderTxnDetail(id, seed){
     Store.transactions[idx] = updated;
     currentId = updated.id;
     APP.state.detailTxnId = currentId;
+    if(nav && navIndex>=0) nav[navIndex] = currentId;
     render();
     APP.refreshCurrentTab();
     Store.saveTransactions().then(ok=>{
@@ -3214,8 +3273,10 @@ function renderTxnDetail(id, seed){
           <button class="btn btn-ghost" id="td-cancel" style="flex:1;">Annuler</button>
           <button class="btn btn-primary" id="td-save" style="flex:1;">Enregistrer</button>
         ` : `
-          <button class="btn btn-ghost" id="td-duplicate" style="flex:1;">${ICONS.copy}Dupliquer</button>
-          <button class="btn btn-ghost" id="td-delete" style="flex:1;color:var(--expense);">${ICONS.trash}Supprimer</button>
+          ${nav ? `<button type="button" class="icon-btn" id="td-nav-prev" title="Transaction précédente" aria-label="Transaction précédente" ${navIndex<=0?'disabled':''} style="flex:0 0 auto;width:44px;height:44px;${navIndex<=0?'opacity:.35;':''}">${ICONS.arrowLeft}</button>` : ""}
+          <button class="btn btn-ghost" id="td-duplicate" title="Dupliquer" aria-label="Dupliquer" style="flex:1;justify-content:center;">${ICONS.copy}</button>
+          <button class="btn btn-ghost" id="td-delete" title="Supprimer" aria-label="Supprimer" style="flex:1;justify-content:center;color:var(--expense);">${ICONS.trash}</button>
+          ${nav ? `<button type="button" class="icon-btn" id="td-nav-next" title="Transaction suivante" aria-label="Transaction suivante" ${navIndex>=nav.length-1?'disabled':''} style="flex:0 0 auto;width:44px;height:44px;${navIndex>=nav.length-1?'opacity:.35;':''}">${ICONS.arrowLeft.replace('<svg ','<svg style="transform:rotate(180deg);" ')}</button>` : ""}
         `}
       </div>
     `;
@@ -3348,7 +3409,37 @@ function renderTxnDetail(id, seed){
           }
         });
       };
+      if(nav){
+        const prevBtn = document.getElementById("td-nav-prev");
+        const nextBtn = document.getElementById("td-nav-next");
+        if(prevBtn) prevBtn.onclick = goPrev;
+        if(nextBtn) nextBtn.onclick = goNext;
+      }
     }
+  }
+
+  if(nav){
+    // Navigation clavier globale (cf. buildShell) : lit prev()/next() tant que la fiche est ouverte.
+    APP.state.txnNavActive = {prev:goPrev, next:goNext};
+    // Balayage tactile gauche/droite sur la fiche (comme une pile de photos : on glisse vers la gauche
+    // pour avancer, vers la droite pour reculer). Affecté en propriété (.ontouchstart/.ontouchend) plutôt
+    // qu'avec addEventListener pour que la prochaine fiche réutilisant modal-detail écrase proprement ces
+    // gestionnaires sans les cumuler ; ils sont aussi explicitement effacés par closeOverlay("overlay-detail").
+    const modalEl = document.getElementById("modal-detail");
+    let touchStartX=0, touchStartY=0, touchActive=false;
+    modalEl.ontouchstart = (e)=>{
+      const t = e.touches[0];
+      touchStartX = t.clientX; touchStartY = t.clientY; touchActive = true;
+    };
+    modalEl.ontouchend = (e)=>{
+      if(!touchActive) return;
+      touchActive = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX, dy = t.clientY - touchStartY;
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5){
+        if(dx>0) goPrev(); else goNext();
+      }
+    };
   }
 
   render();
