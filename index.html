@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.28.02.15";
+const APP_VERSION = "v 2026.08.28.03.05";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -694,7 +694,7 @@ window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,M
 const U = window.__SF_UTILS;
 
 const LS_SETTINGS = "sf_settings_v1";
-const LS_KEY_LEGACY = "sf_transactions_v1"; // ancien emplacement (localStorage), migré automatiquement
+const LS_KEY_LEGACY = "sf_transactions_v1"; // repli localStorage pour les transactions, si IndexedDB indisponible
 const LS_KEY_SANTE_LEGACY = "sf_sante_items_v1"; // repli localStorage pour les soins (onglet Santé)
 /* Clés des 6 listes déroulantes personnalisables de l'onglet Santé (réglages propres à l'onglet,
    modifiables depuis Santé > Réglages — cf. window.__SF_SANTE_SETTINGS). Le Groupe n'en fait PAS partie :
@@ -788,14 +788,6 @@ const Store = {
       const raw = await idbGet("transactions");
       if(raw){
         this.transactions = JSON.parse(raw).map(t=>({...t, date:new Date(t.date)}));
-      } else {
-        // Migration depuis l'ancienne version (localStorage) si elle existe
-        const legacy = localStorage.getItem(LS_KEY_LEGACY);
-        if(legacy){
-          this.transactions = JSON.parse(legacy).map(t=>({...t, date:new Date(t.date)}));
-          await idbSet("transactions", legacy);
-          localStorage.removeItem(LS_KEY_LEGACY);
-        }
       }
     }catch(e){
       console.warn("IndexedDB indisponible, repli sur localStorage", e);
