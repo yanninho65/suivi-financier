@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.30.22.46";
+const APP_VERSION = "v 2026.08.30.23.24";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4621,18 +4621,37 @@ function compareHeaderRowHtml(){
   const th = (t)=>`<span style="font-size:9px;font-weight:800;color:var(--text-sub);text-transform:uppercase;letter-spacing:.2px;text-align:right;">${t}</span>`;
   return `<div style="display:grid;grid-template-columns:${BG_CMP_COLS};gap:5px;padding:0 0 3px;"><span></span>${th("Résultat")}${th("Comparé")}${th("Variation")}</div>`;
 }
-function compareRowHtml(label, resultVal, compareVal, opts){
+/* clickAttrs (optionnel) rend la cellule "Comparé" individuellement cliquable, via la classe .bg-cmp-cell —
+   ouvre la même feuille de détail (catégorie/voyage/groupe, badges Réel/Amorti/Ajouts filtrables) que le
+   scénario principal, mais avec les montants du scénario comparé (autre période) : voir le wiring central
+   dans renderBudget. Sans clickAttrs, la cellule reste un simple texte (comportement d'origine) — les
+   colonnes Résultat et Variation ne sont jamais individuellement cliquables : un clic dessus continue de
+   remonter au gestionnaire de la ligne entière (scénario principal, comme avant). */
+function compareRowHtml(label, resultVal, compareVal, opts, clickAttrs){
   opts = opts || {};
   const diff = resultVal - compareVal;
   const color = diff>0 ? "var(--income)" : diff<0 ? "var(--expense)" : "var(--text-sub)";
   const labelSize = opts.big ? "13.5px" : "12.5px";
   const labelWeight = opts.big ? 800 : 600;
   const valSize = opts.big ? "12px" : "11px";
+  const cmpBaseStyle = `font-size:${valSize};font-weight:600;text-align:right;color:var(--text-sub);`;
+  const cmpCell = (()=>{
+    if(!clickAttrs) return `<span style="${cmpBaseStyle}">${bgFmtMoney(compareVal)}</span>`;
+    const dataAttrs = [
+      `data-sheet="${U.escHtml(clickAttrs.sheet)}"`,
+      clickAttrs.supergroupe!=null ? `data-supergroupe="${U.escHtml(clickAttrs.supergroupe)}"` : "",
+      clickAttrs.cat!=null ? `data-cat="${U.escHtml(clickAttrs.cat)}"` : "",
+      clickAttrs.voy!=null ? `data-voy="${U.escHtml(clickAttrs.voy)}"` : "",
+      clickAttrs.groups ? `data-groups="${U.escHtml(clickAttrs.groups)}"` : "",
+      `data-type="${U.escHtml(clickAttrs.type||"")}"`,
+    ].join(" ");
+    return `<span class="bg-cmp-cell" ${dataAttrs} style="cursor:pointer;${cmpBaseStyle}">${bgFmtMoney(compareVal)}</span>`;
+  })();
   return `
     <div style="display:grid;grid-template-columns:${BG_CMP_COLS};gap:5px;align-items:baseline;">
       <span style="font-size:${labelSize};font-weight:${labelWeight};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(label)}</span>
       <span style="font-size:${valSize};font-weight:800;text-align:right;color:${resultVal<0?'var(--expense)':'var(--income)'};">${bgFmtMoneySigned(resultVal)}</span>
-      <span style="font-size:${valSize};font-weight:600;text-align:right;color:var(--text-sub);">${bgFmtMoney(compareVal)}</span>
+      ${cmpCell}
       <span style="font-size:${valSize};font-weight:800;text-align:right;color:${color};">${bgFmtMoneySigned(diff)}</span>
     </div>
   `;
@@ -5203,7 +5222,7 @@ function collapsibleRowsHtml(sectionKey, label, color, list, rowsHtml, dv, click
             <svg class="chev-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M6 9l6 6 6-6"/></svg>
           </div>
           <div class="bg-section-total" data-supergroupe="${U.escHtml(clickAttrs.supergroupe)}" data-type="${U.escHtml(clickAttrs.type||"")}" style="cursor:pointer;">
-            ${compareRowHtml("Total "+label.toLowerCase(), total, compareVal, {big:false})}
+            ${compareRowHtml("Total "+label.toLowerCase(), total, compareVal, {big:false}, {sheet:"group", supergroupe:clickAttrs.supergroupe, type:clickAttrs.type||""})}
           </div>
         </summary>
         ${rowsHtml(list)}
@@ -5261,7 +5280,7 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
     if(compareCtx){
       return `
       <div class="detail-row budget-cat-row" data-cat="${U.escHtml(c.key)}" data-supergroupe="${U.escHtml(title)}" style="cursor:pointer;display:block;padding:6px 2px;">
-        ${compareRowHtml(c.label||c.key, val, compareCategoryTotal(compareCtx, title, c.key), {big:false})}
+        ${compareRowHtml(c.label||c.key, val, compareCategoryTotal(compareCtx, title, c.key), {big:false}, {sheet:"cat", supergroupe:title, cat:c.key})}
       </div>`;
     }
     if(detailOn){
@@ -5342,7 +5361,7 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   const totalRowHtml = compareCtx ? `
       ${headerHtml}
       <div class="detail-row bg-typetxn-row" data-supergroupe="${U.escHtml(title)}" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
-        ${compareRowHtml("Total", cardNet, cmp.total, {big:true})}
+        ${compareRowHtml("Total", cardNet, cmp.total, {big:true}, {sheet:"group", supergroupe:title, type:""})}
       </div>
   ` : detailOn ? `
       ${headerHtml}
@@ -5362,7 +5381,7 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
      période affichée. */
   const voyagesHtml = compareCtx ? `
       <div class="bg-section-total" data-supergroupe="${U.escHtml(title)}" data-type="Voyage" style="cursor:pointer;margin-top:8px;">
-        ${compareRowHtml("Total voyages", dv(res.voyNet), cmpVoyage, {big:false})}
+        ${compareRowHtml("Total voyages", dv(res.voyNet), cmpVoyage, {big:false}, {sheet:"group", supergroupe:title, type:"Voyage"})}
       </div>
   ` : (res.voyages.length ? collapsibleRowsHtml(title+"::voy::all", "Voyages", (res.voyNet<0?'var(--expense)':'var(--income)'), res.voyages, voyRowsHtml, dv, {supergroupe:title, type:"Voyage"}, null, detailOn?{mode, real:voyBreak.real, amort:voyBreak.amort, adj:voyBreak.adj}:null) : "");
   const html = `
@@ -5622,16 +5641,16 @@ function renderBudget(){
       <div class="card" style="margin-bottom:14px;">
         ${compareCtx ? `
         <div class="detail-row bg-typetxn-all-row" data-type="" style="cursor:pointer;display:block;padding:0 0 6px;">
-          ${compareRowHtml("Total tous groupes", dv(grandNet), grandCmp.total, {big:true})}
+          ${compareRowHtml("Total tous groupes", dv(grandNet), grandCmp.total, {big:true}, {sheet:"group", groups:allGroupNames.join("||"), type:""})}
         </div>
         <div class="detail-row bg-typetxn-all-row" data-type="Income" style="cursor:pointer;display:block;padding:6px 0;">
-          ${compareRowHtml("Revenus", dv(grandCatIncome), grandCmp.income, {big:false})}
+          ${compareRowHtml("Revenus", dv(grandCatIncome), grandCmp.income, {big:false}, {sheet:"group", groups:allGroupNames.join("||"), type:"Income"})}
         </div>
         <div class="detail-row bg-typetxn-all-row" data-type="Expense" style="cursor:pointer;display:block;padding:6px 0;">
-          ${compareRowHtml("Dépenses", dv(grandCatExpense), grandCmp.expense, {big:false})}
+          ${compareRowHtml("Dépenses", dv(grandCatExpense), grandCmp.expense, {big:false}, {sheet:"group", groups:allGroupNames.join("||"), type:"Expense"})}
         </div>
         <div class="detail-row bg-typetxn-all-row" data-type="Voyage" style="cursor:pointer;display:block;padding:6px 0;">
-          ${compareRowHtml("Voyages", dv(grandVoyNet), grandCmp.voyage, {big:false})}
+          ${compareRowHtml("Voyages", dv(grandVoyNet), grandCmp.voyage, {big:false}, {sheet:"group", groups:allGroupNames.join("||"), type:"Voyage"})}
         </div>
         ` : detailOn ? `
         <div style="display:block;padding:0 0 6px;">
@@ -5825,6 +5844,32 @@ function renderBudget(){
       }
     };
   });
+  /* Cellule "Comparé" (colonne du milieu des lignes de comparaison) : ouvre exactement la même feuille de
+     détail que le scénario principal (mêmes badges Réel/Amorti/Ajouts, même liste filtrable), mais avec les
+     montants de la période comparée — voir opts.periodOverride dans openCategoryTxnSheet/openVoyageTxnSheet/
+     openGroupTypeTxnSheet. En mode "Budget prédéfini" (pas de transactions sous-jacentes), ouvre à la place
+     l'éditeur du budget prédéfini, seule source réelle de ce montant. */
+  document.querySelectorAll(".bg-cmp-cell[data-sheet]").forEach(el=>{
+    el.onclick = (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      const cmpNow = Store.settings.budget.compare;
+      if(!cmpNow || !cmpNow.enabled) return;
+      if(cmpNow.mode==="predefined"){ openPredefinedBudgetSheet(); return; }
+      if(!cmpNow.periodFrom || !cmpNow.periodTo) return;
+      const periodOverride = {from: cmpNow.periodFrom, to: cmpNow.periodTo};
+      const sheet = el.dataset.sheet;
+      if(sheet==="cat"){
+        if(isSalaryCategory(el.dataset.cat)) openSalaryEditor(el.dataset.supergroupe, el.dataset.cat);
+        else openCategoryTxnSheet(el.dataset.supergroupe, el.dataset.cat, {periodOverride});
+      } else if(sheet==="voy"){
+        openVoyageTxnSheet(el.dataset.supergroupe, el.dataset.voy, {periodOverride});
+      } else if(sheet==="group"){
+        const names = el.dataset.groups ? el.dataset.groups.split("||") : [el.dataset.supergroupe];
+        openGroupTypeTxnSheet(names, el.dataset.type || null, {periodOverride});
+      }
+    };
+  });
   document.querySelectorAll(".bg-cv-section[data-section-key]").forEach(el=>{
     el.addEventListener("toggle", function(){
       allSectionsOpen = this.open;
@@ -5843,7 +5888,10 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   // boundsMonths = période affichée complète (pour le calcul de fenêtre d'amortissement, cf.
   // amortWindowMonths/computeAmortPeriodMonths) ; months = soit cette même période (comportement d'origine),
   // soit un seul mois quand opts.month est fourni (clic sur une cellule de la vue "mois par mois").
-  const boundsMonths = monthsInRange(periodFrom, periodTo);
+  // opts.periodOverride ({from, to}) : clic sur la cellule "Comparé" d'une ligne de comparaison — la feuille
+  // s'ouvre alors sur la période comparée au lieu de la période principale affichée, avec exactement le même
+  // comportement (badges Réel/Amorti/Ajouts, filtrage, amortissement) que pour le scénario principal.
+  const boundsMonths = opts.periodOverride ? monthsInRange(opts.periodOverride.from, opts.periodOverride.to) : monthsInRange(periodFrom, periodTo);
   const months = opts.month ? [opts.month] : boundsMonths;
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
@@ -6082,8 +6130,9 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
   const cfg = Store.settings.budget;
   // boundsMonths = période affichée complète ; months = cette même période, ou un seul mois si opts.month
-  // est fourni (clic sur une cellule de la vue "mois par mois") — voir openCategoryTxnSheet ci-dessus.
-  const boundsMonths = monthsInRange(periodFrom, periodTo);
+  // est fourni (clic sur une cellule de la vue "mois par mois"), ou la période comparée si opts.periodOverride
+  // est fourni (clic sur la cellule "Comparé") — voir openCategoryTxnSheet ci-dessus.
+  const boundsMonths = opts.periodOverride ? monthsInRange(opts.periodOverride.from, opts.periodOverride.to) : monthsInRange(periodFrom, periodTo);
   const months = opts.month ? [opts.month] : boundsMonths;
   const monthSet = new Set(months);
   const scopeMult = cfg.scope==="couple" ? 2 : 1;
@@ -6311,7 +6360,9 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
 function openGroupTypeTxnSheet(superGroupeNames, type, opts){
   opts = opts || {};
   const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
-  const months = monthsInRange(periodFrom, periodTo);
+  // opts.periodOverride ({from, to}) : clic sur la cellule "Comparé" d'une ligne de comparaison — voir
+  // openCategoryTxnSheet plus haut pour le même principe.
+  const months = opts.periodOverride ? monthsInRange(opts.periodOverride.from, opts.periodOverride.to) : monthsInRange(periodFrom, periodTo);
   const items = collectGroupTypeItemsDetailed(names, type, months);
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
 
