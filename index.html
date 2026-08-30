@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.28.14.17";
+const APP_VERSION = "v 2026.08.30.22.46";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4574,6 +4574,33 @@ function compareVoyageTotal(ctx, groupName){
   const r = compareGroupResult(ctx, groupName);
   return r ? r.voyNet/ctx.divisor : 0;
 }
+/* Catégories alimentées uniquement dans le scénario comparé (absentes du scénario principal pour ce
+   groupe sur la période affichée) — doivent tout de même apparaître, montant principal à 0, plutôt que
+   d'être masquées : sans cela leur valeur comparée serait à la fois invisible ET absente des totaux
+   Revenus/Dépenses (et donc du grand total). Le type (Revenus/Dépenses) suit le classement global de la
+   catégorie (classifyCategoryTypes, mêmes règles/overrides que partout ailleurs dans l'app), jamais le
+   signe de la valeur comparée : une ligne à 0/0 côté principal n'a pas de signe propre. */
+function compareOnlyCategories(compareCtx, groupName, mainCatKeys){
+  if(!compareCtx) return [];
+  const extraKeys = new Set();
+  if(compareCtx.type==="period"){
+    const r = compareGroupResult(compareCtx, groupName);
+    if(r) r.categories.forEach(c=>{ if(!mainCatKeys.has(c.key)) extraKeys.add(c.key); });
+  } else if(compareCtx.type==="predefined"){
+    const prefix = groupName+"::cat::";
+    Object.keys(compareCtx.predefined||{}).forEach(k=>{
+      if(!k.startsWith(prefix)) return;
+      const catKey = k.slice(prefix.length);
+      if(!mainCatKeys.has(catKey)) extraKeys.add(catKey);
+    });
+  }
+  if(!extraKeys.size) return [];
+  const typeMap = AGG.classifyCategoryTypes(Store.transactions);
+  return Array.from(extraKeys).sort((a,b)=>a.localeCompare(b,'fr')).map(key=>({
+    key, label: key, income:0, expense:0, realIncome:0, realExpense:0, amortIncome:0, amortExpense:0, adjIncome:0, adjExpense:0,
+    __compareOnlyType: typeMap.get(key) || "Expense"
+  }));
+}
 /* Tableau à trois colonnes (Résultat / Comparé / Variation) affiché quand la comparaison est active.
    BG_CMP_COLS fixe les proportions des colonnes (libellé + 3 valeurs), partagées entre l'en-tête
    (compareHeaderRowHtml, affiché une fois en haut de chaque carte/bloc) et chaque ligne (compareRowHtml) —
@@ -5265,6 +5292,14 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
     </div>
   `;}).join("");
   const catSplit = splitIncomeExpense(res.categories);
+  if(compareCtx){
+    const mainCatKeys = new Set(res.categories.map(c=>c.key));
+    compareOnlyCategories(compareCtx, title, mainCatKeys).forEach(c=>{
+      (c.__compareOnlyType==="Income" ? catSplit.income : catSplit.expense).push(c);
+    });
+    catSplit.income.sort((a,b)=>a.key.localeCompare(b.key,'fr'));
+    catSplit.expense.sort((a,b)=>a.key.localeCompare(b.key,'fr'));
+  }
   const cardNet = dv(res.net);
   let cmp = null;
   let cmpIncome = null, cmpExpense = null, cmpVoyage = null;
