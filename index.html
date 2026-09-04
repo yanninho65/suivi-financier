@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.08.30.23.24";
+const APP_VERSION = "v 2026.09.03.18.40";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -3464,6 +3464,9 @@ function renderPickerList(opts){
     const sectionNames = h.preSorted ? Array.from(h.sections.keys()) : Array.from(h.sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
     const headerSelectable = h.selectableHeaders !== false;
     const openByDefault = !!h.expandedByDefault;
+    // kindFn (optionnel) : icône préfixant chaque groupe précis (jamais les en-têtes de groupe de groupe,
+    // cf. adjustmentGroupHierarchy) — absent partout ailleurs, donc sans effet sur les autres pickers.
+    const iconHtml = h.kindFn ? h.kindFn : ()=>"";
     let html = sectionNames.map((sup,idx)=>{
       const children = h.preSorted ? h.sections.get(sup).slice() : h.sections.get(sup).slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
       return `<div class="groupe-section">
@@ -3475,7 +3478,7 @@ function renderPickerList(opts){
         <div class="groupe-section-children" id="pk-hsec-${idx}" style="display:${openByDefault?'block':'none'};">
           ${children.map(c=>`
             <div class="check-item ${c.base===opts.value?'selected':''}" data-pv="${U.escHtml(c.base)}">
-              <span class="lbl">${U.escHtml(c.base)}</span><span class="cnt">${c.count}</span>
+              <span class="lbl">${iconHtml(c.base)}${U.escHtml(c.base)}</span><span class="cnt">${c.count}</span>
             </div>
           `).join("")}
         </div>
@@ -3484,7 +3487,7 @@ function renderPickerList(opts){
     const flat = h.flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
     html += flat.map(f=>`
       <div class="check-item ${f.base===opts.value?'selected':''}" data-pv="${U.escHtml(f.base)}">
-        <span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
+        <span class="lbl">${iconHtml(f.base)}${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
       </div>
     `).join("");
     return html;
@@ -4712,10 +4715,6 @@ function detailRowHtml(label, mode, real, amort, adj, opts, clickAttrs){
 }
 
 /* ---------------- Rendu ---------------- */
-function candidateSuperGroupes(){
-  return AGG.distinctValuesGroupeDisplay(Store.transactions).map(v=>v.value).sort((a,b)=>a.localeCompare(b,'fr'));
-}
-
 /* Hiérarchie pour les pickers de groupe du Budget : groupes de groupe (triés alpha) avec leurs groupes
    enfants sélectionnables individuellement, puis les groupes non classés (triés alpha). excludeSet retire
    des entrées précises (ex. le groupe principal déjà choisi) de la liste proposée. */
@@ -4729,6 +4728,25 @@ function groupPickerHierarchy(excludeSet){
   });
   const flat = full.flat.filter(f=>!excludeSet.has(f.base));
   return {sections, flat};
+}
+/* Hiérarchie du picker "Groupe" d'un ajustement : reprend telle quelle AGG.groupeHierarchyChrono (même
+   format que le champ Groupe d'une transaction et que le filtre Groupe de l'onglet Transactions) —
+   groupes de groupe sélectionnables en bloc, triés du plus récent au plus ancien, chaque groupe précis
+   sélectionnable individuellement (trié du plus ancien au plus récent au sein de son groupe de groupe),
+   groupes non classés à part (triés alpha) — au lieu de ne proposer que les groupes de groupe. Un ajustement
+   peut ainsi cibler n'importe quel groupe précis, exactement comme le Groupe principal/les groupes
+   additionnels du Budget (cf. groupSelectionMatches). Un icône Voyage/Vie quotidienne (jamais sur les
+   en-têtes, un groupe de groupe pouvant mélanger les deux types) est ajouté devant chaque groupe précis
+   pour voir en un coup d'œil dans quelle case budgétaire (catégories vs voyages) l'ajustement ira. */
+function adjustmentGroupHierarchy(){
+  const h = AGG.groupeHierarchyChrono(Store.transactions);
+  h.kindFn = (fullName)=>{
+    const kind = AGG.getGroupKind(fullName);
+    const icon = (kind==="voyage" ? ICONS.plane : ICONS.home).replace('<svg ', '<svg style="width:13px;height:13px;" ');
+    const title = kind==="voyage" ? "Voyage" : "Vie quotidienne";
+    return `<span title="${title}" style="display:inline-flex;align-items:center;margin-right:6px;color:var(--text-faint);vertical-align:-2px;">${icon}</span>`;
+  };
+  return h;
 }
 
 /* Chaque borne (début/fin) peut être laissée "Non définie" : un bouton texte remplace alors le sélecteur de
@@ -5077,11 +5095,11 @@ function openAdjustmentsListSheet(){
 
 function openAdjustmentForm(adj, prefill){
   const cfg = Store.settings.budget;
-  const groups = candidateSuperGroupes();
   const cats = AGG.distinctValuesCategorieSorted(Store.transactions).map(c=>c.value);
   const isEdit = !!(adj && adj.__idx!=null);
   const data = adj || Object.assign({month: periodFrom || monthsInRange(periodFrom, periodTo)[0] || "", groupe: cfg.mainGroup||"", categorie:"", montant:"", remarque:"", amorti:false, montantScope: cfg.scope}, prefill||{});
   if(!data.montantScope) data.montantScope = cfg.scope;
+  let selectedGroupe = data.groupe || "";
   const modal = document.getElementById("modal-detail");
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
@@ -5090,10 +5108,7 @@ function openAdjustmentForm(adj, prefill){
     </div>
     <div class="daterange" style="margin-bottom:10px;">
       <input type="month" class="search-mini" id="adjf-month" value="${U.escHtml(data.month||'')}">
-      <select id="adjf-groupe" class="search-mini" style="margin:0;">
-        <option value="">— Groupe —</option>
-        ${groups.map(g=>`<option value="${U.escHtml(g)}" ${data.groupe===g?'selected':''}>${U.escHtml(g)}</option>`).join("")}
-      </select>
+      ${PICKER.fieldPickerBtnHtml("adjf-groupe-btn", "Groupe", selectedGroupe)}
     </div>
     <select id="adjf-cat" class="search-mini" style="margin-bottom:10px;">
       <option value="">— Catégorie (vide = ajustement global au groupe) —</option>
@@ -5130,6 +5145,15 @@ function openAdjustmentForm(adj, prefill){
     </div>
   `;
   document.getElementById("adjf-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+  document.getElementById("adjf-groupe-btn").onclick = ()=> PICKER.openPicker({
+    title:"Groupe", hierarchy: adjustmentGroupHierarchy(), value: selectedGroupe,
+    onSelect:(v)=>{
+      selectedGroupe = v || "";
+      const lbl = document.getElementById("adjf-groupe-btn-label");
+      lbl.textContent = selectedGroupe || "Groupe";
+      lbl.style.color = selectedGroupe ? "" : "var(--text-faint)";
+    }
+  });
   document.getElementById("adjf-amorti-toggle").onclick = (e)=> e.currentTarget.classList.toggle("selected");
   let selectedScope = (data.montantScope==='couple'||data.montantScope==='both') ? data.montantScope : 'perso';
   let selectedViewOnly = !!data.montantViewOnly && selectedScope!=='both';
@@ -5180,7 +5204,7 @@ function openAdjustmentForm(adj, prefill){
   }
   document.getElementById("adjf-save").onclick = ()=>{
     const month = document.getElementById("adjf-month").value;
-    const groupe = document.getElementById("adjf-groupe").value;
+    const groupe = selectedGroupe;
     const categorie = document.getElementById("adjf-cat").value.trim();
     const montant = Number(document.getElementById("adjf-montant").value) || 0;
     const remarque = document.getElementById("adjf-remarque").value.trim();
