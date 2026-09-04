@@ -458,7 +458,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.03.18.40";
+const APP_VERSION = "v 2026.09.04.20.15";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1094,7 +1094,17 @@ function parseParametresSheet(wb){
   const groupDateRange = {};
   const categoryTypeOverride = {};
   if(sheetName){
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false});
+    // raw:true (et non raw:false) pour les cellules Mois voyage/Date début/Date fin (jours) : une cellule
+    // date Excel au format intégré "court" (numFmt 14) n'a pas de représentation textuelle fixe — Excel
+    // l'affiche selon la locale de la machine qui l'a enregistrée, mais SheetJS, à qui cette locale est
+    // inconnue, la formate toujours en anglais "m/d/yy" pour calculer le texte mis en cache. Comme le jour
+    // vaut toujours 1 pour ces deux colonnes, une cellule "01/07/2026" (juillet) se lit alors "7/1/26" et,
+    // réinterprétée par parseDateValue en jour/mois/année (convention de toute l'appli), redevient le 1ᵉʳ
+    // janvier — bug réel corrigé ici (toutes les occurrences retombaient en janvier de leur année). raw:true
+    // renvoie la vraie valeur (objet Date, cellDates:true étant déjà actif à la lecture du classeur) plutôt
+    // que ce texte ambigu ; les autres colonnes de cette feuille sont toutes du texte, non affectées par ce
+    // changement d'option.
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:true});
     rows.forEach(r=>{
       const norm = {};
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
@@ -1349,7 +1359,19 @@ function parseFile(file){
         }
         const sheetName = findDataSheetName(wb);
         const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+        // raw:true (uniquement pour xlsx/xls, jamais pour le CSV, cf. isCsv ci-dessous) plutôt que
+        // raw:false+dateNF : ce dernier n'a d'effet que passé à XLSX.read (avant que le texte affiché de
+        // chaque cellule ne soit mis en cache), pas ici sur sheet_to_json — inefficace tel qu'écrit contre
+        // une cellule Date au format Excel intégré "court" (ambiguïté jour/mois, cf. §7.2 et le correctif
+        // équivalent de parseParametresSheet ci-dessus). raw:true renvoie directement la vraie valeur (objet
+        // Date grâce à cellDates:true, ou numéro de série) : U.parseDateValue la gère sans ambiguïté. Pour le
+        // CSV en revanche, SheetJS devine parfois (à tort, à l'anglo-saxonne MM/JJ) qu'un texte JJ/MM/AAAA
+        // ambigu (JJ ≤ 12) est une date, et c'est justement la reformulation en texte de raw:false, relue
+        // ensuite par U.parseDateValue en jour/mois, qui annule cette erreur — raw:true casserait ce texte
+        // brut pour le CSV en renvoyant directement l'objet Date mal deviné par SheetJS, sans passer par
+        // cette relecture correctrice. Sans effet sur Montant/Type/Remarque/etc., qui restent du texte quel
+        // que soit raw.
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:null, raw: !isCsv});
         const txns = [];
         let skipped = 0;
         rows.forEach(r=>{
@@ -1365,7 +1387,7 @@ function parseFile(file){
         if(!isCsv){
           const santeSheetName = wb.SheetNames.find(n=>U.normalize(n)==="sante");
           if(santeSheetName && window.__SF_SANTE_DATA){
-            const santeRows = XLSX.utils.sheet_to_json(wb.Sheets[santeSheetName], {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+            const santeRows = XLSX.utils.sheet_to_json(wb.Sheets[santeSheetName], {defval:null, raw:true}); // cf. correctif raw:true ci-dessus
             santeItems = [];
             santeRows.forEach(r=>{
               const it = window.__SF_SANTE_DATA.rowToSanteItem(r);
@@ -12087,7 +12109,7 @@ function handleSanteFile(file){
         wb = XLSX.read(data, {type:"array", cellDates:true, raw:false});
       }
       const sheetName = wb.SheetNames.find(n=>U.normalize(n)==="sante") || wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw:false, dateNF:"yyyy-mm-dd"});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:null, raw: !isCsv}); // cf. correctif raw:true (xlsx/xls uniquement, jamais csv), §7.2/§7
       const items = [];
       rows.forEach(r=>{
         const it = rowToSanteItem(r);
