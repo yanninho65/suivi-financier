@@ -248,6 +248,8 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:100px;font-size:13px;font-weight:700;color:var(--text-sub);cursor:pointer;}
 .seg-sm{padding:3px;}
 .seg-sm button{padding:6px 4px;font-size:11px;}
+.seg-xs{padding:2px;}
+.seg-xs button{padding:4px 2px;font-size:9.5px;}
 .pill-toggle-wrap{display:flex;flex-wrap:wrap;gap:8px;}
 .pill-toggle{
   display:inline-flex;align-items:center;border:none;border-radius:100px;
@@ -458,7 +460,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.04.20.15";
+const APP_VERSION = "v 2026.09.04.23.45";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -955,6 +957,7 @@ const Store = {
     if(b.mode!=="amorti" && b.mode!=="brut_ajout") b.mode = "amorti";
     if(typeof b.detailView!=="boolean") b.detailView = false;
     if(typeof b.monthlyView!=="boolean") b.monthlyView = false;
+    if(typeof b.mergeVoyages!=="boolean") b.mergeVoyages = false;
     if(b.startMonth===undefined) b.startMonth = null;
     if(b.endMonth===undefined) b.endMonth = null;
     if(b.mainGroup===undefined) b.mainGroup = null;
@@ -970,6 +973,7 @@ const Store = {
     if(b.compare.periodFrom===undefined) b.compare.periodFrom = null;
     if(b.compare.periodTo===undefined) b.compare.periodTo = null;
     if(!b.compare.predefined || typeof b.compare.predefined!=="object") b.compare.predefined = {};
+    if(!b.compare.predefinedVue || typeof b.compare.predefinedVue!=="object") b.compare.predefinedVue = {};
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -1232,9 +1236,11 @@ function parseParametresSheet(wb){
   }
   const predefSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_predefini");
   let comparePredefined = null;
+  let comparePredefinedVue = null;
   if(predefSheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[predefSheetName], {defval:null, raw:false});
     comparePredefined = {};
+    comparePredefinedVue = {};
     rows.forEach(r=>{
       const norm = {};
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
@@ -1247,6 +1253,11 @@ function parseParametresSheet(wb){
         if(!groupe) return;
         key = (cat && U.normalize(cat)==="(voyages)") ? (groupe+"::voyage") : cat ? (groupe+"::cat::"+cat) : groupe;
       }
+      // "Vue (Amorti/Réel/Les deux)" : absente ou toute valeur non reconnue -> "Les deux" (comportement
+      // historique, montant identique dans les deux vues du budget, cf. §6.3.5).
+      const vueRaw = U.normalize(norm["vue (amorti/reel/les deux)"]||"");
+      if(vueRaw.startsWith("amorti")) comparePredefinedVue[key] = "amorti";
+      else if(vueRaw.startsWith("reel")) comparePredefinedVue[key] = "reel";
       comparePredefined[key] = Number(String(montant).replace(",",".")) || 0;
     });
   }
@@ -1338,7 +1349,7 @@ function parseParametresSheet(wb){
     revenus: !!(revLinesSheetName || revMontantsSheetName),
   };
   return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange,
-    categoryTypeOverride, budgetAdjustments, salaryEntries, comparePredefined,
+    categoryTypeOverride, budgetAdjustments, salaryEntries, comparePredefined, comparePredefinedVue,
     revenus: revenusData, sheetsPresent};
 }
 
@@ -4200,7 +4211,7 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!Store.settings.budget.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -4253,8 +4264,13 @@ function computeGroupBudget(superGroupeName, months, opts){
   const amortSet = new Set(cfg.amortCategories||[]);
   // "amorti" (lissage catégories + ajustements) / "brut_ajout" (pas de lissage, mais ajustements manuels non-amortis
   // pris en compte). Les groupes additionnels restent toujours forcés en brut (forceBrut), quel que soit le mode.
-  const isAmorti = !opts.forceBrut && cfg.mode==="amorti";
-  const applyAdjustments = !opts.forceBrut && (cfg.mode==="amorti" || cfg.mode==="brut_ajout");
+  // opts.mode (optionnel) permet de forcer le calcul dans l'AUTRE mode que celui actuellement affiché
+  // (Store.settings.budget.mode), sans le modifier globalement — utilisé par la comparaison de budget
+  // prédéfini (§6.3.5) pour connaître la part d'amortissement "amorti" même quand la vue affichée est "réelle",
+  // et inversement.
+  const modeUsed = opts.mode || cfg.mode;
+  const isAmorti = !opts.forceBrut && modeUsed==="amorti";
+  const applyAdjustments = !opts.forceBrut && (modeUsed==="amorti" || modeUsed==="brut_ajout");
 
   // catégorie -> {income, expense}
   const catTotals = new Map();
@@ -4282,7 +4298,9 @@ function computeGroupBudget(superGroupeName, months, opts){
     if(!matchesSelection(t)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    const kind = AGG.getGroupKind(t.groupe);
+    // mergeVoyages (§6.3 "Ne pas distinguer les voyages") : traite toute transaction comme "quotidien"
+    // (bucket par catégorie), même si son groupe est de type Voyage — plus de bucket "Voyages" séparé.
+    const kind = cfg.mergeVoyages ? "quotidien" : AGG.getGroupKind(t.groupe);
 
     if(kind==="voyage"){
       // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
@@ -4432,7 +4450,7 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(!matchesSelection(t)) return false;
       if(isAccountExcluded(t.compte)) return false;
       const base = t.groupeBase || U.baseGroupe(t.groupe);
-      if(AGG.getGroupKind(t.groupe)==="voyage") return false;
+      if(!cfg.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return false;
       const cat = t.categorie || "(Non renseigné)";
       if(isSalaryCategory(cat)){ salaryCatKey = cat; return true; }
       return false;
@@ -4523,7 +4541,7 @@ function categoriesForGroup(groupName){
     if(!groupSelectionMatches(t, groupName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!Store.settings.budget.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
     set.add(t.categorie || "(Non renseigné)");
   });
   return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -4550,12 +4568,25 @@ function computeCompareContext(mainMonths){
   const cmp = cfg.compare;
   if(!cmp || !cmp.enabled) return null;
   if(cmp.mode==="predefined"){
+    const effMonthsForGroup = (groupName)=> groupName===cfg.mainGroup ? mainMonths : extraGroupEffectiveMonths(groupName, mainMonths);
     const multForGroup = (groupName)=>{
       if(cfg.displayMode==="moyenne") return 1;
-      const gm = groupName===cfg.mainGroup ? mainMonths : extraGroupEffectiveMonths(groupName, mainMonths);
-      return gm.length || 0;
+      return effMonthsForGroup(groupName).length || 0;
     };
-    return {type:"predefined", predefined: cmp.predefined||{}, multForGroup};
+    // Résultat du groupe recalculé en forçant le mode "amorti", quel que soit le mode actuellement affiché
+    // (cfg.mode) — sert uniquement à connaître la part d'amortissement d'une ligne, pour les lignes de
+    // budget prédéfini scopées à une seule vue (cf. predefinedVueAdjustedValue, §6.3.5). Mis en cache par
+    // groupe (comme compareGroupResult) : un même groupe peut être interrogé pour plusieurs catégories.
+    const amortCache = new Map();
+    const getAmortResult = (groupName)=>{
+      if(!amortCache.has(groupName)){
+        const forceBrut = groupName!==cfg.mainGroup;
+        const gMonths = effMonthsForGroup(groupName);
+        amortCache.set(groupName, {res: computeGroupBudget(groupName, gMonths, {forceBrut, mode:"amorti"}), n: gMonths.length||1});
+      }
+      return amortCache.get(groupName);
+    };
+    return {type:"predefined", predefined: cmp.predefined||{}, predefinedVue: cmp.predefinedVue||{}, multForGroup, getAmortResult};
   }
   if(!cmp.periodFrom || !cmp.periodTo) return null;
   const cMonths = monthsInRange(cmp.periodFrom, cmp.periodTo);
@@ -4577,12 +4608,39 @@ function compareGroupResult(ctx, groupName){
   }
   return ctx.cache.get(groupName);
 }
+/* Ajuste la valeur d'une ligne de budget prédéfini scopée à une seule vue ("amorti" ou "reel",
+   Store.settings.budget.compare.predefinedVue, §6.3.5) selon la vue ACTUELLEMENT affichée
+   (Store.settings.budget.mode) :
+   - scope "amorti" affichée en vue réelle : cette ligne a été pensée pour la vue amortie, sa part
+     d'amortissement n'a pas de sens telle quelle en réel — on la retire (face - amortContribution).
+   - scope "reel" affichée en vue amortie : un montant réel reste pertinent même en vue amortie, il lui
+     manque juste la part d'amortissement (qui n'existe qu'en vue amortie) — on la rajoute (face + amortContribution).
+   - dans la vue qui correspond déjà au scope choisi, ou scope "both"/absent (valeur historique) : la face
+     value est utilisée telle quelle, jamais ajustée.
+   `lookup(res)` extrait la part amortie (amortIncome+amortExpense) de la ligne concernée depuis un résultat
+   de computeGroupBudget forcé en mode "amorti" (cf. ctx.getAmortResult) ; mise à l'échelle Total/Moyenne
+   identique à `face` (÷ nombre de mois effectifs du groupe en vue Moyenne, valeur brute en vue Total). */
+function predefinedVueAdjustedValue(ctx, groupName, key, face, lookup){
+  const vue = (ctx.predefinedVue||{})[key] || "both";
+  if(vue==="both") return face;
+  const currentIsAmorti = Store.settings.budget.mode==="amorti";
+  if((vue==="amorti") === currentIsAmorti) return face;
+  const {res, n} = ctx.getAmortResult(groupName);
+  const raw = lookup(res);
+  const amortContribution = Store.settings.budget.displayMode==="moyenne" ? raw/n : raw;
+  return vue==="amorti" ? face - amortContribution : face + amortContribution;
+}
 /* Valeur comparée pour une ligne catégorie précise d'un groupe. */
 function compareCategoryTotal(ctx, groupName, catKey){
   if(!ctx) return 0;
   if(ctx.type==="predefined"){
-    const raw = Number((ctx.predefined||{})[predefinedCatKey(groupName, catKey)]);
-    return (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
+    const key = predefinedCatKey(groupName, catKey);
+    const raw = Number((ctx.predefined||{})[key]);
+    const face = (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
+    return predefinedVueAdjustedValue(ctx, groupName, key, face, (res)=>{
+      const c = res.categories.find(x=>x.key===catKey);
+      return c ? (c.amortIncome+c.amortExpense) : 0;
+    });
   }
   const r = compareGroupResult(ctx, groupName);
   if(!r) return 0;
@@ -4593,8 +4651,15 @@ function compareCategoryTotal(ctx, groupName, catKey){
 function compareVoyageTotal(ctx, groupName){
   if(!ctx) return 0;
   if(ctx.type==="predefined"){
-    const raw = Number((ctx.predefined||{})[predefinedVoyageKey(groupName)]);
-    return (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
+    const key = predefinedVoyageKey(groupName);
+    const raw = Number((ctx.predefined||{})[key]);
+    const face = (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
+    // Côté voyages, seule la ligne "Ajustements" (adj sans catégorie, cf. computeGroupBudget) peut porter
+    // une part amortie — l'amortissement ne s'applique jamais directement à une transaction de voyage.
+    return predefinedVueAdjustedValue(ctx, groupName, key, face, (res)=>{
+      const adjRow = res.voyages.find(x=>x.key==="__ajustement__");
+      return adjRow ? (adjRow.amortIncome+adjRow.amortExpense) : 0;
+    });
   }
   const r = compareGroupResult(ctx, groupName);
   return r ? r.voyNet/ctx.divisor : 0;
@@ -4898,13 +4963,26 @@ function openPredefinedBudgetSheet(){
   const cfg = Store.settings.budget;
   const cmp = cfg.compare;
   const groups = [cfg.mainGroup].concat((cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup)).filter(Boolean);
+  const VUE_LABELS = {amorti:"Amorti", reel:"Réel", both:"Les 2"};
 
+  function vueRowHtml(key){
+    const v = cmp.predefined[key];
+    if(v==null || v==="") return ""; // pas de montant saisi : la vue n'a pas de sens, rien à afficher
+    const current = cmp.predefinedVue[key] || "both";
+    return `
+      <div class="seg seg-xs pbf-vue-seg" data-key="${U.escHtml(key)}" style="margin:2px 0 8px;">
+        ${["amorti","reel","both"].map(v2=>`<button data-v="${v2}" class="${current===v2?'active':''}">${VUE_LABELS[v2]}</button>`).join("")}
+      </div>`;
+  }
   function fieldHtml(key, label, indent){
     const v = cmp.predefined[key];
     return `
-      <div class="detail-row" style="align-items:center;gap:8px;padding:6px 0;padding-left:${indent?18:0}px;">
-        <span style="font-size:${indent?12.5:13.5}px;font-weight:${indent?600:700};flex:1;min-width:0;">${U.escHtml(label)}</span>
-        <input type="number" step="0.01" inputmode="decimal" class="search-mini pbf-input" data-key="${U.escHtml(key)}" placeholder="0,00 €" value="${v!=null&&v!==''?v:''}" style="flex:0 0 120px;margin:0;text-align:right;">
+      <div>
+        <div class="detail-row" style="align-items:center;gap:8px;padding:6px 0 0;padding-left:${indent?18:0}px;">
+          <span style="font-size:${indent?12.5:13.5}px;font-weight:${indent?600:700};flex:1;min-width:0;">${U.escHtml(label)}</span>
+          <input type="number" step="0.01" inputmode="decimal" class="search-mini pbf-input" data-key="${U.escHtml(key)}" placeholder="0,00 €" value="${v!=null&&v!==''?v:''}" style="flex:0 0 120px;margin:0;text-align:right;">
+        </div>
+        <div style="padding-left:${indent?18:0}px;">${vueRowHtml(key)}</div>
       </div>`;
   }
 
@@ -4927,6 +5005,9 @@ function openPredefinedBudgetSheet(){
       <div style="font-size:11.5px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
         Montant mensuel par catégorie, et un montant mensuel unique "Voyages" couvrant l'ensemble des voyages du groupe (sans distinction entre eux). Les totaux du groupe, de Revenus/Dépenses/Voyages et du grand total sont toujours la somme de ces lignes. Laisser vide pour ne pas comparer cette ligne (0 €).
       </div>
+      <div style="font-size:11px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
+        Sous chaque montant saisi, choisissez la vue à laquelle il correspond : <strong>Amorti</strong> (retiré de la vue Réelle), <strong>Réel</strong> (complété par l'amortissement dans la vue Amort. + ajouts), ou <strong>Les 2</strong> (montant identique dans les deux vues, par défaut).
+      </div>
       <div style="max-height:60vh;overflow-y:auto;">
         ${groupsHtml || `<div class="u-empty-note">Choisissez d'abord un groupe principal.</div>`}
       </div>
@@ -4936,10 +5017,22 @@ function openPredefinedBudgetSheet(){
       inp.onchange = (e)=>{
         const key = e.target.dataset.key;
         const val = e.target.value;
-        if(val===null || val===""){ delete cmp.predefined[key]; }
+        if(val===null || val===""){ delete cmp.predefined[key]; delete cmp.predefinedVue[key]; }
         else cmp.predefined[key] = Number(val) || 0;
         Store.saveSettings();
+        render();
       };
+    });
+    modal.querySelectorAll(".pbf-vue-seg[data-key]").forEach(seg=>{
+      seg.querySelectorAll("button[data-v]").forEach(btn=>{
+        btn.onclick = ()=>{
+          const key = seg.dataset.key;
+          const v = btn.dataset.v;
+          if(v==="both") delete cmp.predefinedVue[key]; else cmp.predefinedVue[key] = v;
+          Store.saveSettings();
+          render();
+        };
+      });
     });
   }
   render();
@@ -4975,6 +5068,10 @@ function amortSettingsHtml(){
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Catégories amorties (${selectedAmort.size})</div>
       ${pillToggleListHtml(cats, selectedAmort, "c", "bg-amort-item")}
     </div>` : ""}
+    <div class="check-item ${cfg.mergeVoyages?'selected':''}" id="bg-mergevoyages-toggle" style="margin-top:14px;border-radius:14px;background:var(--card-alt);">
+      <span class="cbox">${ICONS.check}</span><span class="lbl">Ne pas distinguer les voyages</span>
+    </div>
+    <div style="font-size:11px;color:var(--text-sub);margin-top:6px;line-height:1.4;">Si activé : les dépenses/revenus des groupes de type Voyage sont regroupés dans les lignes catégories du groupe, comme une dépense/un revenu du quotidien (date corrigée, amortissement éventuel) — plus de bloc "Voyages" séparé, plus de mois voyage forcé. S'applique à tout l'onglet Budget.</div>
   `;
 }
 function wireAmortSettings(afterChange){
@@ -5002,6 +5099,13 @@ function wireAmortSettings(afterChange){
       if(afterChange) afterChange();
     };
   });
+  const mergeVoyToggle = document.getElementById("bg-mergevoyages-toggle");
+  if(mergeVoyToggle) mergeVoyToggle.onclick = ()=>{
+    cfg.mergeVoyages = !cfg.mergeVoyages;
+    Store.saveSettings();
+    renderBudget();
+    if(afterChange) afterChange();
+  };
 }
 
 function openAmortSheet(){
@@ -5954,7 +6058,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!cfg.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -6321,7 +6425,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     if(!matchedName) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(t.groupe);
-    const isVoyage = kind==="voyage";
+    const isVoyage = !cfg.mergeVoyages && kind==="voyage";
     if(typeFilter==="Voyage" && !isVoyage) return;
     if((typeFilter==="Income" || typeFilter==="Expense") && isVoyage) return;
     const subLabel = isVoyage ? (t.groupe||"") : (t.categorie||"(Non renseigné)");
@@ -9041,6 +9145,7 @@ function applyParamsImport(params, mode){
   const salaryEntries = params.salaryEntries || null;
   const compareSettings = params.compareSettings || null;
   const comparePredefined = params.comparePredefined || null;
+  const comparePredefinedVue = params.comparePredefinedVue || null;
   const evolutionSettings = params.evolutionSettings || null;
   const revenus = params.revenus || null;
   const sheetsPresent = params.sheetsPresent || {};
@@ -9091,6 +9196,7 @@ function applyParamsImport(params, mode){
         periodFrom: budgetSettings.periodFrom || Store.settings.budget.periodFrom,
         periodTo: budgetSettings.periodTo || Store.settings.budget.periodTo,
         excludedAccounts: (budgetSettings.excludedAccounts || []).slice(),
+        mergeVoyages: !!budgetSettings.mergeVoyages,
       });
     }
     if(salaryEntries) Store.settings.budget.salaryEntries = Object.assign({}, salaryEntries);
@@ -9100,10 +9206,12 @@ function applyParamsImport(params, mode){
         mode: compareSettings.mode==="predefined" ? "predefined" : "period",
         periodFrom: compareSettings.periodFrom || null,
         periodTo: compareSettings.periodTo || null,
-        predefined: Object.assign({}, comparePredefined || {})
+        predefined: Object.assign({}, comparePredefined || {}),
+        predefinedVue: Object.assign({}, comparePredefinedVue || {})
       };
-    } else if(comparePredefined){
-      Store.settings.budget.compare.predefined = Object.assign({}, comparePredefined);
+    } else {
+      if(comparePredefined) Store.settings.budget.compare.predefined = Object.assign({}, comparePredefined);
+      if(comparePredefinedVue) Store.settings.budget.compare.predefinedVue = Object.assign({}, comparePredefinedVue);
     }
     if(evolutionSettings){
       if(evolutionSettings.view) Store.settings.evolution.view = evolutionSettings.view;
@@ -9207,6 +9315,13 @@ function applyParamsImport(params, mode){
       if(localPredef[key]==null) localPredef[key] = comparePredefined[key];
     });
     Store.settings.budget.compare.predefined = localPredef;
+  }
+  if(comparePredefinedVue){
+    const localPredefVue = Store.settings.budget.compare.predefinedVue || {};
+    Object.keys(comparePredefinedVue).forEach(key=>{
+      if(localPredefVue[key]==null) localPredefVue[key] = comparePredefinedVue[key];
+    });
+    Store.settings.budget.compare.predefinedVue = localPredefVue;
   }
   // Revenus : n'adopte la configuration importée que si rien n'est encore configuré localement pour
   // aucune des deux personnes (cf. window.__SF_REVENUS.applyParamsImportPart) — jamais d'écrasement.
@@ -9537,6 +9652,7 @@ function buildParamsPayload(){
       periodFrom: budget.periodFrom || null,
       periodTo: budget.periodTo || null,
       excludedAccounts: (budget.excludedAccounts || []).slice(),
+      mergeVoyages: !!budget.mergeVoyages,
     },
     salaryEntries: Object.assign({}, budget.salaryEntries || {}),
     compareSettings: {
@@ -9546,6 +9662,7 @@ function buildParamsPayload(){
       periodTo: (budget.compare && budget.compare.periodTo) || null,
     },
     comparePredefined: Object.assign({}, (budget.compare && budget.compare.predefined) || {}),
+    comparePredefinedVue: Object.assign({}, (budget.compare && budget.compare.predefinedVue) || {}),
     evolutionSettings: {
       view: evo.view || null,
       monthBasis: evo.monthBasis || null,
@@ -9711,12 +9828,15 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salData), "Budget_Salaires");
 
     const cmp = b.compare || {};
+    const predefVueMap = cmp.predefinedVue || {};
+    const PREDEF_VUE_LABEL = {amorti:"Amorti", reel:"Réel", both:"Les deux"};
     const predefEntries = Object.entries(cmp.predefined || {}).sort((x,y)=>x[0].localeCompare(y[0]));
-    const predefHeader = ["Clé","Groupe","Catégorie","Montant mensuel"];
+    const predefHeader = ["Clé","Groupe","Catégorie","Montant mensuel","Vue (Amorti/Réel/Les deux)"];
     const predefData = [predefHeader].concat(predefEntries.map(([key, montant])=>{
-      if(key.endsWith("::voyage")) return [key, key.slice(0, -"::voyage".length), "(Voyages)", montant];
+      const vueLabel = PREDEF_VUE_LABEL[predefVueMap[key]] || "Les deux";
+      if(key.endsWith("::voyage")) return [key, key.slice(0, -"::voyage".length), "(Voyages)", montant, vueLabel];
       const parts = key.split("::cat::");
-      return [key, parts[0]||"", parts.length>1?parts[1]:"", montant];
+      return [key, parts[0]||"", parts.length>1?parts[1]:"", montant, vueLabel];
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(predefData), "Budget_Predefini");
 
