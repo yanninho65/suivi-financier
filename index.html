@@ -460,7 +460,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.05.01.10";
+const APP_VERSION = "v 2026.09.05.02.05";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4047,6 +4047,26 @@ function voyagesMergedForGroup(groupName){
   const cfg = Store.settings.budget;
   return !!cfg.mergeVoyages || (cfg.mergeVoyagesGroups||[]).indexOf(groupName) !== -1;
 }
+/* Résout le(s) mois où une transaction de groupe Voyage doit compter, avec son poids (1 pour un mois
+   unique, 1/12 par mois pour une répartition "yearsplit") : mois voyage forcé (AGG.getGroupVoyageMonth) en
+   priorité — un seul mois, quel que soit le transform — sinon date corrigée (transform "month" : un seul
+   mois : "yearsplit" : les 12 mois de l'année, 1/12 chacun), sinon date réelle. Centralise cette résolution
+   pour que computeGroupBudget (bucket Voyages normal OU catégories fusionnées, cf. voyagesMergedForGroup),
+   openCategoryTxnSheet et collectGroupTypeItemsDetailed restent rigoureusement cohérents entre eux — le
+   regroupement des voyages dans les catégories ne doit jamais changer LE MOIS d'une dépense/d'un revenu,
+   seulement la ligne sous laquelle elle est affichée. */
+function voyageTxnMonths(t){
+  const forced = AGG.getGroupVoyageMonth(t.groupe);
+  if(forced) return [{month: forced, weight: 1}];
+  const tr = t.transform;
+  if(tr.mode==="month") return [{month: tr.year+"-"+U.pad2(tr.month+1), weight: 1}];
+  if(tr.mode==="yearsplit"){
+    const arr = [];
+    for(let m=1;m<=12;m++) arr.push({month: tr.year+"-"+U.pad2(m), weight: 1/12});
+    return arr;
+  }
+  return [{month: t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1), weight: 1}];
+}
 /* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
    clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
    les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
@@ -4220,9 +4240,14 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return;
+    const isRealVoyage = AGG.getGroupKind(t.groupe)==="voyage";
+    if(isRealVoyage && !voyagesMergedForGroup(superGroupeName)) return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
+    if(isRealVoyage){
+      voyageTxnMonths(t).forEach(({month, weight})=>{ if(month===monthKey) total += t.montant*weight; });
+      return;
+    }
     const tr = t.transform;
     if(tr.mode==="yearsplit"){
       const [my] = monthKey.split("-").map(Number);
@@ -4307,39 +4332,23 @@ function computeGroupBudget(superGroupeName, months, opts){
     if(!matchesSelection(t)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    // mergeVoyages / mergeVoyagesGroups (§6.3 "Ne pas distinguer les voyages") : traite toute transaction
-    // comme "quotidien" (bucket par catégorie), même si son groupe est de type Voyage — plus de bucket
-    // "Voyages" séparé pour ce groupe. Réglage global (fiche Amortissement) ou propre à ce groupe précis
-    // (icône avion de sa carte), cf. voyagesMergedForGroup.
-    const kind = voyagesMergedForGroup(superGroupeName) ? "quotidien" : AGG.getGroupKind(t.groupe);
+    const kind = AGG.getGroupKind(t.groupe);
 
     if(kind==="voyage"){
-      // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
-      const forced = AGG.getGroupVoyageMonth(t.groupe);
-      // Le libellé affiché conserve le nom complet du groupe (avec la date entre parenthèses) :
-      // on ne fusionne pas plusieurs séjours du même lieu sous un seul nom de base.
-      let targetMonth = forced;
-      if(!targetMonth){
-        const tr = t.transform;
-        if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
-        else if(tr.mode==="yearsplit"){
-          // réparti sur l'année : on ajoute 1/12 à chaque mois de cette année qui est dans la période affichée
-          for(let m=1;m<=12;m++){
-            const key = tr.year+"-"+U.pad2(m);
-            if(monthSet.has(key)){
-              const o = ensureVoy(t.groupe);
-              const amt = t.montant/12*scopeMult;
-              if(t.type==="Income"){ o.income += amt; o.realIncome += amt; } else { o.expense += amt; o.realExpense += amt; }
-            }
-          }
-          return;
-        } else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
-      }
-      if(monthSet.has(targetMonth)){
-        const o = ensureVoy(t.groupe);
-        const amt = t.montant*scopeMult;
+      // mergeVoyages / mergeVoyagesGroups (§6.3 "Ne pas distinguer les voyages") : quand actif pour ce
+      // groupe, seule la CASE DE DESTINATION change (catégories du groupe au lieu du bucket Voyages) — la
+      // résolution du mois (voyageTxnMonths, mois voyage forcé en priorité) reste rigoureusement identique,
+      // pour que le total du groupe sur la période affichée ne change jamais : seule la répartition entre
+      // les lignes affichées est modifiée. Aucune éligibilité à l'amortissement n'est introduite ici (comme
+      // pour un groupe voyage non fusionné). Le libellé affiché conserve le nom complet du groupe (avec la
+      // date entre parenthèses) : on ne fusionne pas plusieurs séjours du même lieu sous un seul nom de base.
+      const merged = voyagesMergedForGroup(superGroupeName);
+      const o = merged ? ensureCat(t.categorie || "(Non renseigné)") : ensureVoy(t.groupe);
+      voyageTxnMonths(t).forEach(({month, weight})=>{
+        if(!monthSet.has(month)) return;
+        const amt = t.montant*weight*scopeMult;
         if(t.type==="Income"){ o.income += amt; o.realIncome += amt; } else { o.expense += amt; o.realExpense += amt; }
-      }
+      });
       return;
     }
 
@@ -6083,9 +6092,26 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return;
+    const isMergedVoyage = AGG.getGroupKind(t.groupe)==="voyage";
+    if(isMergedVoyage && !voyagesMergedForGroup(superGroupeName)) return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
+    if(isMergedVoyage){
+      // Groupe voyage fusionné dans les catégories (§6.3) : jamais amorti, mois résolu comme dans
+      // computeGroupBudget (mois voyage forcé en priorité) — voir voyageTxnMonths.
+      let displayAmount = 0, matched = false, ysCount = 0;
+      voyageTxnMonths(t).forEach(({month, weight})=>{
+        if(!monthSet.has(month)) return;
+        matched = true;
+        displayAmount += t.montant*weight;
+        if(weight!==1) ysCount++;
+      });
+      if(!matched) return;
+      displayAmount *= scopeMult;
+      const isYearsplit = t.transform.mode==="yearsplit" && !AGG.getGroupVoyageMonth(t.groupe);
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey: t.transform.mode==="month"?(t.transform.year+"-"+U.pad2(t.transform.month+1)):(t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1)), yearsplit: isYearsplit, yearsplitCount: isYearsplit?ysCount:null});
+      return;
+    }
     const tr = t.transform;
     const effMonthKey = tr.mode==="month" ? (tr.year+"-"+U.pad2(tr.month+1)) : (t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1));
     const beforeStart = cfg.startMonth && effMonthKey < cfg.startMonth;
@@ -6450,30 +6476,30 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     if(!matchedName) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(t.groupe);
-    const isVoyage = !voyagesMergedForGroup(matchedName) && kind==="voyage";
+    const isRealVoyage = kind==="voyage";
+    const merged = isRealVoyage && voyagesMergedForGroup(matchedName);
+    const isVoyage = isRealVoyage && !merged;
     if(typeFilter==="Voyage" && !isVoyage) return;
     if((typeFilter==="Income" || typeFilter==="Expense") && isVoyage) return;
     const subLabel = isVoyage ? (t.groupe||"") : (t.categorie||"(Non renseigné)");
     const sub = multiName ? [subLabel, matchedName].filter(Boolean).join(" · ") : subLabel;
 
-    if(isVoyage){
-      const forced = AGG.getGroupVoyageMonth(t.groupe);
-      const tr = t.transform;
-      if(tr.mode==="yearsplit" && !forced){
-        const inYear = String(tr.year) >= months[0].slice(0,4) && String(tr.year) <= months[months.length-1].slice(0,4);
-        if(!inYear) return;
-        const displayAmount = (t.montant/12) * yearsplitMonthsInPeriod(tr.year, monthSet) * scopeMult;
-        items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:true, yearsplitCount: yearsplitMonthsInPeriod(tr.year, monthSet)});
-        return;
-      }
-      let targetMonth = forced;
-      if(!targetMonth){
-        if(tr.mode==="month") targetMonth = tr.year+"-"+U.pad2(tr.month+1);
-        else targetMonth = t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1);
-      }
-      if(!monthSet.has(targetMonth)) return;
-      const displayAmount = t.montant*scopeMult;
-      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit:false});
+    if(isRealVoyage){
+      // Fusionné (§6.3) ou non : jamais amorti, mois résolu comme dans computeGroupBudget (mois voyage
+      // forcé en priorité) — voir voyageTxnMonths. Non fusionné : filtré par type "Income"/"Expense" via
+      // isVoyage ci-dessus (exclu) ; fusionné : redevient un revenu/dépense "normal" (filtre appliqué).
+      if(merged && (typeFilter==="Income" || typeFilter==="Expense") && t.type!==typeFilter) return;
+      let displayAmount = 0, matched = false, ysCount = 0;
+      voyageTxnMonths(t).forEach(({month, weight})=>{
+        if(!monthSet.has(month)) return;
+        matched = true;
+        displayAmount += t.montant*weight;
+        if(weight!==1) ysCount++;
+      });
+      if(!matched) return;
+      displayAmount *= scopeMult;
+      const isYearsplit = t.transform.mode==="yearsplit" && !AGG.getGroupVoyageMonth(t.groupe);
+      items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit: isYearsplit, yearsplitCount: isYearsplit?ysCount:null});
       return;
     }
 
