@@ -460,7 +460,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.04.23.45";
+const APP_VERSION = "v 2026.09.05.01.10";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -958,6 +958,7 @@ const Store = {
     if(typeof b.detailView!=="boolean") b.detailView = false;
     if(typeof b.monthlyView!=="boolean") b.monthlyView = false;
     if(typeof b.mergeVoyages!=="boolean") b.mergeVoyages = false;
+    if(!Array.isArray(b.mergeVoyagesGroups)) b.mergeVoyagesGroups = [];
     if(b.startMonth===undefined) b.startMonth = null;
     if(b.endMonth===undefined) b.endMonth = null;
     if(b.mainGroup===undefined) b.mainGroup = null;
@@ -4038,6 +4039,14 @@ function isAccountExcluded(compte){
   if(!excl || !excl.length) return false;
   return excl.indexOf(compte||"") !== -1;
 }
+/* Voyages regroupés dans les catégories (plus de ligne "Voyages" séparée pour ce groupe, cf. §6.3) : soit
+   parce que le réglage global "Ne pas distinguer les voyages" (mergeVoyages, fiche Amortissement)
+   l'impose à TOUS les groupes, soit parce que CE groupe précis a été basculé individuellement (icône avion
+   dans l'en-tête de sa carte, mergeVoyagesGroups) — les deux réglages se cumulent (l'un ou l'autre suffit). */
+function voyagesMergedForGroup(groupName){
+  const cfg = Store.settings.budget;
+  return !!cfg.mergeVoyages || (cfg.mergeVoyagesGroups||[]).indexOf(groupName) !== -1;
+}
 /* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
    clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
    les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
@@ -4211,7 +4220,7 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(!Store.settings.budget.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -4298,9 +4307,11 @@ function computeGroupBudget(superGroupeName, months, opts){
     if(!matchesSelection(t)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    // mergeVoyages (§6.3 "Ne pas distinguer les voyages") : traite toute transaction comme "quotidien"
-    // (bucket par catégorie), même si son groupe est de type Voyage — plus de bucket "Voyages" séparé.
-    const kind = cfg.mergeVoyages ? "quotidien" : AGG.getGroupKind(t.groupe);
+    // mergeVoyages / mergeVoyagesGroups (§6.3 "Ne pas distinguer les voyages") : traite toute transaction
+    // comme "quotidien" (bucket par catégorie), même si son groupe est de type Voyage — plus de bucket
+    // "Voyages" séparé pour ce groupe. Réglage global (fiche Amortissement) ou propre à ce groupe précis
+    // (icône avion de sa carte), cf. voyagesMergedForGroup.
+    const kind = voyagesMergedForGroup(superGroupeName) ? "quotidien" : AGG.getGroupKind(t.groupe);
 
     if(kind==="voyage"){
       // Les groupes voyage sont affectés en bloc à un mois défini (ou au mois réel/corrigé sinon)
@@ -4450,7 +4461,7 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(!matchesSelection(t)) return false;
       if(isAccountExcluded(t.compte)) return false;
       const base = t.groupeBase || U.baseGroupe(t.groupe);
-      if(!cfg.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return false;
+      if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return false;
       const cat = t.categorie || "(Non renseigné)";
       if(isSalaryCategory(cat)){ salaryCatKey = cat; return true; }
       return false;
@@ -4541,7 +4552,7 @@ function categoriesForGroup(groupName){
     if(!groupSelectionMatches(t, groupName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(!Store.settings.budget.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!voyagesMergedForGroup(groupName) && AGG.getGroupKind(t.groupe)==="voyage") return;
     set.add(t.categorie || "(Non renseigné)");
   });
   return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
@@ -5496,11 +5507,15 @@ function groupCardHtml(title, res, isMain, divisor, compareCtx){
   } : null;
   const headerHtml = compareCtx ? compareHeaderRowHtml() : detailOn ? detailHeaderRowHtml(mode) : "";
 
+  const voyMerged = voyagesMergedForGroup(title);
   const groupSelectorHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
       <button type="button" class="bg-group-swap-btn" data-group="${U.escHtml(title)}" data-ismain="${isMain?1:0}" style="display:flex;align-items:center;gap:4px;background:none;border:none;padding:0;cursor:pointer;min-width:0;flex:1;">
         <span style="font-weight:800;font-size:15.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${U.escHtml(title)}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex:0 0 auto;color:var(--text-sub);"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button type="button" class="bg-group-mergevoy-btn" data-group="${U.escHtml(title)}" title="${voyMerged?'Voyages regroupés dans les catégories (cliquer pour séparer)':'Voyages séparés (cliquer pour regrouper dans les catégories)'}" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${voyMerged?'var(--primary)':'var(--card-alt)'};border:none;cursor:pointer;color:${voyMerged?'#fff':'var(--text-sub)'};flex:0 0 auto;opacity:${voyMerged?1:0.55};">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1 0-1.3.4l-.7.9c-.4.4-.2 1.1.3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.6 6.4c.3.5.9.7 1.3.3l.9-.7c.4-.3.5-.8.4-1.3z"/></svg>
       </button>
       ${!isMain ? `
       <button type="button" class="bg-group-remove-btn" data-group="${U.escHtml(title)}" title="Retirer ce groupe" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--card-alt);border:none;cursor:pointer;color:var(--text-sub);flex:0 0 auto;">
@@ -5916,6 +5931,16 @@ function renderBudget(){
   document.querySelectorAll(".bg-group-swap-btn[data-group]").forEach(el=>{
     el.onclick = ()=> openGroupSwapPicker(el.dataset.group, el.dataset.ismain==="1");
   });
+  document.querySelectorAll(".bg-group-mergevoy-btn[data-group]").forEach(el=>{
+    el.onclick = ()=>{
+      const g = el.dataset.group;
+      const set = new Set(cfg.mergeVoyagesGroups||[]);
+      if(set.has(g)) set.delete(g); else set.add(g);
+      cfg.mergeVoyagesGroups = Array.from(set);
+      Store.saveSettings();
+      renderBudget();
+    };
+  });
   document.querySelectorAll(".bg-group-remove-btn[data-group]").forEach(el=>{
     el.onclick = ()=>{
       const g = el.dataset.group;
@@ -6058,7 +6083,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
-    if(!cfg.mergeVoyages && AGG.getGroupKind(t.groupe)==="voyage") return;
+    if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return;
     const cat = t.categorie || "(Non renseigné)";
     if(cat !== catKey) return;
     const tr = t.transform;
@@ -6425,7 +6450,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     if(!matchedName) return;
     const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(t.groupe);
-    const isVoyage = !cfg.mergeVoyages && kind==="voyage";
+    const isVoyage = !voyagesMergedForGroup(matchedName) && kind==="voyage";
     if(typeFilter==="Voyage" && !isVoyage) return;
     if((typeFilter==="Income" || typeFilter==="Expense") && isVoyage) return;
     const subLabel = isVoyage ? (t.groupe||"") : (t.categorie||"(Non renseigné)");
@@ -9197,6 +9222,7 @@ function applyParamsImport(params, mode){
         periodTo: budgetSettings.periodTo || Store.settings.budget.periodTo,
         excludedAccounts: (budgetSettings.excludedAccounts || []).slice(),
         mergeVoyages: !!budgetSettings.mergeVoyages,
+        mergeVoyagesGroups: (budgetSettings.mergeVoyagesGroups || []).slice(),
       });
     }
     if(salaryEntries) Store.settings.budget.salaryEntries = Object.assign({}, salaryEntries);
@@ -9653,6 +9679,7 @@ function buildParamsPayload(){
       periodTo: budget.periodTo || null,
       excludedAccounts: (budget.excludedAccounts || []).slice(),
       mergeVoyages: !!budget.mergeVoyages,
+      mergeVoyagesGroups: (budget.mergeVoyagesGroups || []).slice(),
     },
     salaryEntries: Object.assign({}, budget.salaryEntries || {}),
     compareSettings: {
