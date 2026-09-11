@@ -460,7 +460,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.05.02.05";
+const APP_VERSION = "v 2026.09.11.17.22";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1694,6 +1694,15 @@ function resolvedSuperGroupeForOccurrence(fullLabel, base){
   const globalRule = rules.find(r=> r.groupe===base && !r.full);
   return globalRule ? globalRule.superGroupe : null;
 }
+/* Un libellé de groupe (occurrence précise ou nom de base — jamais un groupe de groupe lui-même) résout-il
+   vers ce groupe de groupe ? Simple wrapper de resolvedSuperGroupeForOccurrence exposé à l'extérieur du
+   module (Budget notamment) pour l'appliquer aux ajustements manuels (§6.3.6), dont le champ Groupe peut
+   cibler un groupe précis à l'intérieur d'un groupe de groupe. */
+function labelResolvesToSuperGroupe(label, superGroupeName){
+  if(!label || !superGroupeName) return false;
+  const base = U.baseGroupe(label);
+  return resolvedSuperGroupeForOccurrence(label, base) === superGroupeName;
+}
 function distinctValuesGroupeDisplay(transactions){
   const map = new Map();
   transactions.forEach(t=>{
@@ -2490,6 +2499,7 @@ function recurringColumns(evoIndex, periodFrom, periodTo){
 
 window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
   getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, distinctFullGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
+  labelResolvesToSuperGroupe,
   getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
   getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
@@ -4205,6 +4215,20 @@ function groupSelectionMatches(t, selectedName){
   return false;
 }
 
+/* Un ajustement manuel correspond-il à une carte du Budget (superGroupeName = cfg.mainGroup ou un élément
+   de cfg.extraGroups) ? Même principe de repli hiérarchique que groupSelectionMatches ci-dessus pour les
+   transactions réelles : égalité stricte du libellé choisi dans le champ Groupe de l'ajustement (§6.3.6),
+   OU son nom de base, OU — repli manquant jusqu'ici — le groupe de groupe vers lequel il résout (ex. carte
+   "Paris", ajustement posé sur le groupe précis "Paris 2025"). Jamais l'inverse : un ajustement posé
+   directement sur un groupe de groupe ne redescend pas automatiquement sur une carte configurée sur l'un
+   de ses groupes enfants, ce qui serait ambigu si plusieurs cartes enfants existent. */
+function adjustmentGroupMatches(adjGroupe, selectedName){
+  if(!adjGroupe || !selectedName) return false;
+  if(adjGroupe === selectedName) return true;
+  if(U.baseGroupe(adjGroupe) === selectedName) return true;
+  return AGG.labelResolvesToSuperGroupe(adjGroupe, selectedName);
+}
+
 /* Montant d'un ajustement manuel converti à l'échelle du scope actuellement affiché (Perso/Couple).
    Chaque ajustement porte le scope dans lequel son montant a été saisi (montantScope) ; on le convertit
    vers le scope courant (÷2 Couple→Perso, ×2 Perso→Couple) pour qu'il s'intègre correctement aux totaux
@@ -4396,7 +4420,7 @@ function computeGroupBudget(superGroupeName, months, opts){
   const amortPoolVoyAll = {income:0, expense:0};
   if(applyAdjustments){
     (cfg.adjustments||[]).forEach(adj=>{
-      if(adj.groupe !== superGroupeName) return;
+      if(!adjustmentGroupMatches(adj.groupe, superGroupeName)) return;
       // Mode "Sans amort, avec ajout" : les ajustements créés via la case "Amortir ce montant sur toute la
       // période" restent exclus (ni leur entrée immédiate, ni leur lissage) — seuls les ajustements simples
       // (non amortis) sont pris en compte dans ce mode intermédiaire.
@@ -5008,6 +5032,15 @@ function openPredefinedBudgetSheet(){
 
   function render(){
     const modal = document.getElementById("modal-detail");
+    // Comme les autres fiches de réglages du Budget (Comparaison, Amortissement, Comptes exclus, Soldes
+    // personnalisés) : mémorise puis restaure la position de défilement autour du re-rendu complet, sinon
+    // chaque saisie (montant ou vue Amorti/Réel) ramène en haut de la fiche. Ici deux conteneurs peuvent
+    // défiler (la fiche elle-même modal-detail, ET la liste interne #pbf-list qui a son propre
+    // overflow-y:auto) — les deux sont restaurés pour couvrir le cas quel que soit celui qui défile
+    // réellement selon la longueur du contenu.
+    const prevScroll = modal.scrollTop;
+    const prevListEl = document.getElementById("pbf-list");
+    const prevListScroll = prevListEl ? prevListEl.scrollTop : 0;
     const groupsHtml = groups.map(g=>{
       const cats = categoriesForGroup(g);
       return `
@@ -5028,10 +5061,13 @@ function openPredefinedBudgetSheet(){
       <div style="font-size:11px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
         Sous chaque montant saisi, choisissez la vue à laquelle il correspond : <strong>Amorti</strong> (retiré de la vue Réelle), <strong>Réel</strong> (complété par l'amortissement dans la vue Amort. + ajouts), ou <strong>Les 2</strong> (montant identique dans les deux vues, par défaut).
       </div>
-      <div style="max-height:60vh;overflow-y:auto;">
+      <div id="pbf-list" style="max-height:60vh;overflow-y:auto;">
         ${groupsHtml || `<div class="u-empty-note">Choisissez d'abord un groupe principal.</div>`}
       </div>
     `;
+    modal.scrollTop = prevScroll;
+    const listEl = document.getElementById("pbf-list");
+    if(listEl) listEl.scrollTop = prevListScroll;
     document.getElementById("pbf-close").onclick = ()=>{ APP.closeOverlay("overlay-detail"); renderBudget(); };
     modal.querySelectorAll(".pbf-input").forEach(inp=>{
       inp.onchange = (e)=>{
@@ -6142,7 +6178,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
   if(applyAdjustments){
     (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
-      if(adj.groupe !== superGroupeName) return;
+      if(!adjustmentGroupMatches(adj.groupe, superGroupeName)) return;
       if((adj.categorie||"") !== catKey) return;
       if(!isAmorti && adj.amorti) return;
       const amt = adjustmentScopedAmount(adj);
@@ -6346,7 +6382,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
     const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
     if(applyAdjustments){
       (cfg.adjustments||[]).forEach(adj=>{
-        if(adj.groupe !== superGroupeName) return;
+        if(!adjustmentGroupMatches(adj.groupe, superGroupeName)) return;
         if(adj.categorie) return;
         if(!isAmorti && adj.amorti) return;
         const amt = adjustmentScopedAmount(adj);
@@ -6530,7 +6566,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     if(!adjustForName(name)) return;
     const amortiOk = isAmortForName(name);
     (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
-      if(adj.groupe !== name) return;
+      if(!adjustmentGroupMatches(adj.groupe, name)) return;
       if(!amortiOk && adj.amorti) return; // "Sans amort, avec ajout" : exclut les ajustements amortis
       const isVoyAdj = !adj.categorie;
       if(typeFilter==="Voyage" && !isVoyAdj) return;
