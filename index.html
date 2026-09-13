@@ -460,7 +460,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.11.17.22";
+const APP_VERSION = "v 2026.09.12.23.19";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -687,9 +687,44 @@ function enableDragScroll(el){
   });
 }
 
+/* Réconciliation casse/accents générique (§7.1, appliquée directement sans écran de confirmation) —
+   partagée par l'import Paramètres/Budget/Budget_Predefini et par l'import Santé : une valeur tapée à la
+   main est alignée sur une valeur déjà connue de l'appli si elle n'en diffère que par la casse/les
+   accents, pour éviter qu'une faute de frappe crée une entrée fantôme (catégorie, groupe, médecin,
+   statut...) au lieu de mettre à jour l'existante. Sans correspondance, la valeur tapée est renvoyée
+   telle quelle. */
+function alignToCanon(value, canon){
+  if(!value) return value;
+  const hit = canon.get(normalize(value));
+  return hit || value;
+}
+/* Table normalize(valeur) -> valeur exacte, construite à partir d'un ou plusieurs champs des transactions
+   déjà enregistrées (ex. ["categorie"], ou ["compte","compteCible"] pour regrouper compte source et cible
+   dans le même espace de noms). Accède à Store via window.__SF_STORE (module chargé après celui-ci) —
+   jamais appelé avant la fin du chargement de la page, uniquement lors d'un import déclenché par l'utilisateur. */
+function transactionFieldCanon(fields){
+  const m = new Map();
+  const txns = (window.__SF_STORE && window.__SF_STORE.transactions) || [];
+  txns.forEach(t=>{
+    fields.forEach(f=>{
+      const v = t[f];
+      if(v){ const n = normalize(v); if(!m.has(n)) m.set(n, v); }
+    });
+  });
+  return m;
+}
+/* Même principe que transactionFieldCanon, mais à partir d'une simple liste de chaînes déjà connues
+   (ex. une des listes personnalisables de l'onglet Santé, ou les groupes budget déjà configurés). */
+function valueListCanon(values){
+  const m = new Map();
+  (values||[]).forEach(v=>{ if(v){ const n = normalize(v); if(!m.has(n)) m.set(n, v); } });
+  return m;
+}
+
 window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
   fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,baseRemarque,
-  decimalsToggleBtnHtml,toggleMoneyDecimals,hideZeroAccountsBtnHtml,toggleHideZeroAccounts,isZeroBalance,enableDragScroll};
+  decimalsToggleBtnHtml,toggleMoneyDecimals,hideZeroAccountsBtnHtml,toggleHideZeroAccounts,isZeroBalance,enableDragScroll,
+  alignToCanon,transactionFieldCanon,valueListCanon};
 })();
 (function(){
 "use strict";
@@ -974,7 +1009,6 @@ const Store = {
     if(b.compare.periodFrom===undefined) b.compare.periodFrom = null;
     if(b.compare.periodTo===undefined) b.compare.periodTo = null;
     if(!b.compare.predefined || typeof b.compare.predefined!=="object") b.compare.predefined = {};
-    if(!b.compare.predefinedVue || typeof b.compare.predefinedVue!=="object") b.compare.predefinedVue = {};
     if(!s.sync || typeof s.sync!=="object") s.sync = {};
     if(typeof s.sync.token!=="string") s.sync.token = "";
     if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
@@ -1089,6 +1123,47 @@ function findDataSheetName(wb){
 /* Parses an optional "Paramètres" sheet: group-alias rules (Groupe / Groupe de groupe / Date début / Date fin)
    and account types (Compte / Type de compte). Returns null if the sheet isn't found. */
 function parseParametresSheet(wb){
+  // ---------------------------------------------------------------------------------------------
+  // Réconciliation casse/accents pour les feuilles de réglages (Paramètres/Budget/Budget_Predefini) —
+  // même principe que buildReconciliation (§7.1) pour les transactions, mais appliquée directement, sans
+  // écran de confirmation (cf. U.alignToCanon/U.transactionFieldCanon, partagés avec l'import Santé).
+  const alignToCanon = U.alignToCanon;
+  let _catCanon=null, _personneCanon=null, _compteCanon=null, _groupeLiteralCanon=null;
+  let _predefGroupCanon=null, _adjGroupCanon=null;
+  const groupScopedCatCanonCache = new Map();
+  function catCanon(){ return _catCanon || (_catCanon = U.transactionFieldCanon(["categorie"])); }
+  function personneCanon(){ return _personneCanon || (_personneCanon = U.transactionFieldCanon(["personne"])); }
+  function compteCanon(){ return _compteCanon || (_compteCanon = U.transactionFieldCanon(["compte","compteCible"])); }
+  function groupeLiteralCanon(){ return _groupeLiteralCanon || (_groupeLiteralCanon = U.transactionFieldCanon(["groupe"])); }
+  // Groupes budget déjà configurés (principal + additionnels) — seule valeur valable comme clé de
+  // Budget_Predefini (§6.3.5), qui doit correspondre EXACTEMENT à cfg.mainGroup/extraGroups pour être
+  // retrouvée au rendu : jamais aligné sur un nom de base ou un groupe littéral différent.
+  function predefGroupCanon(){
+    if(_predefGroupCanon) return _predefGroupCanon;
+    const bcfg = Store.settings.budget || {};
+    _predefGroupCanon = U.valueListCanon([bcfg.mainGroup].concat(bcfg.extraGroups||[]));
+    return _predefGroupCanon;
+  }
+  // Groupe d'un ajustement manuel (feuille Budget) : plus permissif que ci-dessus, car
+  // adjustmentGroupMatches sait déjà résoudre un groupe littéral précis vers son groupe budget via la
+  // hiérarchie — on ajoute donc aussi les groupes littéraux existants, en plus des groupes budget configurés.
+  function adjGroupCanon(){
+    if(_adjGroupCanon) return _adjGroupCanon;
+    const m = new Map(predefGroupCanon());
+    groupeLiteralCanon().forEach((v,n)=>{ if(!m.has(n)) m.set(n, v); });
+    _adjGroupCanon = m;
+    return m;
+  }
+  // Catégories déjà connues d'un groupe budget précis (window.__SF_BUDGET.categoriesForGroup, même liste
+  // que celle proposée dans la fiche "Budget prédéfini") — mis en cache par groupe.
+  function groupScopedCatCanon(groupe){
+    if(!groupScopedCatCanonCache.has(groupe)){
+      const BUDGET = window.__SF_BUDGET;
+      groupScopedCatCanonCache.set(groupe, U.valueListCanon(BUDGET ? BUDGET.categoriesForGroup(groupe) : []));
+    }
+    return groupScopedCatCanonCache.get(groupe);
+  }
+  // ---------------------------------------------------------------------------------------------
   const sheetName = wb.SheetNames.find(n=>U.normalize(n)==="parametres");
   const groupRules = [];
   const personRules = [];
@@ -1128,7 +1203,7 @@ function parseParametresSheet(wb){
       const daysTo = norm["date fin (jours)"];
       const catForced = norm["categorie (classement force)"];
       const catForcedType = norm["type force (revenus/depenses)"];
-      const groupeStr = groupeRaw ? String(groupeRaw).trim() : "";
+      const groupeStr = groupeRaw ? alignToCanon(String(groupeRaw).trim(), groupeLiteralCanon()) : "";
       // Type budget / Mois voyage / Bornes (jours) sont indexés directement sur le libellé complet de la
       // colonne "Groupe" (suffixe de date inclus, ex. "France (26-06_07)") — jamais sur un nom de base
       // dérivé : deux occurrences distinctes du même lieu sont des groupes différents et peuvent avoir des
@@ -1151,15 +1226,15 @@ function parseParametresSheet(wb){
       }
       if(personne && superPersonne){
         personRules.push({
-          personne: String(personne).trim(),
+          personne: alignToCanon(String(personne).trim(), personneCanon()),
           superPersonne: String(superPersonne).trim()
         });
       }
       if(compte && typeCompte){
-        accountTypes[String(compte).trim()] = String(typeCompte).trim();
+        accountTypes[alignToCanon(String(compte).trim(), compteCanon())] = String(typeCompte).trim();
       }
       if(compte && acronymeCompte){
-        accountAcronyms[String(compte).trim()] = String(acronymeCompte).trim().toUpperCase().slice(0,4);
+        accountAcronyms[alignToCanon(String(compte).trim(), compteCanon())] = String(acronymeCompte).trim().toUpperCase().slice(0,4);
       }
       // Type budget / Mois voyage / Bornes (jours) partagent maintenant la même colonne "Groupe" que le
       // groupe de groupe (au lieu de colonnes "Groupe (type budget)" / "Groupe (jours)" séparées) — un seul
@@ -1189,7 +1264,7 @@ function parseParametresSheet(wb){
         }
       }
       if(catForced && catForcedType){
-        categoryTypeOverride[String(catForced).trim()] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
+        categoryTypeOverride[alignToCanon(String(catForced).trim(), catCanon())] = U.normalize(catForcedType).startsWith("rev") ? "Income" : "Expense";
       }
     });
   }
@@ -1206,9 +1281,15 @@ function parseParametresSheet(wb){
         const scopeRaw = U.normalize(norm["vue"]||norm["scope"]||"");
         const viewOnlyRaw = U.normalize(norm["vue uniquement"]||"");
         const montantScope = scopeRaw==="couple" ? "couple" : (scopeRaw==="les deux"||scopeRaw==="both" ? "both" : "perso");
+        // Réconciliation casse/accents (§7.1 pour les transactions, même principe ici) : sans elle, une
+        // faute de casse dans Groupe/Catégorie créerait une ligne "fantôme" dans le budget au lieu de
+        // s'ajouter à la vraie catégorie du groupe visé (cf. computeGroupBudget/ensureCat).
+        const groupeAligned = alignToCanon(String(groupe).trim(), adjGroupCanon());
+        const catRaw = norm["categorie"] ? String(norm["categorie"]).trim() : "";
+        const catAligned = catRaw ? alignToCanon(catRaw, groupScopedCatCanon(groupeAligned)) : "";
         budgetAdjustments.push({
-          month: String(month).trim(), groupe: String(groupe).trim(),
-          categorie: norm["categorie"]?String(norm["categorie"]).trim():"",
+          month: String(month).trim(), groupe: groupeAligned,
+          categorie: catAligned,
           montant: Number(String(montant).replace(",",".")) || 0,
           remarque: norm["remarque"]?String(norm["remarque"]).trim():"",
           amorti: amortiRaw==="oui" || amortiRaw==="yes" || amortiRaw==="true" || amortiRaw==="1",
@@ -1237,28 +1318,27 @@ function parseParametresSheet(wb){
   }
   const predefSheetName = wb.SheetNames.find(n=>U.normalize(n)==="budget_predefini");
   let comparePredefined = null;
-  let comparePredefinedVue = null;
   if(predefSheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[predefSheetName], {defval:null, raw:false});
     comparePredefined = {};
-    comparePredefinedVue = {};
+    // Réconciliation casse/accents (§7.1 pour les transactions, même principe ici, cf. les helpers en tête
+    // de fonction) : plus de colonne "Clé" faisant autorité (§6.3.5), Groupe+Catégorie sont désormais la
+    // seule source de la clé — une faute de casse/accents y créerait sinon une ligne de budget prédéfini en
+    // double au lieu de mettre à jour l'existante. Sans correspondance (groupe/catégorie réellement
+    // nouveau), la valeur tapée est utilisée telle quelle, comme avant.
     rows.forEach(r=>{
       const norm = {};
       Object.keys(r).forEach(k=>{ norm[U.normalize(k)] = r[k]; });
       const montant = norm["montant mensuel"];
       if(montant==null || montant==="") return;
-      let key = norm["cle"] ? String(norm["cle"]).trim() : "";
-      if(!key){
-        const groupe = norm["groupe"] ? String(norm["groupe"]).trim() : "";
-        const cat = norm["categorie"] ? String(norm["categorie"]).trim() : "";
-        if(!groupe) return;
-        key = (cat && U.normalize(cat)==="(voyages)") ? (groupe+"::voyage") : cat ? (groupe+"::cat::"+cat) : groupe;
-      }
-      // "Vue (Amorti/Réel/Les deux)" : absente ou toute valeur non reconnue -> "Les deux" (comportement
-      // historique, montant identique dans les deux vues du budget, cf. §6.3.5).
-      const vueRaw = U.normalize(norm["vue (amorti/reel/les deux)"]||"");
-      if(vueRaw.startsWith("amorti")) comparePredefinedVue[key] = "amorti";
-      else if(vueRaw.startsWith("reel")) comparePredefinedVue[key] = "reel";
+      let groupe = norm["groupe"] ? String(norm["groupe"]).trim() : "";
+      let cat = norm["categorie"] ? String(norm["categorie"]).trim() : "";
+      if(!groupe) return;
+      groupe = alignToCanon(groupe, predefGroupCanon());
+      const isVoyage = cat && U.normalize(cat)==="(voyages)";
+      if(!isVoyage && cat) cat = alignToCanon(cat, groupScopedCatCanon(groupe));
+      const key = isVoyage ? (groupe+"::voyage") : cat ? (groupe+"::cat::"+cat) : groupe;
+      // Le budget prédéfini est toujours considéré comme un budget réel (plus de colonne "Vue", §6.3.5).
       comparePredefined[key] = Number(String(montant).replace(",",".")) || 0;
     });
   }
@@ -1277,6 +1357,19 @@ function parseParametresSheet(wb){
   const revenusPeople = {moi:{lines:[],transferOut:[],transferIn:[]}, conjoint:{lines:[],transferOut:[],transferIn:[]}};
   const revLineLookup = {moi:new Map(), conjoint:new Map()}; // libellé -> ligne (lignes normales manuelles uniquement)
   const revTransferLookup = {moi:{transferOut:new Map(), transferIn:new Map()}, conjoint:{transferOut:new Map(), transferIn:new Map()}}; // libellé -> ligne
+  // Repli casse/accents pour retrouver une "Ligne" de Revenus_Montants dans Revenus_Lignes (même principe
+  // qu'ailleurs dans cette fonction) : les deux onglets sont normalement écrits avec le libellé identique
+  // par exportExcel, mais une retouche manuelle d'un seul des deux ferait sinon perdre silencieusement le
+  // montant du mois concerné (recherche exacte ci-dessous, jamais de nouvelle ligne créée ici). Alimenté en
+  // parallèle de revLineLookup/revTransferLookup ci-dessus.
+  const revLineLookupNorm = {moi:new Map(), conjoint:new Map()};
+  const revTransferLookupNorm = {moi:{transferOut:new Map(), transferIn:new Map()}, conjoint:{transferOut:new Map(), transferIn:new Map()}};
+  function findRevLine(personKey, ligne){
+    return revLineLookup[personKey].get(ligne) || revLineLookupNorm[personKey].get(U.normalize(ligne));
+  }
+  function findRevTransferLine(personKey, bucket, ligne){
+    return revTransferLookup[personKey][bucket].get(ligne) || revTransferLookupNorm[personKey][bucket].get(U.normalize(ligne));
+  }
   if(revLinesSheetName){
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[revLinesSheetName], {defval:null, raw:false});
     rows.forEach(r=>{
@@ -1291,7 +1384,7 @@ function parseParametresSheet(wb){
       const categorie = norm["categorie"] ? String(norm["categorie"]).trim() : "";
       const ligne = norm["ligne"] ? String(norm["ligne"]).trim() : "";
       const typeRaw = U.normalize(String(norm["type"]||""));
-      const recurCategorieRaw = norm["categorie recurrente"] ? String(norm["categorie recurrente"]).trim() : "";
+      const recurCategorieRaw = norm["categorie recurrente"] ? alignToCanon(String(norm["categorie recurrente"]).trim(), catCanon()) : "";
       const sign = String(norm["signe"]||"").trim()==="-1" ? -1 : 1;
       if(!ligne) return;
       let type = "manual";
@@ -1304,14 +1397,20 @@ function parseParametresSheet(wb){
         if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || ligne; line.recurLabel = ligne; }
         else { line.values = {}; }
         revenusPeople[personKey][bucket].push(line);
-        if(type==="manual") revTransferLookup[personKey][bucket].set(ligne, line);
+        if(type==="manual"){
+          revTransferLookup[personKey][bucket].set(ligne, line);
+          if(!revTransferLookupNorm[personKey][bucket].has(U.normalize(ligne))) revTransferLookupNorm[personKey][bucket].set(U.normalize(ligne), line);
+        }
         return;
       }
       const line = {id:U.uid(), type, label:ligne, sign};
       if(type==="recurring"){ line.recurCategorie = recurCategorieRaw || ligne; line.recurLabel = ligne; }
       if(type==="manual") line.values = {};
       revenusPeople[personKey].lines.push(line);
-      if(type==="manual") revLineLookup[personKey].set(ligne, line);
+      if(type==="manual"){
+        revLineLookup[personKey].set(ligne, line);
+        if(!revLineLookupNorm[personKey].has(U.normalize(ligne))) revLineLookupNorm[personKey].set(U.normalize(ligne), line);
+      }
     });
   }
   if(revMontantsSheetName){
@@ -1328,11 +1427,11 @@ function parseParametresSheet(wb){
       if(!ligne || !mois || montant==null || montant==="") return;
       if(categorie===REV_TRANSFER_OUT_SENTINEL || categorie===REV_TRANSFER_IN_SENTINEL){
         const bucket = categorie===REV_TRANSFER_OUT_SENTINEL ? "transferOut" : "transferIn";
-        const line = revTransferLookup[personKey][bucket].get(ligne);
+        const line = findRevTransferLine(personKey, bucket, ligne);
         if(line) line.values[mois] = Number(String(montant).replace(",",".")) || 0;
         return;
       }
-      const line = revLineLookup[personKey].get(ligne);
+      const line = findRevLine(personKey, ligne);
       if(line) line.values[mois] = Number(String(montant).replace(",",".")) || 0;
     });
   }
@@ -1350,7 +1449,7 @@ function parseParametresSheet(wb){
     revenus: !!(revLinesSheetName || revMontantsSheetName),
   };
   return {groupRules, personRules, accountTypes, accountAcronyms, groupKind, groupVoyageMonth, groupDateRange,
-    categoryTypeOverride, budgetAdjustments, salaryEntries, comparePredefined, comparePredefinedVue,
+    categoryTypeOverride, budgetAdjustments, salaryEntries, comparePredefined,
     revenus: revenusData, sheetsPresent};
 }
 
@@ -4618,8 +4717,8 @@ function computeCompareContext(mainMonths){
       return effMonthsForGroup(groupName).length || 0;
     };
     // Résultat du groupe recalculé en forçant le mode "amorti", quel que soit le mode actuellement affiché
-    // (cfg.mode) — sert uniquement à connaître la part d'amortissement d'une ligne, pour les lignes de
-    // budget prédéfini scopées à une seule vue (cf. predefinedVueAdjustedValue, §6.3.5). Mis en cache par
+    // (cfg.mode) — sert uniquement à connaître la part d'amortissement d'une ligne de budget prédéfini,
+    // toujours considérée comme réelle (cf. predefinedRealValue, §6.3.5). Mis en cache par
     // groupe (comme compareGroupResult) : un même groupe peut être interrogé pour plusieurs catégories.
     const amortCache = new Map();
     const getAmortResult = (groupName)=>{
@@ -4630,7 +4729,7 @@ function computeCompareContext(mainMonths){
       }
       return amortCache.get(groupName);
     };
-    return {type:"predefined", predefined: cmp.predefined||{}, predefinedVue: cmp.predefinedVue||{}, multForGroup, getAmortResult};
+    return {type:"predefined", predefined: cmp.predefined||{}, multForGroup, getAmortResult};
   }
   if(!cmp.periodFrom || !cmp.periodTo) return null;
   const cMonths = monthsInRange(cmp.periodFrom, cmp.periodTo);
@@ -4652,27 +4751,21 @@ function compareGroupResult(ctx, groupName){
   }
   return ctx.cache.get(groupName);
 }
-/* Ajuste la valeur d'une ligne de budget prédéfini scopée à une seule vue ("amorti" ou "reel",
-   Store.settings.budget.compare.predefinedVue, §6.3.5) selon la vue ACTUELLEMENT affichée
-   (Store.settings.budget.mode) :
-   - scope "amorti" affichée en vue réelle : cette ligne a été pensée pour la vue amortie, sa part
-     d'amortissement n'a pas de sens telle quelle en réel — on la retire (face - amortContribution).
-   - scope "reel" affichée en vue amortie : un montant réel reste pertinent même en vue amortie, il lui
-     manque juste la part d'amortissement (qui n'existe qu'en vue amortie) — on la rajoute (face + amortContribution).
-   - dans la vue qui correspond déjà au scope choisi, ou scope "both"/absent (valeur historique) : la face
-     value est utilisée telle quelle, jamais ajustée.
+/* Le budget prédéfini est toujours considéré comme un budget RÉEL (plus de choix de vue par ligne
+   Amorti/Réel/Les deux, §6.3.5) : la face value saisie par l'utilisateur est le montant réel voulu.
+   - vue Réelle actuellement affichée (Store.settings.budget.mode !== "amorti") : la face value est
+     utilisée telle quelle.
+   - vue Amort. + ajouts actuellement affichée : un montant réel reste pertinent, il lui manque juste la
+     part d'amortissement (qui n'existe qu'en vue amortie) — on la rajoute (face + amortContribution).
    `lookup(res)` extrait la part amortie (amortIncome+amortExpense) de la ligne concernée depuis un résultat
    de computeGroupBudget forcé en mode "amorti" (cf. ctx.getAmortResult) ; mise à l'échelle Total/Moyenne
    identique à `face` (÷ nombre de mois effectifs du groupe en vue Moyenne, valeur brute en vue Total). */
-function predefinedVueAdjustedValue(ctx, groupName, key, face, lookup){
-  const vue = (ctx.predefinedVue||{})[key] || "both";
-  if(vue==="both") return face;
-  const currentIsAmorti = Store.settings.budget.mode==="amorti";
-  if((vue==="amorti") === currentIsAmorti) return face;
+function predefinedRealValue(ctx, groupName, face, lookup){
+  if(Store.settings.budget.mode!=="amorti") return face;
   const {res, n} = ctx.getAmortResult(groupName);
   const raw = lookup(res);
   const amortContribution = Store.settings.budget.displayMode==="moyenne" ? raw/n : raw;
-  return vue==="amorti" ? face - amortContribution : face + amortContribution;
+  return face + amortContribution;
 }
 /* Valeur comparée pour une ligne catégorie précise d'un groupe. */
 function compareCategoryTotal(ctx, groupName, catKey){
@@ -4681,7 +4774,7 @@ function compareCategoryTotal(ctx, groupName, catKey){
     const key = predefinedCatKey(groupName, catKey);
     const raw = Number((ctx.predefined||{})[key]);
     const face = (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
-    return predefinedVueAdjustedValue(ctx, groupName, key, face, (res)=>{
+    return predefinedRealValue(ctx, groupName, face, (res)=>{
       const c = res.categories.find(x=>x.key===catKey);
       return c ? (c.amortIncome+c.amortExpense) : 0;
     });
@@ -4700,7 +4793,7 @@ function compareVoyageTotal(ctx, groupName){
     const face = (isNaN(raw)?0:raw) * ctx.multForGroup(groupName);
     // Côté voyages, seule la ligne "Ajustements" (adj sans catégorie, cf. computeGroupBudget) peut porter
     // une part amortie — l'amortissement ne s'applique jamais directement à une transaction de voyage.
-    return predefinedVueAdjustedValue(ctx, groupName, key, face, (res)=>{
+    return predefinedRealValue(ctx, groupName, face, (res)=>{
       const adjRow = res.voyages.find(x=>x.key==="__ajustement__");
       return adjRow ? (adjRow.amortIncome+adjRow.amortExpense) : 0;
     });
@@ -5007,17 +5100,7 @@ function openPredefinedBudgetSheet(){
   const cfg = Store.settings.budget;
   const cmp = cfg.compare;
   const groups = [cfg.mainGroup].concat((cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup)).filter(Boolean);
-  const VUE_LABELS = {amorti:"Amorti", reel:"Réel", both:"Les 2"};
 
-  function vueRowHtml(key){
-    const v = cmp.predefined[key];
-    if(v==null || v==="") return ""; // pas de montant saisi : la vue n'a pas de sens, rien à afficher
-    const current = cmp.predefinedVue[key] || "both";
-    return `
-      <div class="seg seg-xs pbf-vue-seg" data-key="${U.escHtml(key)}" style="margin:2px 0 8px;">
-        ${["amorti","reel","both"].map(v2=>`<button data-v="${v2}" class="${current===v2?'active':''}">${VUE_LABELS[v2]}</button>`).join("")}
-      </div>`;
-  }
   function fieldHtml(key, label, indent){
     const v = cmp.predefined[key];
     return `
@@ -5026,7 +5109,6 @@ function openPredefinedBudgetSheet(){
           <span style="font-size:${indent?12.5:13.5}px;font-weight:${indent?600:700};flex:1;min-width:0;">${U.escHtml(label)}</span>
           <input type="number" step="0.01" inputmode="decimal" class="search-mini pbf-input" data-key="${U.escHtml(key)}" placeholder="0,00 €" value="${v!=null&&v!==''?v:''}" style="flex:0 0 120px;margin:0;text-align:right;">
         </div>
-        <div style="padding-left:${indent?18:0}px;">${vueRowHtml(key)}</div>
       </div>`;
   }
 
@@ -5059,7 +5141,7 @@ function openPredefinedBudgetSheet(){
         Montant mensuel par catégorie, et un montant mensuel unique "Voyages" couvrant l'ensemble des voyages du groupe (sans distinction entre eux). Les totaux du groupe, de Revenus/Dépenses/Voyages et du grand total sont toujours la somme de ces lignes. Laisser vide pour ne pas comparer cette ligne (0 €).
       </div>
       <div style="font-size:11px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">
-        Sous chaque montant saisi, choisissez la vue à laquelle il correspond : <strong>Amorti</strong> (retiré de la vue Réelle), <strong>Réel</strong> (complété par l'amortissement dans la vue Amort. + ajouts), ou <strong>Les 2</strong> (montant identique dans les deux vues, par défaut).
+        Chaque montant saisi est toujours un budget réel : en vue Amort. + ajouts, il est complété par la part d'amortissement correspondante pour rester cohérent avec le reste du budget.
       </div>
       <div id="pbf-list" style="max-height:60vh;overflow-y:auto;">
         ${groupsHtml || `<div class="u-empty-note">Choisissez d'abord un groupe principal.</div>`}
@@ -5073,22 +5155,11 @@ function openPredefinedBudgetSheet(){
       inp.onchange = (e)=>{
         const key = e.target.dataset.key;
         const val = e.target.value;
-        if(val===null || val===""){ delete cmp.predefined[key]; delete cmp.predefinedVue[key]; }
+        if(val===null || val===""){ delete cmp.predefined[key]; }
         else cmp.predefined[key] = Number(val) || 0;
         Store.saveSettings();
         render();
       };
-    });
-    modal.querySelectorAll(".pbf-vue-seg[data-key]").forEach(seg=>{
-      seg.querySelectorAll("button[data-v]").forEach(btn=>{
-        btn.onclick = ()=>{
-          const key = seg.dataset.key;
-          const v = btn.dataset.v;
-          if(v==="both") delete cmp.predefinedVue[key]; else cmp.predefinedVue[key] = v;
-          Store.saveSettings();
-          render();
-        };
-      });
     });
   }
   render();
@@ -6776,6 +6847,11 @@ function openGroupMonthTxnSheet(superGroupeNames, monthKey){
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
 window.__SF_VIEWS.renderBudget = renderBudget;
+// Exposé pour la réconciliation casse/accents du budget prédéfini à l'import (cf. parseParametresSheet,
+// §6.3.5) : seule fonction du module Budget dont l'import a besoin, pour connaître les catégories déjà
+// utilisées par un groupe budget donné sans dupliquer sa logique d'éligibilité (comptes exclus, voyages
+// fusionnés, résolution de hiérarchie de groupe).
+window.__SF_BUDGET = {categoriesForGroup};
 })();
 (function(){
 "use strict";
@@ -9232,7 +9308,6 @@ function applyParamsImport(params, mode){
   const salaryEntries = params.salaryEntries || null;
   const compareSettings = params.compareSettings || null;
   const comparePredefined = params.comparePredefined || null;
-  const comparePredefinedVue = params.comparePredefinedVue || null;
   const evolutionSettings = params.evolutionSettings || null;
   const revenus = params.revenus || null;
   const sheetsPresent = params.sheetsPresent || {};
@@ -9294,12 +9369,10 @@ function applyParamsImport(params, mode){
         mode: compareSettings.mode==="predefined" ? "predefined" : "period",
         periodFrom: compareSettings.periodFrom || null,
         periodTo: compareSettings.periodTo || null,
-        predefined: Object.assign({}, comparePredefined || {}),
-        predefinedVue: Object.assign({}, comparePredefinedVue || {})
+        predefined: Object.assign({}, comparePredefined || {})
       };
     } else {
       if(comparePredefined) Store.settings.budget.compare.predefined = Object.assign({}, comparePredefined);
-      if(comparePredefinedVue) Store.settings.budget.compare.predefinedVue = Object.assign({}, comparePredefinedVue);
     }
     if(evolutionSettings){
       if(evolutionSettings.view) Store.settings.evolution.view = evolutionSettings.view;
@@ -9403,13 +9476,6 @@ function applyParamsImport(params, mode){
       if(localPredef[key]==null) localPredef[key] = comparePredefined[key];
     });
     Store.settings.budget.compare.predefined = localPredef;
-  }
-  if(comparePredefinedVue){
-    const localPredefVue = Store.settings.budget.compare.predefinedVue || {};
-    Object.keys(comparePredefinedVue).forEach(key=>{
-      if(localPredefVue[key]==null) localPredefVue[key] = comparePredefinedVue[key];
-    });
-    Store.settings.budget.compare.predefinedVue = localPredefVue;
   }
   // Revenus : n'adopte la configuration importée que si rien n'est encore configuré localement pour
   // aucune des deux personnes (cf. window.__SF_REVENUS.applyParamsImportPart) — jamais d'écrasement.
@@ -9751,7 +9817,6 @@ function buildParamsPayload(){
       periodTo: (budget.compare && budget.compare.periodTo) || null,
     },
     comparePredefined: Object.assign({}, (budget.compare && budget.compare.predefined) || {}),
-    comparePredefinedVue: Object.assign({}, (budget.compare && budget.compare.predefinedVue) || {}),
     evolutionSettings: {
       view: evo.view || null,
       monthBasis: evo.monthBasis || null,
@@ -9917,15 +9982,12 @@ function exportExcel(scope){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salData), "Budget_Salaires");
 
     const cmp = b.compare || {};
-    const predefVueMap = cmp.predefinedVue || {};
-    const PREDEF_VUE_LABEL = {amorti:"Amorti", reel:"Réel", both:"Les deux"};
     const predefEntries = Object.entries(cmp.predefined || {}).sort((x,y)=>x[0].localeCompare(y[0]));
-    const predefHeader = ["Clé","Groupe","Catégorie","Montant mensuel","Vue (Amorti/Réel/Les deux)"];
+    const predefHeader = ["Groupe","Catégorie","Montant mensuel"];
     const predefData = [predefHeader].concat(predefEntries.map(([key, montant])=>{
-      const vueLabel = PREDEF_VUE_LABEL[predefVueMap[key]] || "Les deux";
-      if(key.endsWith("::voyage")) return [key, key.slice(0, -"::voyage".length), "(Voyages)", montant, vueLabel];
+      if(key.endsWith("::voyage")) return [key.slice(0, -"::voyage".length), "(Voyages)", montant];
       const parts = key.split("::cat::");
-      return [key, parts[0]||"", parts.length>1?parts[1]:"", montant, vueLabel];
+      return [parts[0]||"", parts.length>1?parts[1]:"", montant];
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(predefData), "Budget_Predefini");
 
@@ -12198,15 +12260,24 @@ function rowToSanteItem(row){
     return d ? U.toISO(d) : null;
   };
   const strOr = (v, fallback)=> v!=null && v!=="" ? String(v).trim() : fallback;
+  // Réconciliation casse/accents à l'import (même principe que buildReconciliation pour les transactions,
+  // §7.1) : Groupe est aligné sur un groupe déjà utilisé par une transaction existante (mêmes données que
+  // les Transactions, cf. SANTE_LIST_KEYS ci-dessus) ; Bénéficiaire/Devise/Médecin/Type de prestation/
+  // Statut/Mutuelle sont alignés sur une valeur déjà présente dans la liste personnalisable correspondante
+  // (Store.settings.sante.lists). Sans correspondance, la valeur tapée est gardée telle quelle — sans
+  // cette réconciliation, une faute de casse créerait à la fois une entrée fantôme dans la liste
+  // déroulante concernée ET un doublon du soin lui-même à un réimport ultérieur (buildSanteId inclut ces
+  // champs). Alignés AVANT sanitizeItem/buildSanteId, pour que l'identifiant reste stable d'un import à l'autre.
+  const lists = Store.settings.sante.lists;
   const it = {
     dateSoin: U.toISO(dateObj),
-    beneficiaire: strOr(norm["beneficiaire"], ""),
-    devise: strOr(norm["devise"], "€"),
+    beneficiaire: U.alignToCanon(strOr(norm["beneficiaire"], ""), U.valueListCanon(lists.beneficiaires)),
+    devise: U.alignToCanon(strOr(norm["devise"], "€"), U.valueListCanon(lists.devises)),
     montantEur: numOrNull(norm["montant €"]) || 0,
     montantDevise: numOrNull(norm["montant devise"]),
-    medecin: strOr(norm["medecin/hopital"], ""),
-    typePrestation: strOr(norm["type de prestation"], ""),
-    statut: strOr(norm["statut"], ""),
+    medecin: U.alignToCanon(strOr(norm["medecin/hopital"], ""), U.valueListCanon(lists.medecins)),
+    typePrestation: U.alignToCanon(strOr(norm["type de prestation"], ""), U.valueListCanon(lists.prestations)),
+    statut: U.alignToCanon(strOr(norm["statut"], ""), U.valueListCanon(lists.statuts)),
     statutDate: dateOrNull(norm["statut mis a jour le"]),
     rembTiersMontant: numOrNull(norm["remb. tiers payant €"]) || 0,
     rembTiersDate: dateOrNull(norm["date remb. tiers"]),
@@ -12214,8 +12285,8 @@ function rowToSanteItem(row){
     rembSecuDate: dateOrNull(norm["date remb. secu"]),
     rembMutuelleMontant: numOrNull(norm["remb. mutuelle €"]) || 0,
     rembMutuelleDate: dateOrNull(norm["date remb. mutuelle"]),
-    groupe: strOr(norm["groupe"], ""),
-    mutuelle: strOr(norm["mutuelle"], ""),
+    groupe: U.alignToCanon(strOr(norm["groupe"], ""), U.transactionFieldCanon(["groupe"])),
+    mutuelle: U.alignToCanon(strOr(norm["mutuelle"], ""), U.valueListCanon(lists.mutuelles)),
     partMoi: numOrNull(norm["part moi (%)"]),
     termine: /^(oui|yes|true|1|x)$/i.test(String(norm["termine"]||"").trim())
   };
