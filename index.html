@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#F0F1F4" id="theme-color-meta">
 <title>Suivi financier</title>
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Suivi financier">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2716%27%20fill%3D%27%231259D6%27/%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23FFFFFF%27%20stroke-width%3D%273.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M46%2021V13.5H17a5.5%205.5%200%200%200%200%2011h29v10%27/%3E%3Cpath%20d%3D%27M12.5%2016v29a5%205%200%200%200%205%205h29v-12.5%27/%3E%3Cpath%20d%3D%27M38%2032.5a5%205%200%200%200%200%2010h9v-10z%27%20fill%3D%27%23FFFFFF%27/%3E%3C/g%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2716%27%20fill%3D%27%231259D6%27/%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23FFFFFF%27%20stroke-width%3D%273.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M46%2021V13.5H17a5.5%205.5%200%200%200%200%2011h29v10%27/%3E%3Cpath%20d%3D%27M12.5%2016v29a5%205%200%200%200%205%205h29v-12.5%27/%3E%3Cpath%20d%3D%27M38%2032.5a5%205%200%200%200%200%2010h9v-10z%27%20fill%3D%27%23FFFFFF%27/%3E%3C/g%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -419,6 +424,15 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .toast.toast-long{border-radius:20px;text-align:left;line-height:1.5;}
 .toast.show{opacity:1;bottom:calc(180px + var(--safe-bottom));}
 
+.update-banner{
+  position:fixed;left:50%;bottom:calc(20px + var(--safe-bottom));transform:translateX(-50%) translateY(140%);
+  background:var(--primary);color:#fff;padding:10px 10px 10px 18px;border-radius:100px;
+  font-size:13px;font-weight:600;z-index:85;box-shadow:var(--shadow-2);
+  display:flex;align-items:center;gap:10px;transition:transform .3s ease;max-width:90%;
+}
+.update-banner.show{transform:translateX(-50%) translateY(0);}
+.update-banner button{background:#fff;color:var(--primary-tap);border:none;border-radius:100px;padding:8px 16px;font-size:12.5px;font-weight:800;flex:0 0 auto;}
+
 .field-label{font-size:12.5px;font-weight:700;color:var(--text-sub);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px;}
 .detail-row{display:flex;justify-content:space-between;padding:10px 2px;font-size:14px;}
 .detail-row span:first-child{color:var(--text-sub);}
@@ -457,10 +471,14 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <body>
 <div class="app" id="app"></div>
 <div class="toast" id="toast"></div>
+<div class="update-banner" id="update-banner">
+  <span>Nouvelle version disponible</span>
+  <button id="update-banner-btn" type="button">Actualiser</button>
+</div>
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.12.23.19";
+const APP_VERSION = "v 2026.09.13.10.41";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -12495,6 +12513,68 @@ if(document.readyState==="loading"){
 }
 })();
 
+</script>
+<script>
+/* ================= PWA : enregistrement du service worker + bannière de mise à jour =================
+   Ajouté lors du passage en Progressive Web App (voir manifest.json / service-worker.js).
+   SW_VERSION dans service-worker.js doit être tenue synchronisée avec APP_VERSION ci-dessus :
+   c'est ce qui garantit qu'une nouvelle livraison est bien détectée par les sessions déjà ouvertes. */
+(function(){
+  if(!("serviceWorker" in navigator)) return;
+
+  // Ne recharger sur "controllerchange" que si l'utilisateur a explicitement validé
+  // la mise à jour (bouton "Actualiser") — sinon self.clients.claim() côté SW déclenche
+  // aussi un controllerchange dès la toute première installation, ce qui provoquerait
+  // une boucle de rechargement au tout premier chargement de l'app.
+  let refreshRequested = false;
+
+  function showUpdateBanner(reg){
+    const el = document.getElementById("update-banner");
+    const btn = document.getElementById("update-banner-btn");
+    if(!el || !btn) return;
+    el.classList.add("show");
+    btn.onclick = function(){
+      if(reg.waiting){
+        refreshRequested = true;
+        reg.waiting.postMessage("SKIP_WAITING");
+      }
+      btn.disabled = true;
+      btn.textContent = "…";
+    };
+  }
+
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("service-worker.js").then(function(reg){
+      // Un SW est déjà en attente (onglet ouvert avant la mise à jour) : proposer l'actualisation tout de suite.
+      if(reg.waiting && reg.active) showUpdateBanner(reg);
+
+      reg.addEventListener("updatefound", function(){
+        const nouveau = reg.installing;
+        if(!nouveau) return;
+        nouveau.addEventListener("statechange", function(){
+          if(nouveau.state==="installed" && navigator.serviceWorker.controller){
+            showUpdateBanner(reg);
+          }
+        });
+      });
+
+      // Revérifie une mise à jour au retour au premier plan (utile pour une PWA gardée ouverte longtemps).
+      document.addEventListener("visibilitychange", function(){
+        if(document.visibilityState==="visible") reg.update();
+      });
+    }).catch(function(){ /* mode hors-ligne ou navigateur restreint : échec silencieux */ });
+
+    // Une fois le nouveau SW activé (après skipWaiting demandé via la bannière),
+    // recharger pour servir les nouveaux fichiers. Ignoré si ce changement de
+    // contrôleur vient de la prise de contrôle initiale (clients.claim() au 1er chargement).
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function(){
+      if(!refreshRequested || reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
+  });
+})();
 </script>
 </body>
 </html>

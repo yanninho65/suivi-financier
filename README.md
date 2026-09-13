@@ -1,8 +1,8 @@
 # Suivi financier — Documentation de référence
 
-**Version documentée : `v 2026.09.12.23.19`** — à comparer à `APP_VERSION` en tête du `<script>` du fichier `index.html` (format `v AAAA.MM.JJ.HH.MM`, affichée en petit sous le titre "Suivi financier" sans le préfixe `v `). Mise à jour uniquement sur demande explicite : si les versions diffèrent, vérifier en priorité §2, §4, §5, §6.1, §6.2, §6.3, §6.4, §6.6, §6.7, §7.2 et §8 (zones les plus souvent modifiées).
+**Version documentée : `v 2026.09.13.10.41`** — à comparer à `APP_VERSION` en tête du `<script>` du fichier `index.html` (format `v AAAA.MM.JJ.HH.MM`, affichée en petit sous le titre "Suivi financier" sans le préfixe `v `). Mise à jour uniquement sur demande explicite : si les versions diffèrent, vérifier en priorité §2, §4, §5, §6.1, §6.2, §6.3, §6.4, §6.6, §6.7, §7.2, §8 et §14 (zones les plus souvent modifiées).
 
-Fichier livré : **`index.html`** (page unique, style One UI, vanilla JS). Un seul CDN au runtime : SheetJS (`xlsx`, import/export Excel). Aucun backend, aucune donnée envoyée nulle part.
+Fichiers livrés : **`index.html`** (application, style One UI, vanilla JS), accompagné de son manifeste et service worker de Progressive Web App — `manifest.json`, `service-worker.js`, icônes (§14). Les huit fichiers doivent être uploadés ensemble sur GitHub à chaque livraison. CDN au runtime : SheetJS (`xlsx`, import/export Excel) et Google Fonts. Aucun backend, aucune donnée envoyée nulle part (le service worker ne fait que mettre en cache localement, sans télémétrie).
 
 Sert de visualisation/filtrage mobile d'un suivi Excel existant, saisi manuellement. Le classeur Excel de l'utilisateur reste la source de vérité ; import incrémental avec déduplication.
 
@@ -649,3 +649,23 @@ Classe CSS `.chev-rot` : fait pivoter une flèche `<svg>` de 180° quand son `<d
 - Navigation précédent/suivant de la fiche transaction (§6.2) : la liste de navigation est figée à l'ouverture de la fiche et ne protège que le temps où celle-ci reste affichée — fermer la fiche puis rouvrir une transaction repart d'une liste recalculée sur le filtre à jour. Aucune navigation n'est disponible pour les fiches ouvertes depuis un autre onglet (Budget, Récurrent, Évolution, Santé).
 - Ajustements manuels du Budget (§6.3.6) : la correspondance avec une carte remonte d'un groupe précis vers son groupe de groupe (§6.3.6), mais jamais dans l'autre sens — un ajustement posé directement sur un groupe de groupe ne redescend pas automatiquement sur une carte configurée sur l'un de ses groupes enfants précis, pour éviter toute ambiguïté si plusieurs cartes enfants existent.
 - Testé via Playwright (Chromium headless) quand l'environnement le permet, sinon relecture manuelle systématique + `node --check` sur le script extrait ; SheetJS nécessite un accès internet au premier chargement.
+
+---
+
+## 14. Progressive Web App (PWA)
+Depuis le 2026-09-13, l'application est livrée comme PWA installable en plus de son usage classique au navigateur.
+
+**Fichiers livrés** (à uploader ensemble sur GitHub à chaque livraison — une incohérence entre `index.html` et un fichier manquant casse le mode hors-ligne) : `index.html`, `manifest.json`, `service-worker.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`, `apple-touch-icon.png`.
+
+**`manifest.json`** : nom, icônes (standard + variantes "maskable" pour Android), `display:"standalone"` (lancement sans barre d'adresse une fois installée), couleurs de thème/fond alignées sur `--bg`.
+
+**`service-worker.js`** — cache d'app shell versionné :
+- Nom de cache `sf-shell-${SW_VERSION}` — **`SW_VERSION` doit être recopiée depuis `APP_VERSION` à chaque livraison** ; c'est cette différence octet à octet du fichier qui permet au navigateur de détecter qu'une nouvelle version existe.
+- `index.html` : réseau d'abord (toujours la dernière version si en ligne), repli sur le cache si hors ligne.
+- Autres fichiers same-origin (manifest, icônes) : cache d'abord.
+- Ressources externes (Google Fonts, SheetJS/cdnjs) : cache séparé non versionné (`sf-runtime`), stratégie "stale-while-revalidate" pour un usage hors ligne après un premier chargement en ligne.
+- À l'activation, tout ancien cache `sf-shell-*` est supprimé.
+
+**Mise à jour d'une session déjà ouverte** : une bannière "Nouvelle version disponible" apparaît en bas d'écran dès qu'un nouveau service worker a fini de s'installer en arrière-plan (`updatefound`/`statechange`). Le bouton **Actualiser** envoie `SKIP_WAITING` au service worker en attente, puis la page se recharge une fois qu'il a pris le contrôle (`controllerchange`).
+
+**Piège pour toute évolution du service worker** : `self.clients.claim()` (appelé à l'activation) déclenche lui aussi un `controllerchange`, y compris lors de la toute première installation — pas seulement lors d'une mise à jour. Le rechargement automatique de la page est donc conditionné à un drapeau (`refreshRequested`) qui n'est mis à `true` que lorsque l'utilisateur clique sur "Actualiser" ; sans ce garde-fou, l'application se recharge toute seule dès la première visite.
