@@ -8,7 +8,7 @@
    l'ancien cache — sans ça, une page déjà ouverte pourrait
    rester bloquée sur une version obsolète indéfiniment.
    ============================================================ */
-const SW_VERSION = "v 2026.09.13.10.41";
+const SW_VERSION = "v 2026.09.24.12.09";
 
 const SHELL_CACHE   = `sf-shell-${SW_VERSION}`;
 const RUNTIME_CACHE = "sf-runtime"; // ressources externes (CDN) — non versionné, survit aux mises à jour
@@ -90,7 +90,12 @@ self.addEventListener("fetch", (event) => {
     caches.open(RUNTIME_CACHE).then((cache) =>
       cache.match(req).then((cached) => {
         const fetchPromise = fetch(req)
-          .then((res) => { cache.put(req, res.clone()); return res; })
+          .then((res) => {
+            // Ne met en cache que les réponses exploitables (200 ou opaque cross-origin) :
+            // jamais une erreur 4xx/5xx du CDN, qui remplacerait durablement une copie valide.
+            if (res && (res.ok || res.type === "opaque")) cache.put(req, res.clone());
+            return res;
+          })
           .catch(() => cached);
         return cached || fetchPromise;
       })

@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#F0F1F4;
@@ -253,8 +253,6 @@ svg{width:20px;height:20px;flex:0 0 auto;}
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:100px;font-size:13px;font-weight:700;color:var(--text-sub);cursor:pointer;}
 .seg-sm{padding:3px;}
 .seg-sm button{padding:6px 4px;font-size:11px;}
-.seg-xs{padding:2px;}
-.seg-xs button{padding:4px 2px;font-size:9.5px;}
 .pill-toggle-wrap{display:flex;flex-wrap:wrap;gap:8px;}
 .pill-toggle{
   display:inline-flex;align-items:center;border:none;border-radius:100px;
@@ -478,7 +476,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.13.10.41";
+const APP_VERSION = "v 2026.09.24.12.09";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -739,10 +737,134 @@ function valueListCanon(values){
   return m;
 }
 
+/* ---------------- SheetJS (CDN, chargé en différé) ----------------
+   Uniquement utilisé à l'import/export Excel : son absence (hors ligne dès le tout premier lancement, CDN
+   inaccessible) ne doit pas bloquer l'appli, seulement produire un message clair au moment de l'action. */
+const XLSX_MISSING_MSG = "Module Excel (SheetJS) indisponible — vérifiez la connexion puis rechargez la page.";
+function xlsxAvailable(){ return typeof XLSX !== "undefined"; }
+
+/* ---------------- Helpers partagés entre onglets ----------------
+   (factorisés lors de l'audit de code : chaque onglet en avait auparavant sa propre copie) */
+function capitalize(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+/* "mars 2024" -> "Mars 2024" */
+function fmtMonthYearCap(y,m){ return capitalize(fmtMonthYear(y,m)); }
+/* Montant arrondi à l'euro avec signe explicite ("+ 12 €", "- 5 €", "0 €") — Évolution, Récurrent et
+   Revenus affichent toujours 0 décimale, indépendamment du réglage global (§5). */
+function fmtWholeSigned(n){
+  if(n==null || isNaN(n)) n=0;
+  const sign = n>0 ? "+ " : (n<0 ? "- " : "");
+  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
+}
+/* Classe CSS de couleur d'un montant : "neg" / "pos" / "" (zéro). */
+function signClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
+/* Date "YYYY-MM-DD" -> objet Date local (pour écrire une vraie cellule date Excel, pas du texte) ; null/"" -> null. */
+function isoToDateObj(iso){
+  if(!iso) return null;
+  const [y,m,d] = String(iso).split("-").map(Number);
+  if(!y || !m || !d) return null;
+  return new Date(y, m-1, d);
+}
+/* Applique le format d'affichage JJ/MM/AAAA aux cellules de type date (t==='d') d'une colonne donnée
+   (0-indexée) d'une feuille SheetJS, sur toutes les lignes à partir de startRow (1 = sous l'en-tête). */
+function setDateColumnFormat(ws, colIndex, startRow, rowCount){
+  for(let r=startRow; r<startRow+rowCount; r++){
+    const cell = ws[XLSX.utils.encode_cell({r, c: colIndex})];
+    if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
+  }
+}
+
+/* ---------------- Liste cochable hiérarchique (groupe de groupe -> éléments) ----------------
+   Rendu et comportement uniques des filtres Groupe/Personne de la feuille de filtre Transactions (§4), du
+   filtre Groupe de l'onglet Santé (§6.6) et du filtre Groupe de l'onglet Revenus (§6.7.5).
+   hier = {sections: Map(nom -> [{base,count}]), flat: [{base,count}], preSorted?} (cf.
+   AGG.groupeHierarchyChrono / AGG.personneHierarchy) ; selected = Set des valeurs cochées ;
+   opts.noGroupLabel : range les éléments sans groupe sous un en-tête dédié (ex. "Sans type"), cliquable pour
+   tout (dé)sélectionner — sinon ils sont listés à plat après les sections. Ne produit que le contenu de la
+   liste : le conteneur (id, style) reste à la charge de l'appelant. */
+function hierarchyCheckListHtml(hier, selected, opts){
+  opts = opts || {};
+  const {sections, flat, preSorted} = hier;
+  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
+  const sectionHtml = (label, headAttrs, headSelected, children)=>`<div class="groupe-section" data-super="${escHtml(label)}">
+      <div class="check-item groupe-section-head ${headSelected?'selected':''}" ${headAttrs}>
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl" style="font-weight:800;">${escHtml(label)}</span>
+        <span class="cnt">${children.reduce((s,c)=>s+c.count,0)}</span>
+      </div>
+      <div class="groupe-section-children">
+        ${children.map(c=>`
+          <div class="check-item groupe-child-item ${selected.has(c.base)?'selected':''}" data-val="${escHtml(c.base)}" data-childname="${escHtml(c.base)}">
+            <span class="cbox">${ICONS.check}</span>
+            <span class="lbl">${escHtml(c.base)}</span>
+            <span class="cnt">${c.count}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  let html = sectionNames.map(sup=>sectionHtml(sup, `data-val="${escHtml(sup)}"`, selected.has(sup), sections.get(sup))).join("");
+  const flatSorted = flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+  if(opts.noGroupLabel && flatSorted.length){
+    html += sectionHtml(opts.noGroupLabel, `data-notypehead="1"`, flatSorted.every(f=>selected.has(f.base)), flatSorted);
+  } else {
+    html += flatSorted.map(f=>`<div class="check-item groupe-flat-item ${selected.has(f.base)?'selected':''}" data-val="${escHtml(f.base)}">
+        <span class="cbox">${ICONS.check}</span>
+        <span class="lbl">${escHtml(f.base)}</span>
+        <span class="cnt">${f.count}</span>
+      </div>`).join("");
+  }
+  return html;
+}
+/* Branche une liste produite par hierarchyCheckListHtml : clic = (dé)coche la valeur dans `selected` puis
+   onChange() ; en-tête "Sans type" = bascule en bloc ; champ de recherche optionnel (filtre sections,
+   enfants et éléments isolés, insensible casse/accents). */
+function wireHierarchyCheckList(list, selected, onChange, search){
+  if(!list) return;
+  list.querySelectorAll(".check-item[data-val]").forEach(el=>{
+    el.onclick = ()=>{
+      const val = el.dataset.val;
+      if(selected.has(val)) selected.delete(val); else selected.add(val);
+      el.classList.toggle("selected");
+      if(onChange) onChange();
+    };
+  });
+  list.querySelectorAll("[data-notypehead]").forEach(head=>{
+    head.onclick = ()=>{
+      const children = Array.from(head.closest(".groupe-section").querySelectorAll(".groupe-child-item"));
+      const allSelected = children.length>0 && children.every(c=>selected.has(c.dataset.val));
+      children.forEach(c=>{
+        if(allSelected) selected.delete(c.dataset.val); else selected.add(c.dataset.val);
+        c.classList.toggle("selected", !allSelected);
+      });
+      head.classList.toggle("selected", !allSelected);
+      if(onChange) onChange();
+    };
+  });
+  if(search){
+    search.oninput = ()=>{
+      const q = normalize(search.value);
+      list.querySelectorAll(".groupe-section").forEach(sec=>{
+        const supMatch = normalize(sec.dataset.super).includes(q);
+        let anyChildMatch = false;
+        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
+          const match = !q || normalize(ch.dataset.childname).includes(q);
+          ch.style.display = match ? "flex" : "none";
+          if(match) anyChildMatch = true;
+        });
+        sec.style.display = (!q || supMatch || anyChildMatch) ? "" : "none";
+      });
+      list.querySelectorAll(".groupe-flat-item").forEach(el=>{
+        const match = !q || normalize(el.dataset.val).includes(q);
+        el.style.display = match ? "flex" : "none";
+      });
+    };
+  }
+}
+
 window.__SF_UTILS = {ICONS,normalize,escHtml,fmtMoney,fmtMoneySigned,MONTHS_FR,MONTHS_FR_SHORT,DAYS_FR,pad2,toISO,
   fmtDateLong,fmtDateShort,fmtMonthYear,debounce,uid,parseDateValue,computeTransform,normType,baseGroupe,baseRemarque,
   decimalsToggleBtnHtml,toggleMoneyDecimals,hideZeroAccountsBtnHtml,toggleHideZeroAccounts,isZeroBalance,enableDragScroll,
-  alignToCanon,transactionFieldCanon,valueListCanon};
+  alignToCanon,transactionFieldCanon,valueListCanon,XLSX_MISSING_MSG,xlsxAvailable,
+  capitalize,fmtMonthYearCap,fmtWholeSigned,signClass,isoToDateObj,setDateColumnFormat,hierarchyCheckListHtml,wireHierarchyCheckList};
 })();
 (function(){
 "use strict";
@@ -877,71 +999,55 @@ const Store = {
      En cas d'échec, Store.lastSaveError contient un message explicite (à afficher à l'utilisateur). */
   lastSaveError: null,
   saveTransactions(){
-    this.lastSaveError = null;
-    const arr = this.transactions.map(t=>({...t, date:t.date.toISOString()}));
-    let json;
-    try{
-      json = JSON.stringify(arr);
-    }catch(e){
-      this.lastSaveError = "Impossible de préparer les données (" + (e && e.message ? e.message : e) + ")";
-      return Promise.resolve(false);
-    }
-    if(this.storageMode === "localstorage"){
-      try{ localStorage.setItem(LS_KEY_LEGACY, json); return Promise.resolve(true); }
-      catch(e){
-        this.lastSaveError = describeStorageError(e, json.length);
-        console.warn("Erreur de sauvegarde", e);
-        return Promise.resolve(false);
-      }
-    }
-    return idbSet("transactions", json).then(()=>true).catch(e=>{
-      console.warn("Erreur de sauvegarde IndexedDB", e);
-      this.lastSaveError = describeStorageError(e, json.length);
-      // Repli d'urgence : si les données restent raisonnablement petites, on tente localStorage
-      // pour ne pas perdre l'import en cours, même si IndexedDB est en défaut sur cet appareil.
-      if(json.length < 4*1024*1024){
-        try{
-          localStorage.setItem(LS_KEY_LEGACY, json);
-          this.storageMode = "localstorage";
-          this.lastSaveError += " — repli automatique sur le stockage navigateur réussi, vos données sont bien enregistrées.";
-          return true;
-        }catch(e2){
-          this.lastSaveError += " Le repli de secours (stockage navigateur) a également échoué : " + (e2 && e2.message ? e2.message : e2) + ".";
-        }
-      }
-      return false;
-    });
+    return this._persistJson(()=>this.transactions.map(t=>({...t, date:t.date.toISOString()})),
+      "transactions", LS_KEY_LEGACY, "lastSaveError", {
+        warn:"Erreur de sauvegarde", idbWarn:"Erreur de sauvegarde IndexedDB",
+        fallbackOk:" — repli automatique sur le stockage navigateur réussi, vos données sont bien enregistrées.",
+        fallbackKo:" Le repli de secours (stockage navigateur) a également échoué : ", switchMode:true});
   },
   /* Même mécanique que saveTransactions, pour les soins de l'onglet Santé (clé IndexedDB séparée
      "sante_items" ; pas de champ Date à convertir, tous les champs sont déjà des chaînes/nombres). */
   lastSanteSaveError: null,
   saveSanteItems(){
-    this.lastSanteSaveError = null;
+    return this._persistJson(()=>this.santeItems,
+      "sante_items", LS_KEY_SANTE_LEGACY, "lastSanteSaveError", {
+        warn:"Erreur de sauvegarde (Santé)", idbWarn:"Erreur de sauvegarde IndexedDB (Santé)",
+        fallbackOk:" — repli automatique sur le stockage navigateur réussi.",
+        fallbackKo:" Le repli de secours a également échoué : ", switchMode:false});
+  },
+  /* Sauvegarde asynchrone commune (transactions, soins) : sérialise getData(), écrit dans IndexedDB sous
+     idbKey — ou directement dans localStorage (lsKey) en mode repli. En cas d'échec IndexedDB, tente un repli
+     d'urgence dans localStorage si les données restent raisonnablement petites (< 4 Mo), pour ne pas perdre
+     l'import en cours ; msg.switchMode bascule alors durablement l'appli en mode localStorage.
+     Retourne une Promise<boolean> ; le message d'erreur lisible est rangé dans this[errKey]. */
+  _persistJson(getData, idbKey, lsKey, errKey, msg){
+    this[errKey] = null;
     let json;
     try{
-      json = JSON.stringify(this.santeItems);
+      json = JSON.stringify(getData());
     }catch(e){
-      this.lastSanteSaveError = "Impossible de préparer les données (" + (e && e.message ? e.message : e) + ")";
+      this[errKey] = "Impossible de préparer les données (" + (e && e.message ? e.message : e) + ")";
       return Promise.resolve(false);
     }
     if(this.storageMode === "localstorage"){
-      try{ localStorage.setItem(LS_KEY_SANTE_LEGACY, json); return Promise.resolve(true); }
+      try{ localStorage.setItem(lsKey, json); return Promise.resolve(true); }
       catch(e){
-        this.lastSanteSaveError = describeStorageError(e, json.length);
-        console.warn("Erreur de sauvegarde (Santé)", e);
+        this[errKey] = describeStorageError(e, json.length);
+        console.warn(msg.warn, e);
         return Promise.resolve(false);
       }
     }
-    return idbSet("sante_items", json).then(()=>true).catch(e=>{
-      console.warn("Erreur de sauvegarde IndexedDB (Santé)", e);
-      this.lastSanteSaveError = describeStorageError(e, json.length);
+    return idbSet(idbKey, json).then(()=>true).catch(e=>{
+      console.warn(msg.idbWarn, e);
+      this[errKey] = describeStorageError(e, json.length);
       if(json.length < 4*1024*1024){
         try{
-          localStorage.setItem(LS_KEY_SANTE_LEGACY, json);
-          this.lastSanteSaveError += " — repli automatique sur le stockage navigateur réussi.";
+          localStorage.setItem(lsKey, json);
+          if(msg.switchMode) this.storageMode = "localstorage";
+          this[errKey] += msg.fallbackOk;
           return true;
         }catch(e2){
-          this.lastSanteSaveError += " Le repli de secours a également échoué : " + (e2 && e2.message ? e2.message : e2) + ".";
+          this[errKey] += msg.fallbackKo + (e2 && e2.message ? e2.message : e2) + ".";
         }
       }
       return false;
@@ -1473,6 +1579,7 @@ function parseParametresSheet(wb){
 
 function parseFile(file){
   return new Promise((resolve,reject)=>{
+    if(!U.xlsxAvailable()){ reject(new Error(U.XLSX_MISSING_MSG)); return; }
     const name = file.name.toLowerCase();
     const isCsv = name.endsWith(".csv");
     const reader = new FileReader();
@@ -1789,15 +1896,6 @@ function getPeriodeDisplay(t){
   const sup = resolvedSuperGroupeForOccurrence(t.groupe, base);
   return sup || "(Sans période)";
 }
-/* Effective super-groupe(s) for a base name shown in management UI (ignoring date, all matching rules —
-   règles "base" classiques ET règles `full` dont l'occurrence partage ce nom de base). Utilisé pour la
-   vue base-only groupeHierarchy() ci-dessous ; NE PAS utiliser pour classer une occurrence précise
-   (voir resolvedSuperGroupeForOccurrence) car ceci ignore volontairement le champ `full`. */
-function getSuperGroupeForBase(base){
-  const rules = Store.settings.groupAliasRules || [];
-  const found = rules.filter(r=> r.groupe===base);
-  return found;
-}
 /* Détermine le groupe de groupe d'UNE occurrence précise (libellé littéral complet), en respectant
    strictement le scope des règles `full` — jamais de repli sur une règle `full` appartenant à une
    AUTRE occurrence du même nom de base, contrairement à getSuperGroupeForBase(). C'est le pendant de
@@ -1838,31 +1936,10 @@ function distinctBaseGroupes(transactions){
   });
   return Array.from(map.entries()).sort((a,b)=> a[0].localeCompare(b[0],'fr')).map(([base,count])=>({base,count}));
 }
-/* Nested structure for the filter checklist: sections keyed by super-groupe name (only bases with a rule),
-   plus a flat list of unassigned base names. */
-function groupeHierarchy(transactions){
-  const bases = distinctBaseGroupes(transactions); // [{base,count}]
-  const sections = new Map(); // superGroupe -> [{base,count}]
-  const flat = [];
-  bases.forEach(({base,count})=>{
-    const rules = getSuperGroupeForBase(base);
-    if(rules.length){
-      // list under every distinct super-groupe it can resolve to
-      const supers = Array.from(new Set(rules.map(r=>r.superGroupe)));
-      supers.forEach(sup=>{
-        if(!sections.has(sup)) sections.set(sup, []);
-        sections.get(sup).push({base, count});
-      });
-    } else {
-      flat.push({base, count});
-    }
-  });
-  return {sections, flat};
-}
 /* Variante utilisée par le filtre "Groupe" : conserve le libellé complet de chaque groupe
    (avec l'indication de date entre parenthèses, ex. "Cliff Haven (23-01-08)") plutôt que de
    fusionner toutes les dates d'un même lieu sous un seul nom de base. Le classement dans les
-   groupes de groupe (sections) reste basé sur le nom de base, comme pour groupeHierarchy(). */
+   groupes de groupe (sections) reste basé sur le nom de base. */
 function distinctFullGroupes(transactions){
   const map = new Map(); // libellé complet -> count
   transactions.forEach(t=>{
@@ -1984,22 +2061,6 @@ const GROUP_DATE_TODAY_SENTINEL = "today";
 function resolveGroupDateToValue(dateTo){
   return dateTo===GROUP_DATE_TODAY_SENTINEL ? U.toISO(new Date()) : dateTo;
 }
-function getGroupDayStats(key){
-  const range = getGroupDateRange(key);
-  if(!range || !range.dateFrom || !range.dateTo) return null;
-  const from = new Date(range.dateFrom+"T00:00:00");
-  const to = new Date(resolveGroupDateToValue(range.dateTo)+"T00:00:00");
-  const days = Math.round((to-from)/86400000) + 1;
-  if(days<=0) return null;
-  let income=0, expense=0;
-  Store.transactions.forEach(t=>{
-    if(t.type==="Transfer") return;
-    if(t.groupe !== key) return;
-    if(t.type==="Income") income += t.montant; else expense += t.montant;
-  });
-  return {days, income, expense, total: income+expense,
-    incomePerDay: income/days, expensePerDay: expense/days, totalPerDay: (income+expense)/days};
-}
 /* Date de "départ" d'une occurrence de groupe (libellé complet), utilisée pour le classement chronologique
    des groupes de groupe (picker de la fiche transaction, vue Groupe de l'onglet Évolution, filtre Groupe de
    l'onglet Transactions). Ordre de priorité strict :
@@ -2033,7 +2094,7 @@ function parseGroupSuffixDate(suffix){
   const s = String(suffix||"").trim();
   let m = s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
   if(m){
-    const yy=+m[1], mm=+m[2], dd=+m[3];
+    const mm=+m[2], dd=+m[3];
     if(mm>=1 && mm<=12 && dd>=1 && dd<=31) return `20${m[1]}-${m[2]}-${m[3]}`;
   }
   m = s.match(/^(\d{2})-(\d{2})_(\d{2})$/);
@@ -2081,15 +2142,6 @@ function getGroupePersonnesDisplay(t){
 function getSuperPersonneForBase(base){
   const rules = Store.settings.personAliasRules || [];
   return rules.filter(r=>r.personne===base);
-}
-function distinctValuesPersonneDisplay(transactions){
-  const map = new Map();
-  transactions.forEach(t=>{
-    if(!t.personne) return;
-    const v = getPersonneDisplay(t);
-    map.set(v, (map.get(v)||0)+1);
-  });
-  return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).map(([value,count])=>({value,count}));
 }
 function distinctBasePersonnes(transactions){
   const map = new Map();
@@ -2160,8 +2212,7 @@ const TYPE_LABELS_FR = {Income:"Revenus", Expense:"Dépenses", Transfer:"Transfe
 function monthKeyLabel(key){
   const parts = String(key).split("-");
   const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1;
-  const lbl = U.fmtMonthYear(y,m);
-  return lbl.charAt(0).toUpperCase()+lbl.slice(1);
+  return U.fmtMonthYearCap(y,m);
 }
 
 function getActiveChips(){
@@ -2250,8 +2301,7 @@ function distinctMonths(transactions, mode){
     }
     const key = y+"-"+U.pad2(m+1);
     if(!map.has(key)){
-      const lbl = U.fmtMonthYear(y,m);
-      map.set(key, {label: lbl.charAt(0).toUpperCase()+lbl.slice(1), sortVal: y*12+m, count:0});
+      map.set(key, {label: U.fmtMonthYearCap(y,m), sortVal: y*12+m, count:0});
     }
     map.get(key).count++;
   });
@@ -2294,79 +2344,6 @@ function computeTotals(transactions){
   return {income, expense, net: income+expense};
 }
 
-/* ---------------- Breakdown by dimension (Groupe/Catégorie/Personne/Compte), for filtered set ---------------- */
-function computeBreakdown(transactions, dim, opts){
-  opts = opts||{};
-  const onlyExpense = opts.onlyExpense;
-  const map = new Map();
-  transactions.forEach(t=>{
-    if(t.type==="Transfer") return;
-    if(onlyExpense && t.type!=="Expense") return;
-    const key = dimDisplayValue(t, dim);
-    if(!map.has(key)) map.set(key,{key, income:0, expense:0, net:0, count:0});
-    const o = map.get(key);
-    if(t.type==="Income") o.income += t.montant;
-    else if(t.type==="Expense") o.expense += t.montant;
-    o.net += t.montant;
-    o.count++;
-  });
-  return Array.from(map.values());
-}
-
-/* ---------------- Time-bucketed series, respecting date basis ---------------- */
-/* granularity: "year" | "month". dateBasis: "indiquee" | "transformee" */
-function iterateBuckets(t, granularity, dateBasis, cb){
-  // cb(bucketKey, year, month, weight, montant) — weight lets year-split divide amounts
-  if(dateBasis==="transformee"){
-    const tr = t.transform;
-    if(tr.mode==="month"){
-      const key = granularity==="year" ? String(tr.year) : tr.year+"-"+U.pad2(tr.month+1);
-      cb(key, tr.year, tr.month, 1, t.montant);
-      return;
-    }
-    if(tr.mode==="yearsplit"){
-      if(granularity==="year"){
-        cb(String(tr.year), tr.year, 0, 1, t.montant);
-      } else {
-        for(let m=0;m<12;m++){
-          cb(tr.year+"-"+U.pad2(m+1), tr.year, m, 1/12, t.montant/12);
-        }
-      }
-      return;
-    }
-  }
-  const y = t.date.getFullYear(), m = t.date.getMonth();
-  const key = granularity==="year" ? String(y) : y+"-"+U.pad2(m+1);
-  cb(key, y, m, 1, t.montant);
-}
-
-function computeTimeSeries(transactions, granularity, dateBasis, dimension){
-  // returns {buckets:[{key,year,month,label,income,expense,net, byDim:Map}], dimTotals:Map(dimValue->total)}
-  const buckets = new Map();
-  const dimTotals = new Map();
-  function ensureBucket(key,year,month){
-    if(!buckets.has(key)){
-      const label = granularity==="year" ? String(year) : U.MONTHS_FR_SHORT[month]+" "+String(year).slice(2);
-      buckets.set(key,{key,year,month,label,income:0,expense:0,net:0,byDim:new Map()});
-    }
-    return buckets.get(key);
-  }
-  transactions.forEach(t=>{
-    if(t.type==="Transfer") return;
-    iterateBuckets(t, granularity, dateBasis, (key,year,month,weight,amount)=>{
-      const b = ensureBucket(key,year,month);
-      if(t.type==="Income") b.income += amount; else b.expense += amount;
-      b.net += amount;
-      if(dimension){
-        const dv = dimDisplayValue(t, dimension);
-        b.byDim.set(dv, (b.byDim.get(dv)||0) + amount);
-        dimTotals.set(dv, (dimTotals.get(dv)||0) + Math.abs(amount));
-      }
-    });
-  });
-  const arr = Array.from(buckets.values()).sort((a,b)=> a.key<b.key?-1:1);
-  return {buckets:arr, dimTotals};
-}
 
 /* ================= ONGLET ÉVOLUTION — agrégation par groupe/catégorie/personne × année/mois ================= */
 /* Construit l'index {sections:[{key,label,items:[{key,label,values:Map("YYYY-MM"->montant)}]}]} pour une
@@ -2584,12 +2561,9 @@ function recurringItemTotal(item){
 function recurringSectionTotal(section){
   let s=0; section.items.forEach(it=>s+=recurringItemTotal(it)); return s;
 }
-function recurringItemMonthValue(item, year, month){
-  return item.values.get(year+"-"+U.pad2(month+1)) || 0;
-}
-function recurringSectionMonthValue(section, year, month){
-  let s=0; section.items.forEach(it=> s+=recurringItemMonthValue(it, year, month)); return s;
-}
+// Même structure item.values Map("YYYY-MM") que l'index Évolution : mêmes accesseurs mensuels.
+const recurringItemMonthValue = itemMonthValue;
+const recurringSectionMonthValue = sectionMonthValue;
 function recurringItemYearLumpValue(item, year){
   return item.yearValues.get(String(year)) || 0;
 }
@@ -2614,11 +2588,11 @@ function recurringColumns(evoIndex, periodFrom, periodTo){
   return cols;
 }
 
-window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals, computeBreakdown, computeTimeSeries,
-  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, distinctFullGroupes, groupeHierarchy, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule, getSuperGroupeForBase,
+window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountBalances, computeTotals,
+  getGroupeDisplay, distinctValuesGroupeDisplay, distinctBaseGroupes, distinctFullGroupes, groupeHierarchyFull, groupeHierarchyChrono, findGroupAliasRule,
   labelResolvesToSuperGroupe,
-  getPersonneDisplay, distinctValuesPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
-  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, getGroupDayStats, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
+  getPersonneDisplay, distinctBasePersonnes, personneHierarchy, findPersonAliasRule, getSuperPersonneForBase,
+  getAccountTypeDisplay, getAccountAcronym, getGroupKind, getGroupVoyageMonth, getGroupDateRange, GROUP_DATE_TODAY_SENTINEL, resolveGroupDateToValue, getGroupStartDate, groupStartDatesMap, groupLabelSuffix, parseGroupSuffixDate, getCalcMonthYM,
   classifyCategoryTypes, distinctValuesCategorieSorted, dimDisplayValue,
   buildEvolutionIndex, itemTotalValue, sectionTotalValue, itemYearValue, sectionYearValue, itemMonthValue, sectionMonthValue, evolutionYearsList,
   itemCumulativeYearValue, sectionCumulativeYearValue, itemCumulativeMonthValue, sectionCumulativeMonthValue,
@@ -2630,8 +2604,6 @@ window.__SF_AGG = {applyFilters, distinctValues, distinctMonths, computeAccountB
 const U = window.__SF_UTILS;
 const Store = window.__SF_STORE;
 const F = window.__SF_FILTERS;
-const AGG = window.__SF_AGG;
-const DATA = window.__SF_DATA;
 const ICONS = U.ICONS;
 
 let currentTab = "accounts";
@@ -2974,7 +2946,6 @@ window.__SF_APP = {
 "use strict";
 const U = window.__SF_UTILS;
 const Store = window.__SF_STORE;
-const F = window.__SF_FILTERS;
 const AGG = window.__SF_AGG;
 const APP = window.__SF_APP;
 const ICONS = U.ICONS;
@@ -3045,8 +3016,6 @@ function makeTxnItemEl(t, navIds){
   return el;
 }
 
-function capitalize(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
-
 /* Determine the group key/label/sort value for a transaction, given the active group-by mode */
 function getGroupInfo(t, groupBy){
   if(groupBy==="day"){
@@ -3054,12 +3023,12 @@ function getGroupInfo(t, groupBy){
   }
   if(groupBy==="month_indiquee"){
     const y=t.date.getFullYear(), m=t.date.getMonth();
-    return {key:y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+    return {key:y+"-"+U.pad2(m+1), label:U.fmtMonthYearCap(y,m), sortVal:y*12+m};
   }
   if(groupBy==="month_transformee"){
     const ym = AGG.getCalcMonthYM(t);
     const y=ym.y, m=ym.m;
-    return {key:"t"+y+"-"+U.pad2(m+1), label:capitalize(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+    return {key:"t"+y+"-"+U.pad2(m+1), label:U.fmtMonthYearCap(y,m), sortVal:y*12+m};
   }
   // dimension-based grouping: groupe / categorie / compte / personne
   const v = AGG.dimDisplayValue(t, groupBy);
@@ -4194,6 +4163,19 @@ function voyageTxnMonths(t){
   }
   return [{month: t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1), weight: 1}];
 }
+/* Part d'une transaction voyage (mois résolus par voyageTxnMonths) qui tombe dans monthSet :
+   {amount (montant brut pondéré), ysCount (nb de 1/12e retenus si réparti sur l'année)}, ou null si
+   aucun de ses mois n'est dans monthSet. */
+function voyageShareInMonths(t, monthSet){
+  let amount = 0, matched = false, ysCount = 0;
+  voyageTxnMonths(t).forEach(({month, weight})=>{
+    if(!monthSet.has(month)) return;
+    matched = true;
+    amount += t.montant*weight;
+    if(weight!==1) ysCount++;
+  });
+  return matched ? {amount, ysCount} : null;
+}
 /* État ouvert/fermé des sections Revenus/Dépenses (Catégories et Voyages) de chaque carte de groupe,
    clé = "<titre du groupe>::cat::income" etc. Ouvertes par défaut (comportement inchangé), conservé entre
    les re-rendus (Map, pas de perte lors du grouper/dégrouper). */
@@ -4380,7 +4362,6 @@ function salaryRealMonthAmount(superGroupeName, catKey, monthKey){
     if(t.type==="Transfer") return;
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
-    const base = t.groupeBase || U.baseGroupe(t.groupe);
     const isRealVoyage = AGG.getGroupKind(t.groupe)==="voyage";
     if(isRealVoyage && !voyagesMergedForGroup(superGroupeName)) return;
     const cat = t.categorie || "(Non renseigné)";
@@ -4472,7 +4453,6 @@ function computeGroupBudget(superGroupeName, months, opts){
     if(t.type==="Transfer") return;
     if(!matchesSelection(t)) return;
     if(isAccountExcluded(t.compte)) return;
-    const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(t.groupe);
 
     if(kind==="voyage"){
@@ -4610,7 +4590,6 @@ function computeGroupBudget(superGroupeName, months, opts){
       if(t.type==="Transfer") return false;
       if(!matchesSelection(t)) return false;
       if(isAccountExcluded(t.compte)) return false;
-      const base = t.groupeBase || U.baseGroupe(t.groupe);
       if(!voyagesMergedForGroup(superGroupeName) && AGG.getGroupKind(t.groupe)==="voyage") return false;
       const cat = t.categorie || "(Non renseigné)";
       if(isSalaryCategory(cat)){ salaryCatKey = cat; return true; }
@@ -4701,7 +4680,6 @@ function categoriesForGroup(groupName){
     if(t.type==="Transfer") return;
     if(!groupSelectionMatches(t, groupName)) return;
     if(isAccountExcluded(t.compte)) return;
-    const base = t.groupeBase || U.baseGroupe(t.groupe);
     if(!voyagesMergedForGroup(groupName) && AGG.getGroupKind(t.groupe)==="voyage") return;
     set.add(t.categorie || "(Non renseigné)");
   });
@@ -6190,6 +6168,108 @@ function renderBudget(){
 }
 
 /* ---------------- Détail des transactions d'une catégorie (Amorti / Réel) ---------------- */
+/* ---------------- Feuille de détail Réel / Amorti / Ajout (commune) ----------------
+   Rendu unique des 4 feuilles de détail du Budget : catégorie (openCategoryTxnSheet), voyage
+   (openVoyageTxnSheet), Revenus/Dépenses/Voyages/Total d'un ou plusieurs groupes (openGroupTypeTxnSheet) et
+   mois de la vue "mois par mois" (openGroupMonthTxnSheet). Badges filtrables Réel/Amorti/Ajouts (+ Total
+   optionnel), lignes cliquables (transaction -> fiche, ajustement -> formulaire), bouton "Amortir".
+   o = {prefix, rowClass, titleHtml, subtitleHtml, items, filterKind,
+        totals?        {real, amort, adj} imposés (sinon sommés à partir de items),
+        totalBadge?    (total)=>({bg, color}) : affiche un badge "Total" coloré,
+        emptyText,     fin de la phrase "Aucun élément… <emptyText>",
+        metaHtml(x),   ligne secondaire (date/mois, fenêtre d'amortissement, part yearsplit…),
+        metaEllipsis?  ligne secondaire tronquée avec "…",
+        amortizeFor?(x) -> {groupe, categorie} | null : bouton "Amortir" sur la ligne}  */
+const BG_KIND_STYLE = {
+  reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
+  amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
+  ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
+};
+function openBudgetKindSheet(o){
+  let filterKind = o.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
+  const items = o.items;
+  const sumKind = k=>items.filter(x=>x.kind===k).reduce((s,x)=>s+x.displayAmount,0);
+  function badgeHtml(kind, text, amount){
+    const st = BG_KIND_STYLE[kind];
+    return `<span class="${o.prefix}-badge" data-kind="${kind}" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${st.bg};color:${st.fg};${filterKind&&!bgKindIncluded(filterKind,kind)?'opacity:.45;':''}${filterKind===kind?'box-shadow:0 0 0 2px '+st.fg+';':''}">${text} : ${bgFmtMoneySigned(amount)}</span>`;
+  }
+  function renderModal(){
+    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
+    const t = o.totals || {real: sumKind("reel"), amort: sumKind("amorti"), adj: sumKind("ajout")};
+    const total = t.real + t.amort + t.adj;
+    const tb = o.totalBadge ? o.totalBadge(total) : null;
+    const metaAttr = o.metaEllipsis ? `style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"` : `class="u-note-11"`;
+    const modal = document.getElementById("modal-detail");
+    modal.innerHTML = `
+      <div class="u-row-between-sm">
+        <span class="u-title-lg">${o.titleHtml}</span>
+        <button class="icon-btn" id="${o.prefix}-close">${ICONS.close}</button>
+      </div>
+      <div class="u-subtitle">${o.subtitleHtml} · ${shown.length} élément${shown.length>1?"s":""}</div>
+      <div class="u-badge-row">
+        ${badgeHtml("reel", "Réel", t.real)}
+        ${t.amort!==0 ? badgeHtml("amorti", "Amorti", t.amort) : ""}
+        ${t.adj!==0 ? badgeHtml("ajout", "Ajouts", t.adj) : ""}
+        ${tb ? `<span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${tb.bg};color:${tb.color};">Total : ${bgFmtMoneySigned(total)}</span>` : ""}
+      </div>
+      <div class="u-scroll-56">
+        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} ${o.emptyText}</div>` :
+        shown.map(x=>{
+          const clickable = x.txnId || x.adjIdx!=null;
+          const am = (o.amortizeFor && x.kind==="reel") ? o.amortizeFor(x) : null;
+          return `
+          <div class="detail-row ${o.rowClass}" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${clickable?'cursor:pointer;':''}">
+            <span class="u-col-shrink">
+              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${clickable?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
+              <span ${metaAttr}>${o.metaHtml(x)}</span>
+            </span>
+            <span class="u-row-gap8-fixed">
+              ${am ? `<button type="button" class="btn btn-ghost btn-sm ${o.prefix}-amortize" data-txnid="${U.escHtml(x.txnId)}" data-groupe="${U.escHtml(am.groupe)}" data-cat="${U.escHtml(am.categorie)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
+              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${BG_KIND_STYLE[x.kind].bg};color:${BG_KIND_STYLE[x.kind].fg};">${BG_KIND_STYLE[x.kind].label}</span>
+              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
+            </span>
+          </div>
+        `;}).join("")}
+      </div>
+    `;
+    document.getElementById(o.prefix+"-close").onclick = ()=>APP.closeOverlay("overlay-detail");
+    modal.querySelectorAll(`.${o.prefix}-badge[data-kind]`).forEach(el=>{
+      el.onclick = ()=>{
+        const k = el.dataset.kind;
+        filterKind = (filterKind===k) ? null : k;
+        renderModal();
+      };
+    });
+    modal.querySelectorAll(`.${o.prefix}-amortize[data-txnid]`).forEach(btn=>{
+      btn.onclick = (e)=>{
+        e.stopPropagation();
+        openAdjustmentForm(null, {
+          month: btn.dataset.month,
+          groupe: btn.dataset.groupe,
+          categorie: btn.dataset.cat,
+          montant: -Number(btn.dataset.amount),
+          remarque: "Amortissement : "+(btn.dataset.remarque||btn.dataset.cat),
+          amorti: true,
+          montantScope: "perso"
+        });
+      };
+    });
+    modal.querySelectorAll(`.${o.rowClass}[data-txnid]`).forEach(el=>{
+      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
+    });
+    modal.querySelectorAll(`.${o.rowClass}[data-adjidx]`).forEach(el=>{
+      if(el.dataset.txnid) return;
+      el.onclick = ()=>{
+        const idx = Number(el.dataset.adjidx);
+        const a = Object.assign({__idx:idx}, (Store.settings.budget.adjustments||[])[idx]);
+        openAdjustmentForm(a);
+      };
+    });
+  }
+  renderModal();
+  APP.openOverlay("overlay-detail");
+}
+
 function openCategoryTxnSheet(superGroupeName, catKey, opts){
   opts = opts || {};
   let filterKind = opts.filterKind || null; // null | "reel" | "amorti" | "ajout" | "reel_ajout"
@@ -6216,7 +6296,6 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(t.type==="Transfer") return;
     if(!groupSelectionMatches(t, superGroupeName)) return;
     if(isAccountExcluded(t.compte)) return;
-    const base = t.groupeBase || U.baseGroupe(t.groupe);
     const isMergedVoyage = AGG.getGroupKind(t.groupe)==="voyage";
     if(isMergedVoyage && !voyagesMergedForGroup(superGroupeName)) return;
     const cat = t.categorie || "(Non renseigné)";
@@ -6224,15 +6303,9 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
     if(isMergedVoyage){
       // Groupe voyage fusionné dans les catégories (§6.3) : jamais amorti, mois résolu comme dans
       // computeGroupBudget (mois voyage forcé en priorité) — voir voyageTxnMonths.
-      let displayAmount = 0, matched = false, ysCount = 0;
-      voyageTxnMonths(t).forEach(({month, weight})=>{
-        if(!monthSet.has(month)) return;
-        matched = true;
-        displayAmount += t.montant*weight;
-        if(weight!==1) ysCount++;
-      });
-      if(!matched) return;
-      displayAmount *= scopeMult;
+      const share = voyageShareInMonths(t, monthSet);
+      if(!share) return;
+      const displayAmount = share.amount * scopeMult, ysCount = share.ysCount;
       const isYearsplit = t.transform.mode==="yearsplit" && !AGG.getGroupVoyageMonth(t.groupe);
       items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", displayAmount, rawAmount: t.montant, effMonthKey: t.transform.mode==="month"?(t.transform.year+"-"+U.pad2(t.transform.month+1)):(t.date.getFullYear()+"-"+U.pad2(t.date.getMonth()+1)), yearsplit: isYearsplit, yearsplitCount: isYearsplit?ysCount:null});
       return;
@@ -6290,82 +6363,15 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   const realTotal = catEntry ? (catEntry.realIncome||0)+(catEntry.realExpense||0) : 0;
   const amortTotal = catEntry ? (catEntry.amortIncome||0)+(catEntry.amortExpense||0) : 0;
   const adjTotal = catEntry ? (catEntry.adjIncome||0)+(catEntry.adjExpense||0) : 0;
-  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
+  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); return " · "+U.fmtMonthYearCap(my, mm-1); })() : "";
 
-  const KIND_STYLE = {
-    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
-    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
-    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
-  };
-
-  function renderModal(){
-    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div class="u-row-between-sm">
-        <span class="u-title-lg">${U.escHtml(catKey)}</span>
-        <button class="icon-btn" id="cattxn-close">${ICONS.close}</button>
-      </div>
-      <div class="u-subtitle">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div class="u-badge-row">
-        <span class="cattxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
-        ${amortTotal!==0 ? `<span class="cattxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
-        ${adjTotal!==0 ? `<span class="cattxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
-      </div>
-      <div class="u-scroll-56">
-        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
-        shown.map((x,i)=>`
-          <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span class="u-col-shrink">
-              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span class="u-note-11">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · "+windowN+"/"+periodMonths+" mois":""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
-            </span>
-            <span class="u-row-gap8-fixed">
-              ${x.kind==="reel" ? `<button type="button" class="btn btn-ghost btn-sm cattxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
-              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
-              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
-            </span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    document.getElementById("cattxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-    document.querySelectorAll(".cattxn-badge[data-kind]").forEach(el=>{
-      el.onclick = ()=>{
-        const k = el.dataset.kind;
-        filterKind = (filterKind===k) ? null : k;
-        renderModal();
-      };
-    });
-    document.querySelectorAll(".cattxn-amortize[data-txnid]").forEach(btn=>{
-      btn.onclick = (e)=>{
-        e.stopPropagation();
-        openAdjustmentForm(null, {
-          month: btn.dataset.month,
-          groupe: superGroupeName,
-          categorie: catKey,
-          montant: -Number(btn.dataset.amount),
-          remarque: "Amortissement : "+(btn.dataset.remarque||catKey),
-          amorti: true,
-          montantScope: "perso"
-        });
-      };
-    });
-    document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
-      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-    });
-    document.querySelectorAll(".cattxn-row[data-adjidx]").forEach(el=>{
-      if(el.dataset.txnid) return;
-      el.onclick = ()=>{
-        const idx = Number(el.dataset.adjidx);
-        const a = Object.assign({__idx:idx}, (cfg.adjustments||[])[idx]);
-        openAdjustmentForm(a);
-      };
-    });
-  }
-
-  renderModal();
-  APP.openOverlay("overlay-detail");
+  openBudgetKindSheet({
+    prefix:"cattxn", rowClass:"cattxn-row", titleHtml:U.escHtml(catKey),
+    subtitleHtml:U.escHtml(superGroupeName)+monthSubtitle, items, filterKind,
+    totals:{real:realTotal, amort:amortTotal, adj:adjTotal}, emptyText:"sur la période affichée.",
+    metaHtml:x=>`${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.kind==="amorti"?" · "+windowN+"/"+periodMonths+" mois":""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}`,
+    amortizeFor:()=>({groupe:superGroupeName, categorie:catKey})
+  });
 }
 
 /* ---------------- Salaire : édition manuelle Moi / Ma femme, mois par mois ---------------- */
@@ -6490,7 +6496,6 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
       if(t.type==="Transfer") return;
       if(!groupSelectionMatches(t, superGroupeName)) return;
       if(isAccountExcluded(t.compte)) return;
-      const base = t.groupeBase || U.baseGroupe(t.groupe);
       if(AGG.getGroupKind(t.groupe)!=="voyage") return;
       if(t.groupe !== voyKey) return;
       const tr = t.transform;
@@ -6520,59 +6525,14 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   const amortTotal = voyEntry ? (voyEntry.amortIncome||0)+(voyEntry.amortExpense||0) : 0;
   const adjTotal = voyEntry ? (voyEntry.adjIncome||0)+(voyEntry.adjExpense||0) : 0;
   const label = voyEntry ? (voyEntry.label||voyEntry.key) : voyKey;
-  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); const l = U.fmtMonthYear(my, mm-1); return " · "+l.charAt(0).toUpperCase()+l.slice(1); })() : "";
+  const monthSubtitle = opts.month ? (()=>{ const [my,mm] = opts.month.split("-").map(Number); return " · "+U.fmtMonthYearCap(my, mm-1); })() : "";
 
-  const KIND_STYLE = {
-    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
-    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
-    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
-  };
-
-  function renderModal(){
-    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div class="u-row-between-sm">
-        <span class="u-title-lg">${U.escHtml(label)}</span>
-        <button class="icon-btn" id="voytxn-close">${ICONS.close}</button>
-      </div>
-      <div class="u-subtitle">${U.escHtml(superGroupeName)}${monthSubtitle} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div class="u-badge-row">
-        <span class="voytxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
-        ${amortTotal!==0 ? `<span class="voytxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
-        ${adjTotal!==0 ? `<span class="voytxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
-      </div>
-      <div class="u-scroll-56">
-        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
-        shown.map((x,i)=>`
-          <div class="detail-row cattxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} style="align-items:center;${x.txnId?'cursor:pointer;':''}">
-            <span class="u-col-shrink">
-              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${x.txnId?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span class="u-note-11">${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
-            </span>
-            <span class="u-row-gap8-fixed">
-              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
-              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
-            </span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    document.getElementById("voytxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-    document.querySelectorAll(".voytxn-badge[data-kind]").forEach(el=>{
-      el.onclick = ()=>{
-        const k = el.dataset.kind;
-        filterKind = (filterKind===k) ? null : k;
-        renderModal();
-      };
-    });
-    document.querySelectorAll(".cattxn-row[data-txnid]").forEach(el=>{
-      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-    });
-  }
-
-  renderModal();
-  APP.openOverlay("overlay-detail");
+  openBudgetKindSheet({
+    prefix:"voytxn", rowClass:"cattxn-row", titleHtml:U.escHtml(label),
+    subtitleHtml:U.escHtml(superGroupeName)+monthSubtitle, items, filterKind,
+    totals:{real:realTotal, amort:amortTotal, adj:adjTotal}, emptyText:"sur la période affichée.",
+    metaHtml:x=>`${x.kind==="ajout"||x.kind==="amorti" ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}`
+  });
 }
 
 /* Détail Réel/Amorti/Ajout des transactions menant aux totaux Revenus/Dépenses/Voyages/Total affichés pour
@@ -6599,7 +6559,6 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     if(isAccountExcluded(t.compte)) return;
     const matchedName = names.find(n=>groupSelectionMatches(t, n));
     if(!matchedName) return;
-    const base = t.groupeBase || U.baseGroupe(t.groupe);
     const kind = AGG.getGroupKind(t.groupe);
     const isRealVoyage = kind==="voyage";
     const merged = isRealVoyage && voyagesMergedForGroup(matchedName);
@@ -6614,15 +6573,9 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
       // forcé en priorité) — voir voyageTxnMonths. Non fusionné : filtré par type "Income"/"Expense" via
       // isVoyage ci-dessus (exclu) ; fusionné : redevient un revenu/dépense "normal" (filtre appliqué).
       if(merged && (typeFilter==="Income" || typeFilter==="Expense") && t.type!==typeFilter) return;
-      let displayAmount = 0, matched = false, ysCount = 0;
-      voyageTxnMonths(t).forEach(({month, weight})=>{
-        if(!monthSet.has(month)) return;
-        matched = true;
-        displayAmount += t.montant*weight;
-        if(weight!==1) ysCount++;
-      });
-      if(!matched) return;
-      displayAmount *= scopeMult;
+      const share = voyageShareInMonths(t, monthSet);
+      if(!share) return;
+      const displayAmount = share.amount * scopeMult, ysCount = share.ysCount;
       const isYearsplit = t.transform.mode==="yearsplit" && !AGG.getGroupVoyageMonth(t.groupe);
       items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||t.categorie||"—", sub, displayAmount, yearsplit: isYearsplit, yearsplitCount: isYearsplit?ysCount:null});
       return;
@@ -6696,87 +6649,15 @@ function openGroupTypeTxnSheet(superGroupeNames, type, opts){
   const subtitle = names.length>1 ? "Tous les groupes" : names[0];
   const mainGroup = Store.settings.budget.mainGroup;
 
-  const KIND_STYLE = {
-    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
-    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
-    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
-  };
-
-  function renderModal(){
-    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
-    const realTotal = items.filter(x=>x.kind==="reel").reduce((s,x)=>s+x.displayAmount,0);
-    const amortTotal = items.filter(x=>x.kind==="amorti").reduce((s,x)=>s+x.displayAmount,0);
-    const adjTotal = items.filter(x=>x.kind==="ajout").reduce((s,x)=>s+x.displayAmount,0);
-    const total = realTotal+amortTotal+adjTotal;
-    const color = type==="Income" ? "var(--income)" : type==="Expense" ? "var(--expense)" : (total<0?"var(--expense)":"var(--income)");
-    const bg = type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)";
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div class="u-row-between-sm">
-        <span class="u-title-lg">${label}</span>
-        <button class="icon-btn" id="grptxn-close">${ICONS.close}</button>
-      </div>
-      <div class="u-subtitle">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div class="u-badge-row">
-        <span class="grptxn-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
-        ${amortTotal!==0 ? `<span class="grptxn-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
-        ${adjTotal!==0 ? `<span class="grptxn-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
-        <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${bg};color:${color};">Total : ${bgFmtMoneySigned(total)}</span>
-      </div>
-      <div class="u-scroll-56">
-        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur la période affichée.</div>` :
-        shown.map(x=>`
-          <div class="detail-row grptxn-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span class="u-col-shrink">
-              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
-            </span>
-            <span class="u-row-gap8-fixed">
-              ${(x.kind==="reel" && x.catKey && x.matchedName===mainGroup) ? `<button type="button" class="btn btn-ghost btn-sm grptxn-amortize" data-txnid="${U.escHtml(x.txnId)}" data-groupe="${U.escHtml(x.matchedName)}" data-cat="${U.escHtml(x.catKey)}" data-month="${U.escHtml(x.effMonthKey)}" data-amount="${x.rawAmount}" data-remarque="${U.escHtml(x.remarque)}" style="padding:3px 9px;font-size:10.5px;">Amortir</button>` : ""}
-              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
-              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
-            </span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    document.getElementById("grptxn-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-    document.querySelectorAll(".grptxn-badge[data-kind]").forEach(el=>{
-      el.onclick = ()=>{
-        const k = el.dataset.kind;
-        filterKind = (filterKind===k) ? null : k;
-        renderModal();
-      };
-    });
-    document.querySelectorAll(".grptxn-amortize[data-txnid]").forEach(btn=>{
-      btn.onclick = (e)=>{
-        e.stopPropagation();
-        openAdjustmentForm(null, {
-          month: btn.dataset.month,
-          groupe: btn.dataset.groupe,
-          categorie: btn.dataset.cat,
-          montant: -Number(btn.dataset.amount),
-          remarque: "Amortissement : "+(btn.dataset.remarque||btn.dataset.cat),
-          amorti: true,
-          montantScope: "perso"
-        });
-      };
-    });
-    document.querySelectorAll(".grptxn-row[data-txnid]").forEach(el=>{
-      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-    });
-    document.querySelectorAll(".grptxn-row[data-adjidx]").forEach(el=>{
-      if(el.dataset.txnid) return;
-      el.onclick = ()=>{
-        const idx = Number(el.dataset.adjidx);
-        const a = Object.assign({__idx:idx}, (Store.settings.budget.adjustments||[])[idx]);
-        openAdjustmentForm(a);
-      };
-    });
-  }
-
-  renderModal();
-  APP.openOverlay("overlay-detail");
+  openBudgetKindSheet({
+    prefix:"grptxn", rowClass:"grptxn-row", titleHtml:label,
+    subtitleHtml:U.escHtml(subtitle), items, filterKind, emptyText:"sur la période affichée.",
+    totalBadge:total=>({
+      color: type==="Income" ? "var(--income)" : type==="Expense" ? "var(--expense)" : (total<0?"var(--expense)":"var(--income)"),
+      bg: type==="Income" ? "var(--income-soft)" : type==="Expense" ? "var(--expense-soft)" : "var(--primary-soft)"}),
+    metaHtml:x=>`${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}`, metaEllipsis:true,
+    amortizeFor:x=>(x.catKey && x.matchedName===mainGroup) ? {groupe:x.matchedName, categorie:x.catKey} : null
+  });
 }
 
 /* Détail des transactions/ajustements d'un ou plusieurs groupes pour UN SEUL mois — ouvert en cliquant une
@@ -6789,78 +6670,17 @@ function openGroupMonthTxnSheet(superGroupeNames, monthKey){
   const names = Array.isArray(superGroupeNames) ? superGroupeNames : [superGroupeNames];
   const boundsMonths = monthsInRange(periodFrom, periodTo);
   const items = collectGroupTypeItemsDetailed(names, null, [monthKey], boundsMonths);
-  let filterKind = null; // null | "reel" | "amorti" | "ajout"
 
   const [my, mm] = monthKey.split("-").map(Number);
-  const monthLabel = U.fmtMonthYear(my, mm-1);
-  const label = monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1);
+  const label = U.fmtMonthYearCap(my, mm-1);
   const subtitle = names.length>1 ? "Tous les groupes" : names[0];
 
-  const KIND_STYLE = {
-    reel:   {label:"Réel",   bg:"var(--primary-soft)",  fg:"var(--primary)"},
-    amorti: {label:"Amorti", bg:"var(--transfer-soft)", fg:"var(--transfer)"},
-    ajout:  {label:"Ajout",  bg:"var(--card-alt)",      fg:"var(--text-sub)"},
-  };
-
-  function renderModal(){
-    const shown = items.filter(x=>bgKindIncluded(filterKind, x.kind));
-    const realTotal = items.filter(x=>x.kind==="reel").reduce((s,x)=>s+x.displayAmount,0);
-    const amortTotal = items.filter(x=>x.kind==="amorti").reduce((s,x)=>s+x.displayAmount,0);
-    const adjTotal = items.filter(x=>x.kind==="ajout").reduce((s,x)=>s+x.displayAmount,0);
-    const total = realTotal+amortTotal+adjTotal;
-    const color = total<0 ? "var(--expense)" : "var(--income)";
-    const modal = document.getElementById("modal-detail");
-    modal.innerHTML = `
-      <div class="u-row-between-sm">
-        <span class="u-title-lg">${U.escHtml(label)}</span>
-        <button class="icon-btn" id="grpmonth-close">${ICONS.close}</button>
-      </div>
-      <div class="u-subtitle">${U.escHtml(subtitle)} · ${shown.length} élément${shown.length>1?"s":""}</div>
-      <div class="u-badge-row">
-        <span class="grpmonth-badge" data-kind="reel" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.reel.bg};color:${KIND_STYLE.reel.fg};${filterKind&&!bgKindIncluded(filterKind,'reel')?'opacity:.45;':''}${filterKind==='reel'?'box-shadow:0 0 0 2px '+KIND_STYLE.reel.fg+';':''}">Réel : ${bgFmtMoneySigned(realTotal)}</span>
-        ${amortTotal!==0 ? `<span class="grpmonth-badge" data-kind="amorti" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.amorti.bg};color:${KIND_STYLE.amorti.fg};${filterKind&&!bgKindIncluded(filterKind,'amorti')?'opacity:.45;':''}${filterKind==='amorti'?'box-shadow:0 0 0 2px '+KIND_STYLE.amorti.fg+';':''}">Amorti : ${bgFmtMoneySigned(amortTotal)}</span>` : ""}
-        ${adjTotal!==0 ? `<span class="grpmonth-badge" data-kind="ajout" style="cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:${KIND_STYLE.ajout.bg};color:${KIND_STYLE.ajout.fg};${filterKind&&!bgKindIncluded(filterKind,'ajout')?'opacity:.45;':''}${filterKind==='ajout'?'box-shadow:0 0 0 2px '+KIND_STYLE.ajout.fg+';':''}">Ajouts : ${bgFmtMoneySigned(adjTotal)}</span>` : ""}
-        <span style="margin-left:auto;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:var(--primary-soft);color:${color};">Total : ${bgFmtMoneySigned(total)}</span>
-      </div>
-      <div class="u-scroll-56">
-        ${shown.length===0 ? `<div class="u-empty-note">Aucun élément${filterKind?" pour ce filtre":""} sur ce mois.</div>` :
-        shown.map(x=>`
-          <div class="detail-row grpmonth-row" ${x.txnId?`data-txnid="${U.escHtml(x.txnId)}"`:""} ${x.adjIdx!=null?`data-adjidx="${x.adjIdx}"`:""} style="align-items:center;${(x.txnId||x.adjIdx!=null)?'cursor:pointer;':''}">
-            <span class="u-col-shrink">
-              <span style="font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(x.txnId||x.adjIdx!=null)?'text-decoration:underline;text-decoration-color:var(--divider);':''}">${U.escHtml(x.remarque)}</span>
-              <span style="font-size:11px;color:var(--text-sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}</span>
-            </span>
-            <span class="u-row-gap8-fixed">
-              <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:${KIND_STYLE[x.kind].bg};color:${KIND_STYLE[x.kind].fg};">${KIND_STYLE[x.kind].label}</span>
-              <span style="font-weight:700;font-size:13.5px;color:${x.displayAmount<0?'var(--expense)':'var(--income)'}">${bgFmtMoneySigned(x.displayAmount)}</span>
-            </span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-    document.getElementById("grpmonth-close").onclick = ()=>APP.closeOverlay("overlay-detail");
-    document.querySelectorAll(".grpmonth-badge[data-kind]").forEach(el=>{
-      el.onclick = ()=>{
-        const k = el.dataset.kind;
-        filterKind = (filterKind===k) ? null : k;
-        renderModal();
-      };
-    });
-    document.querySelectorAll(".grpmonth-row[data-txnid]").forEach(el=>{
-      el.onclick = ()=> window.__SF_VIEWS.openTxnDetail(el.dataset.txnid);
-    });
-    document.querySelectorAll(".grpmonth-row[data-adjidx]").forEach(el=>{
-      if(el.dataset.txnid) return;
-      el.onclick = ()=>{
-        const idx = Number(el.dataset.adjidx);
-        const a = Object.assign({__idx:idx}, (Store.settings.budget.adjustments||[])[idx]);
-        openAdjustmentForm(a);
-      };
-    });
-  }
-
-  renderModal();
-  APP.openOverlay("overlay-detail");
+  openBudgetKindSheet({
+    prefix:"grpmonth", rowClass:"grpmonth-row", titleHtml:U.escHtml(label),
+    subtitleHtml:U.escHtml(subtitle), items, filterKind:null, emptyText:"sur ce mois.",
+    totalBadge:total=>({bg:"var(--primary-soft)", color: total<0 ? "var(--expense)" : "var(--income)"}),
+    metaHtml:x=>`${x.kind==="ajout"||x.adjIdx!=null ? fmtMonthYearShort(x.date.getFullYear(),x.date.getMonth()) : U.fmtDateShort(x.date)}${x.sub?" · "+U.escHtml(x.sub):""}${x.yearsplit?" · "+x.yearsplitCount+"/12 mois":""}`, metaEllipsis:true
+  });
 }
 
 window.__SF_VIEWS = window.__SF_VIEWS || {};
@@ -6890,12 +6710,8 @@ const VIEW_LABEL = {groupe:"Groupe", categorie:"Catégorie", personne:"Personne"
 function evoCfg(){ return Store.settings.evolution; }
 
 /* Toujours 0 décimale dans l'onglet Évolution, indépendamment du réglage global (Transactions/Comptes) */
-function fmtVal(n){
-  if(n==null || isNaN(n)) n=0;
-  const sign = n>0 ? "+ " : (n<0 ? "- " : "");
-  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
-}
-function valClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
+const fmtVal = U.fmtWholeSigned;
+const valClass = U.signClass;
 
 /* ---------------- Rendu principal ---------------- */
 function renderEvolution(){
@@ -7247,12 +7063,8 @@ let recSeenSectionKeys = new Set();
 function recCfg(){ return Store.settings.recurrent; }
 
 /* Toujours 0 décimale, comme l'onglet Évolution */
-function recFmtVal(n){
-  if(n==null || isNaN(n)) n=0;
-  const sign = n>0 ? "+ " : (n<0 ? "- " : "");
-  return sign + Math.round(Math.abs(n)).toLocaleString('fr-FR') + " €";
-}
-function recValClass(n){ return n<0 ? "neg" : (n>0 ? "pos" : ""); }
+const recFmtVal = U.fmtWholeSigned;
+const recValClass = U.signClass;
 function recFmtYM(ym){
   const parts = ym.split("-").map(Number);
   return U.MONTHS_FR_SHORT[parts[1]-1] + " " + String(parts[0]).slice(2);
@@ -7550,8 +7362,8 @@ let mgrPerson = "moi";
 const REV_PERSON_LABEL = {moi:"Moi", conjoint:"Ma femme"};
 
 function revCfg(){ return Store.settings.revenus; }
-function revFmtVal(n){ if(n==null||isNaN(n)) n=0; const sign=n>0?"+ ":(n<0?"- ":""); return sign+Math.round(Math.abs(n)).toLocaleString('fr-FR')+" €"; }
-function revValClass(n){ return n<0?"neg":(n>0?"pos":""); }
+const revFmtVal = U.fmtWholeSigned; // toujours 0 décimale, comme Évolution/Récurrent
+const revValClass = U.signClass;
 
 /* Calcule par défaut la période la plus large couvrant les données déjà connues du module (transactions
    récurrentes, montants manuels déjà saisis, salaire "Ma femme" du Budget), pour ne rien masquer au
@@ -8103,38 +7915,9 @@ function openRevFilterSheet(){
 function renderRevFilterSheet(){
   const sheet = document.getElementById("sheet-revfilter");
   const cfg = revCfg();
-  const {sections, flat, preSorted} = AGG.groupeHierarchyChrono(Store.transactions);
-  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
-  const flatSorted = flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr'));
+  const hier = AGG.groupeHierarchyChrono(Store.transactions);
   const selected = new Set(cfg.groupFilter||[]);
-  const hasAny = sectionNames.length>0 || flatSorted.length>0;
-
-  function sectionHtml(sup){
-    const children = sections.get(sup);
-    const totalCount = children.reduce((s,c)=>s+c.count,0);
-    return `<div class="groupe-section" data-super="${U.escHtml(sup)}">
-      <div class="check-item groupe-section-head ${selected.has(sup)?'selected':''}" data-val="${U.escHtml(sup)}">
-        <span class="cbox">${ICONS.check}</span>
-        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
-        <span class="cnt">${totalCount}</span>
-      </div>
-      <div class="groupe-section-children">
-        ${children.map(c=>`
-          <div class="check-item groupe-child-item ${selected.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
-            <span class="cbox">${ICONS.check}</span>
-            <span class="lbl">${U.escHtml(c.base)}</span>
-            <span class="cnt">${c.count}</span>
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-  }
-  const flatHtml = flatSorted.map(f=>`
-    <div class="check-item groupe-flat-item ${selected.has(f.base)?'selected':''}" data-val="${U.escHtml(f.base)}">
-      <span class="cbox">${ICONS.check}</span>
-      <span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
-    </div>
-  `).join("");
+  const hasAny = hier.sections.size>0 || hier.flat.length>0;
 
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
@@ -8143,10 +7926,7 @@ function renderRevFilterSheet(){
       <div style="font-size:12px;color:var(--text-sub);margin-bottom:10px;">Limite les lignes reliées à des transactions récurrentes à ces groupes. Aucune sélection = tous les groupes.</div>
       ${!hasAny ? `<div style="padding:10px;color:var(--text-faint);font-size:13px;">Aucun groupe disponible</div>` : `
       <input type="text" class="search-mini" id="revfilter-search" placeholder="Rechercher…">
-      <div class="check-list" style="max-height:none;" id="revfilter-list">
-        ${sectionNames.map(sectionHtml).join("")}
-        ${flatHtml}
-      </div>`}
+      <div class="check-list" style="max-height:none;" id="revfilter-list">${U.hierarchyCheckListHtml(hier, selected)}</div>`}
     </div>
     <div class="sheet-foot">
       <button class="btn btn-ghost" id="revfilter-reset">Réinitialiser</button>
@@ -8154,33 +7934,7 @@ function renderRevFilterSheet(){
     </div>
   `;
   document.getElementById("revfilter-close").onclick = ()=>APP.closeOverlay("overlay-revfilter");
-  document.querySelectorAll("#revfilter-list .check-item[data-val]").forEach(el=>{
-    el.onclick = ()=>{
-      const val = el.dataset.val;
-      if(selected.has(val)) selected.delete(val); else selected.add(val);
-      el.classList.toggle("selected");
-    };
-  });
-  const search = document.getElementById("revfilter-search");
-  if(search){
-    search.oninput = ()=>{
-      const q = U.normalize(search.value);
-      document.querySelectorAll("#revfilter-list .groupe-section").forEach(sec=>{
-        const supMatch = U.normalize(sec.dataset.super).includes(q);
-        let anyChildMatch = false;
-        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
-          const match = !q || U.normalize(ch.dataset.childname).includes(q);
-          ch.style.display = match ? "flex" : "none";
-          if(match) anyChildMatch = true;
-        });
-        sec.style.display = (!q || supMatch || anyChildMatch) ? "" : "none";
-      });
-      document.querySelectorAll("#revfilter-list .groupe-flat-item").forEach(el=>{
-        const match = !q || U.normalize(el.dataset.val).includes(q);
-        el.style.display = match ? "flex" : "none";
-      });
-    };
-  }
+  U.wireHierarchyCheckList(document.getElementById("revfilter-list"), selected, null, document.getElementById("revfilter-search"));
   document.getElementById("revfilter-reset").onclick = ()=>{
     cfg.groupFilter = [];
     Store.saveSettings();
@@ -8985,118 +8739,11 @@ const NESTED_DIM_CONFIG = {
 
 function nestedFilterHtml(kind){
   const cfg = NESTED_DIM_CONFIG[kind];
-  const filterSet = F[kind];
-  const {sections, flat, preSorted} = cfg.hierarchyFn();
-  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
-  let html = `<div id="${cfg.listId}" class="check-list" style="max-height:none;">`;
-  sectionNames.forEach(sup=>{
-    const children = sections.get(sup);
-    const totalCount = children.reduce((s,c)=>s+c.count,0);
-    const selected = filterSet.has(sup);
-    html += `<div class="groupe-section" data-super="${U.escHtml(sup)}">
-      <div class="check-item groupe-section-head ${selected?'selected':''}" data-val="${U.escHtml(sup)}">
-        <span class="cbox">${ICONS.check}</span>
-        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
-        <span class="cnt">${totalCount}</span>
-      </div>
-      <div class="groupe-section-children">
-        ${children.map(c=>`
-          <div class="check-item groupe-child-item ${filterSet.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
-            <span class="cbox">${ICONS.check}</span>
-            <span class="lbl">${U.escHtml(c.base)}</span>
-            <span class="cnt">${c.count}</span>
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-  });
-  flat.sort((a,b)=>a.base.localeCompare(b.base,'fr'));
-  if(cfg.noGroupLabel && flat.length){
-    // Les éléments non rattachés à un groupe sont regroupés sous un en-tête "Sans type" dédié,
-    // cliquable comme les autres en-têtes pour tout sélectionner/désélectionner en bloc — il n'existe
-    // toutefois pas de valeur "groupe" unique les représentant tous (contrairement aux en-têtes de
-    // groupe normaux, dont le nom sert lui-même de filtre), donc le clic bascule directement chacun
-    // des éléments qu'il contient (cf. wireNestedFilter → data-notypehead).
-    const totalCount = flat.reduce((s,f)=>s+f.count,0);
-    const allSelected = flat.every(f=>filterSet.has(f.base));
-    html += `<div class="groupe-section" data-super="${U.escHtml(cfg.noGroupLabel)}">
-      <div class="check-item groupe-section-head ${allSelected?'selected':''}" data-notypehead="1">
-        <span class="cbox">${ICONS.check}</span>
-        <span class="lbl" style="font-weight:800;">${U.escHtml(cfg.noGroupLabel)}</span>
-        <span class="cnt">${totalCount}</span>
-      </div>
-      <div class="groupe-section-children">
-        ${flat.map(f=>`
-          <div class="check-item groupe-child-item ${filterSet.has(f.base)?'selected':''}" data-val="${U.escHtml(f.base)}" data-childname="${U.escHtml(f.base)}">
-            <span class="cbox">${ICONS.check}</span>
-            <span class="lbl">${U.escHtml(f.base)}</span>
-            <span class="cnt">${f.count}</span>
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-  } else {
-    flat.forEach(f=>{
-      const selected = filterSet.has(f.base);
-      html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
-        <span class="cbox">${ICONS.check}</span>
-        <span class="lbl">${U.escHtml(f.base)}</span>
-        <span class="cnt">${f.count}</span>
-      </div>`;
-    });
-  }
-  html += `</div>`;
-  return html;
+  return `<div id="${cfg.listId}" class="check-list" style="max-height:none;">${U.hierarchyCheckListHtml(cfg.hierarchyFn(), F[kind], {noGroupLabel: cfg.noGroupLabel})}</div>`;
 }
 function wireNestedFilter(kind){
   const cfg = NESTED_DIM_CONFIG[kind];
-  const filterSet = F[kind];
-  const list = document.getElementById(cfg.listId);
-  if(!list) return;
-  list.querySelectorAll(".check-item").forEach(el=>{
-    el.onclick = ()=>{
-      const val = el.dataset.val;
-      if(filterSet.has(val)) filterSet.delete(val); else filterSet.add(val);
-      el.classList.toggle("selected");
-      F.persist();
-      updateApplyButton();
-    };
-  });
-  // En-tête "Sans type" : bascule en bloc tous les éléments non rattachés (cf. commentaire dans nestedFilterHtml).
-  list.querySelectorAll("[data-notypehead]").forEach(head=>{
-    head.onclick = ()=>{
-      const section = head.closest(".groupe-section");
-      const children = Array.from(section.querySelectorAll(".groupe-child-item"));
-      const allSelected = children.length>0 && children.every(c=>filterSet.has(c.dataset.val));
-      children.forEach(c=>{
-        if(allSelected) filterSet.delete(c.dataset.val); else filterSet.add(c.dataset.val);
-        c.classList.toggle("selected", !allSelected);
-      });
-      head.classList.toggle("selected", !allSelected);
-      F.persist();
-      updateApplyButton();
-    };
-  });
-  const search = document.getElementById(cfg.searchId);
-  if(search){
-    search.oninput = ()=>{
-      const q = U.normalize(search.value);
-      list.querySelectorAll(".groupe-section").forEach(sec=>{
-        const supMatch = U.normalize(sec.dataset.super).includes(q);
-        let anyChildMatch = false;
-        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
-          const match = !q || U.normalize(ch.dataset.childname).includes(q);
-          ch.style.display = match ? "flex" : "none";
-          if(match) anyChildMatch = true;
-        });
-        sec.style.display = (!q || supMatch || anyChildMatch) ? "" : "none";
-      });
-      list.querySelectorAll(".groupe-flat-item").forEach(el=>{
-        const match = !q || U.normalize(el.dataset.val).includes(q);
-        el.style.display = match ? "flex" : "none";
-      });
-    };
-  }
+  U.wireHierarchyCheckList(document.getElementById(cfg.listId), F[kind], ()=>{ F.persist(); updateApplyButton(); }, document.getElementById(cfg.searchId));
 }
 
 function categoryBodyHtml(key){
@@ -9877,14 +9524,6 @@ function exportBackup(scope){
 }
 
 /* scope: "both" | "transactions" | "params" */
-/* Convertit une date "YYYY-MM-DD" en objet Date (jour précis, pour écriture Excel en tant que vraie
-   cellule date, pas du texte) ; null/"" → null. */
-function isoToDateObj(iso){
-  if(!iso) return null;
-  const [y,m,d] = String(iso).split("-").map(Number);
-  if(!y || !m || !d) return null;
-  return new Date(y, m-1, d);
-}
 /* Convertit un mois "YYYY-MM" (mois voyage forcé d'un groupe) en objet Date au 1er du mois, pour écriture
    Excel en tant que vraie cellule date (affichée dd/mm/yyyy, donc toujours "01/MM/AAAA") plutôt qu'en texte
    "AAAA-MM" — le stockage interne (Store.settings.groupVoyageMonth) reste "YYYY-MM", seule la
@@ -9896,19 +9535,11 @@ function voyageMonthToDateObj(ym){
   if(!y || !m) return null;
   return new Date(y, m-1, 1);
 }
-/* Applique le format d'affichage JJ/MM/AAAA aux cellules de type date (t==='d') d'une colonne donnée
-   (0-indexée), sur toutes les lignes à partir de startRow (1 = sous l'en-tête). */
-function setColumnDateFormatDDMMYYYY(ws, colIndex, startRow, rowCount){
-  for(let r=startRow; r<startRow+rowCount; r++){
-    const addr = XLSX.utils.encode_cell({r, c: colIndex});
-    const cell = ws[addr];
-    if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
-  }
-}
 /* scope: {transactions:bool, params:bool, sante:bool} — au moins un true (cf. openExportExcelScopeChoice).
    Indépendant du format de scope utilisé par exportBackup (JSON), qui reste inchangé. */
 function exportExcel(scope){
   scope = scope || {transactions:true, params:true, sante:false};
+  if(!U.xlsxAvailable()){ APP.showToast(U.XLSX_MISSING_MSG); return; }
   const wb = XLSX.utils.book_new();
 
   if(scope.transactions){
@@ -9921,7 +9552,7 @@ function exportExcel(scope){
       ]);
     });
     const wsTxn = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
-    setColumnDateFormatDDMMYYYY(wsTxn, 0, 1, data.length-1);
+    U.setDateColumnFormat(wsTxn, 0, 1, data.length-1);
     XLSX.utils.book_append_sheet(wb, wsTxn, "Transactions");
   }
 
@@ -9972,8 +9603,8 @@ function exportExcel(scope){
       pData.push([
         g?g.groupe:"", g?g.superGroupe:"",
         g?(g.kind==="voyage"?"Voyage":(g.kind?"Quotidien":"")):"", (g&&g.voyageMonth)?voyageMonthToDateObj(g.voyageMonth):"",
-        (g&&g.daysFrom)?isoToDateObj(g.daysFrom):"",
-        (g&&g.daysTo)?(g.daysTo===AGG.GROUP_DATE_TODAY_SENTINEL ? "Aujourd'hui" : isoToDateObj(g.daysTo)):"",
+        (g&&g.daysFrom)?U.isoToDateObj(g.daysFrom):"",
+        (g&&g.daysTo)?(g.daysTo===AGG.GROUP_DATE_TODAY_SENTINEL ? "Aujourd'hui" : U.isoToDateObj(g.daysTo)):"",
         "",
         a?a[0]:"", a?a[1]:"", a?a[2]:"",
         "",
@@ -9983,9 +9614,9 @@ function exportExcel(scope){
       ]);
     }
     const wsParams = XLSX.utils.aoa_to_sheet(pData, {cellDates:true});
-    setColumnDateFormatDDMMYYYY(wsParams, 3, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 4, 1, pData.length-1);
-    setColumnDateFormatDDMMYYYY(wsParams, 5, 1, pData.length-1);
+    U.setDateColumnFormat(wsParams, 3, 1, pData.length-1);
+    U.setDateColumnFormat(wsParams, 4, 1, pData.length-1);
+    U.setDateColumnFormat(wsParams, 5, 1, pData.length-1);
     XLSX.utils.book_append_sheet(wb, wsParams, "Paramètres");
 
     const adj = (Store.settings.budget||{}).adjustments || [];
@@ -10050,7 +9681,7 @@ function exportExcel(scope){
     const s = window.__SF_SANTE_DATA.buildSanteExportRows();
     const sData = [s.header, ...s.rows];
     const wsSante = XLSX.utils.aoa_to_sheet(sData, {cellDates:true});
-    s.dateCols.forEach(col=> setColumnDateFormatDDMMYYYY(wsSante, col, 1, sData.length-1));
+    s.dateCols.forEach(col=> U.setDateColumnFormat(wsSante, col, 1, sData.length-1));
     XLSX.utils.book_append_sheet(wb, wsSante, "Santé");
   }
 
@@ -10328,7 +9959,7 @@ function computeStatus(){
 
 async function fetchRemotePayload(c){
   const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-    headers: {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"}
+    headers: gistHeaders(c)
   });
   if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
   const data = await res.json();
@@ -10341,6 +9972,13 @@ async function fetchRemotePayload(c){
   return JSON.parse(content);
 }
 
+/* En-têtes HTTP de l'API GitHub Gist (jeton personnel ; "json" ajoute le Content-Type des écritures). */
+function gistHeaders(c, json){
+  const h = {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"};
+  if(json) h["Content-Type"] = "application/json";
+  return h;
+}
+
 /* Envoie un payload donné vers le Gist (création si aucun gistId encore connu, sinon mise à jour).
    Met à jour Store.settings.sync (gistId/lastSyncedAt/lastSyncedHash) sur succès. Ne gère ni
    `syncing` ni les toasts — laissé aux appelants (pushToGist, smartSync, résolution de conflit). */
@@ -10350,11 +9988,7 @@ async function pushPayloadToGist(c, payload, hash){
   const res = creating
     ? await fetch("https://api.github.com/gists", {
         method: "POST",
-        headers: {
-          "Authorization": "token "+c.token,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json"
-        },
+        headers: gistHeaders(c, true),
         body: JSON.stringify({
           description: "Suivi financier — sauvegarde synchronisée",
           public: false,
@@ -10363,11 +9997,7 @@ async function pushPayloadToGist(c, payload, hash){
       })
     : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
         method: "PATCH",
-        headers: {
-          "Authorization": "token "+c.token,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json"
-        },
+        headers: gistHeaders(c, true),
         body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
       });
   if(!res.ok){
@@ -10375,12 +10005,7 @@ async function pushPayloadToGist(c, payload, hash){
     throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
   }
   const data = await res.json();
-  Store.settings.sync = Object.assign({}, Store.settings.sync, {
-    gistId: creating ? data.id : c.gistId,
-    lastSyncedAt: new Date().toISOString(),
-    lastSyncedHash: hash
-  });
-  Store.saveSettings();
+  markSynced(hash, {gistId: creating ? data.id : c.gistId});
   return creating;
 }
 
@@ -10398,25 +10023,47 @@ function applyRemotePayloadLocally(payload){
   Store.normalizeSettings();
 }
 
+/* Enveloppe commune des opérations Gist déclenchées par l'utilisateur : indicateur "en cours" pendant
+   l'opération, puis mémorisation + toast de l'erreur éventuelle ("<failLabel> : <message>"). */
+async function runSyncOp(failLabel, fn){
+  syncing = true; lastError = null; updateIndicator();
+  try{
+    await fn();
+  }catch(e){
+    lastError = (e && e.message) ? e.message : String(e);
+    APP.showToast(failLabel + " : " + lastError);
+  }finally{
+    syncing = false;
+    updateIndicator();
+  }
+}
+/* Mémorise l'état de référence de la dernière synchronisation réussie (+ champs supplémentaires, ex. gistId). */
+function markSynced(hash, extra){
+  Store.settings.sync = Object.assign({}, Store.settings.sync, extra||{}, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: hash});
+  Store.saveSettings();
+}
+/* Adopte un payload distant : remplace les données locales, mémorise le nouveau hash de référence,
+   persiste transactions + soins et rafraîchit l'onglet courant. */
+async function adoptRemotePayload(remotePayload, toastMsg){
+  applyRemotePayloadLocally(remotePayload);
+  markSynced(hashPayload(buildSyncPayload()));
+  await Store.saveTransactions();
+  await Store.saveSanteItems();
+  APP.refreshCurrentTab();
+  APP.showToast(toastMsg);
+}
+
 /* Sauvegarde FORCÉE vers le Gist (écrase le contenu distant avec l'état local actuel, quel que
    soit ce qu'il contenait). Utilisée par le bouton "Forcer la sauvegarde" et en résolution de
    conflit ; crée le Gist si aucun gistId n'est encore connu. */
 async function pushToGist(){
   const c = getConfig();
   if(!c.token){ openSyncSheet(); return; }
-  syncing = true; lastError = null; updateIndicator();
-  try{
+  await runSyncOp("Échec de la sauvegarde", async ()=>{
     const payload = buildSyncPayload();
-    const hash = hashPayload(payload);
-    const creating = await pushPayloadToGist(c, payload, hash);
+    const creating = await pushPayloadToGist(c, payload, hashPayload(payload));
     APP.showToast(creating ? "Gist créé et sauvegardé" : "Sauvegardé sur GitHub Gist");
-  }catch(e){
-    lastError = (e && e.message) ? e.message : String(e);
-    APP.showToast("Échec de la sauvegarde : " + lastError);
-  }finally{
-    syncing = false;
-    updateIndicator();
-  }
+  });
 }
 
 /* Récupération FORCÉE depuis le Gist (écrase les données locales, quelles qu'elles soient).
@@ -10424,24 +10071,9 @@ async function pushToGist(){
 async function pullFromGist(){
   const c = getConfig();
   if(!c.token || !c.gistId){ openSyncSheet(); return; }
-  syncing = true; lastError = null; updateIndicator();
-  try{
-    const payload = await fetchRemotePayload(c);
-    applyRemotePayloadLocally(payload);
-    const newHash = hashPayload(buildSyncPayload());
-    Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
-    Store.saveSettings();
-    await Store.saveTransactions();
-    await Store.saveSanteItems();
-    APP.refreshCurrentTab();
-    APP.showToast("Données récupérées depuis GitHub Gist");
-  }catch(e){
-    lastError = (e && e.message) ? e.message : String(e);
-    APP.showToast("Échec de la récupération : " + lastError);
-  }finally{
-    syncing = false;
-    updateIndicator();
-  }
+  await runSyncOp("Échec de la récupération", async ()=>{
+    await adoptRemotePayload(await fetchRemotePayload(c), "Données récupérées depuis GitHub Gist");
+  });
 }
 
 /* Synchronisation dans les deux sens (action de l'indicateur en haut et bouton principal de
@@ -10457,8 +10089,7 @@ async function smartSync(){
   const c = getConfig();
   if(!c.token){ openSyncSheet(); return; }
   if(!c.gistId){ await pushToGist(); return; }
-  syncing = true; lastError = null; updateIndicator();
-  try{
+  await runSyncOp("Échec de la synchronisation", async ()=>{
     const localPayload = buildSyncPayload();
     const localHash = hashPayload(localPayload);
     const remotePayload = await fetchRemotePayload(c);
@@ -10466,22 +10097,14 @@ async function smartSync(){
     const lastHash = c.lastSyncedHash;
 
     if(remoteHash === localHash){
-      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: localHash});
-      Store.saveSettings();
+      markSynced(localHash);
       APP.showToast("Déjà à jour");
       return;
     }
     const localChanged = localHash !== lastHash;
     const remoteChanged = remoteHash !== lastHash;
     if(remoteChanged && !localChanged){
-      applyRemotePayloadLocally(remotePayload);
-      const newHash = hashPayload(buildSyncPayload());
-      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
-      Store.saveSettings();
-      await Store.saveTransactions();
-      await Store.saveSanteItems();
-      APP.refreshCurrentTab();
-      APP.showToast("Données récupérées depuis GitHub Gist");
+      await adoptRemotePayload(remotePayload, "Données récupérées depuis GitHub Gist");
       return;
     }
     if(localChanged && !remoteChanged){
@@ -10491,13 +10114,7 @@ async function smartSync(){
     }
     // Modifications des deux côtés (ou état de référence inconnu) : demander à l'utilisateur.
     showConflictModal(c, localPayload, localHash, remotePayload);
-  }catch(e){
-    lastError = (e && e.message) ? e.message : String(e);
-    APP.showToast("Échec de la synchronisation : " + lastError);
-  }finally{
-    syncing = false;
-    updateIndicator();
-  }
+  });
 }
 
 function showConflictModal(c, localPayload, localHash, remotePayload){
@@ -10516,35 +10133,16 @@ function showConflictModal(c, localPayload, localHash, remotePayload){
   document.getElementById("conflict-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
   document.getElementById("conflict-keep-local").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    syncing = true; lastError = null; updateIndicator();
-    try{
+    await runSyncOp("Échec de la sauvegarde", async ()=>{
       await pushPayloadToGist(c, localPayload, localHash);
       APP.showToast("Sauvegardé sur GitHub Gist (a écrasé le Gist)");
-    }catch(e){
-      lastError = (e && e.message) ? e.message : String(e);
-      APP.showToast("Échec de la sauvegarde : " + lastError);
-    }finally{
-      syncing = false; updateIndicator();
-    }
+    });
   };
   document.getElementById("conflict-keep-remote").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    syncing = true; lastError = null; updateIndicator();
-    try{
-      applyRemotePayloadLocally(remotePayload);
-      const newHash = hashPayload(buildSyncPayload());
-      Store.settings.sync = Object.assign({}, Store.settings.sync, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: newHash});
-      Store.saveSettings();
-      await Store.saveTransactions();
-      await Store.saveSanteItems();
-      APP.refreshCurrentTab();
-      APP.showToast("Données récupérées depuis GitHub Gist (a écrasé cet appareil)");
-    }catch(e){
-      lastError = (e && e.message) ? e.message : String(e);
-      APP.showToast("Échec de la récupération : " + lastError);
-    }finally{
-      syncing = false; updateIndicator();
-    }
+    await runSyncOp("Échec de la récupération", async ()=>{
+      await adoptRemotePayload(remotePayload, "Données récupérées depuis GitHub Gist (a écrasé cet appareil)");
+    });
   };
   APP.openOverlay("overlay-confirm");
 }
@@ -10673,7 +10271,6 @@ function createAliasManager(cfg){
   const APP = window.__SF_APP;
   const ICONS = U.ICONS;
 
-  let view = "list"; // "list" | "edit" | "bulk"
   let editingBase = null;
   let editingFull = null;
   let searchTerm = "";
@@ -10778,7 +10375,7 @@ function createAliasManager(cfg){
           <input type="text" class="search-mini" id="am-search" style="margin-bottom:0;flex:1;" placeholder="Rechercher ${cfg.itemLabel}…" value="${U.escHtml(searchTerm)}">
           ${cfg.hasDates ? "" : `<button class="btn btn-ghost btn-sm" id="am-selectmode-btn" style="white-space:nowrap;">${selectMode ? "Terminer" : "Sélectionner"}</button>`}
         </div>
-        ${sectionsHtml ? `<div class="field-label" style="margin-top:4px;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}s</div>${sectionsHtml}` : ""}
+        ${sectionsHtml ? `<div class="field-label" style="margin-top:4px;">${U.capitalize(cfg.superLabel)}s</div>${sectionsHtml}` : ""}
         <div class="field-label" style="margin-top:4px;">${sectionsHtml ? "Non classés" : "Tous les "+cfg.itemLabelPlural}</div>
         <div class="check-list" style="max-height:none;">
           ${flatFiltered.map(flatRowHtml).join("") || `<div style="padding:14px;color:var(--text-faint);font-size:13px;">Aucun élément non classé</div>`}
@@ -10829,10 +10426,10 @@ function createAliasManager(cfg){
       const clearBtn = sheet.querySelector("#am-clear-sel");
       if(clearBtn) clearBtn.onclick = ()=>{ selected.clear(); renderList(); };
       const moveBtn = sheet.querySelector("#am-bulk-move");
-      if(moveBtn) moveBtn.onclick = ()=>{ view="bulk"; renderBulk(); };
+      if(moveBtn) moveBtn.onclick = ()=>{ renderBulk(); };
     } else {
       sheet.querySelectorAll("[data-base]").forEach(el=>{
-        el.onclick = ()=>{ editingBase = el.dataset.base; editingFull = cfg.hasDates ? (el.dataset.full || null) : null; view="edit"; renderEdit(); };
+        el.onclick = ()=>{ editingBase = el.dataset.base; editingFull = cfg.hasDates ? (el.dataset.full || null) : null; renderEdit(); };
       });
     }
     const newBody = sheet.querySelector(".sheet-body");
@@ -10868,8 +10465,8 @@ function createAliasManager(cfg){
       </div>
     `;
     sheet.querySelector("#am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    sheet.querySelector("#am-back").onclick = ()=>{ view="list"; renderList(); };
-    sheet.querySelector("#am-bulk-cancel").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-back").onclick = ()=>{ renderList(); };
+    sheet.querySelector("#am-bulk-cancel").onclick = ()=>{ renderList(); };
     sheet.querySelector("#am-bulk-apply").onclick = ()=>{
       const sg = sheet.querySelector("#am-bulk-super").value.trim();
       if(!sg){ APP.showToast("Merci d'indiquer un nom de "+cfg.superLabel); return; }
@@ -10881,7 +10478,7 @@ function createAliasManager(cfg){
       APP.showToast(items.length+" élément"+(items.length>1?"s déplacés":" déplacé")+" vers « "+sg+" »");
       selected.clear();
       selectMode = false;
-      view="list"; renderList();
+      renderList();
     };
   }
 
@@ -11040,7 +10637,7 @@ function createAliasManager(cfg){
       <div class="sheet-body">
         ${kindSectionHtml()}
         ${range ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:14px;line-height:1.4;">Ce groupe couvre les transactions du ${U.fmtDateShort(new Date(range.from))} au ${U.fmtDateShort(new Date(range.to))}.</div>` : ""}
-        <div class="field-label" style="margin-top:0;">${cfg.superLabel.charAt(0).toUpperCase()+cfg.superLabel.slice(1)}</div>
+        <div class="field-label" style="margin-top:0;">${U.capitalize(cfg.superLabel)}</div>
         ${datalistsHtml()}
         <input type="text" class="search-mini" id="am-super-input" list="am-super-list-${cfg.sheetId}" placeholder="Nom du ${cfg.superLabel}" value="${U.escHtml(currentValue)}" style="margin-bottom:6px;">
         ${currentRule && currentIsGlobalOther ? `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.4;">Actuellement rattaché via une ancienne règle qui s'applique à toutes les périodes de « ${U.escHtml(editingBase)} » (importée avant cette version). Enregistrer ici crée une règle spécifique à cette occurrence uniquement, sans toucher à l'ancienne règle ni aux autres occurrences.</div>` : ""}
@@ -11052,8 +10649,8 @@ function createAliasManager(cfg){
       </div>
     `;
     sheet.querySelector("#am-close").onclick = ()=>APP.closeOverlay(cfg.overlayId);
-    sheet.querySelector("#am-back").onclick = ()=>{ view="list"; renderList(); };
-    sheet.querySelector("#am-cancel").onclick = ()=>{ view="list"; renderList(); };
+    sheet.querySelector("#am-back").onclick = ()=>{ renderList(); };
+    sheet.querySelector("#am-cancel").onclick = ()=>{ renderList(); };
     wireKindSection();
     wireDateRangeSection();
     sheet.querySelector("#am-save").onclick = ()=>{
@@ -11081,18 +10678,13 @@ function createAliasManager(cfg){
       saveDateRangeSection();
       Store.saveSettings();
       APP.showToast("Mis à jour");
-      view="list"; renderList();
+      renderList();
     };
   }
 
-  function render(){
-    if(view==="edit") renderEdit();
-    else if(view==="bulk") renderBulk();
-    else renderList();
-  }
 
   function open(){
-    view="list"; searchTerm=""; selectMode=false; selected.clear(); openSections.clear(); editingBase=null; editingFull=null;
+    searchTerm=""; selectMode=false; selected.clear(); openSections.clear(); editingBase=null; editingFull=null;
     renderList();
     APP.openOverlay(cfg.overlayId);
   }
@@ -11332,7 +10924,6 @@ const LIST_LABELS = {beneficiaires:"Bénéficiaires", devises:"Devises", medecin
 const LIST_PLACEHOLDER = {beneficiaires:"Ex. Marie", devises:"Ex. $ (USD)", medecins:"Ex. Dr Martin", prestations:"Ex. Consultation", statuts:"Ex. Envoyé", mutuelles:"Ex. MGEN"};
 const TAP_CHEVRON_S = `<span style="color:var(--text-faint);display:inline-flex;vertical-align:middle;margin-left:4px;flex:0 0 auto;">${ICONS.arrowLeft.replace('<svg ','<svg style="width:12px;height:12px;transform:rotate(180deg);" ')}</span>`;
 
-function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
 /* ---------------- Modèle de données ---------------- */
 function emptyItem(){
@@ -11480,7 +11071,7 @@ function santeGroupInfo(it, groupBy){
   if(groupBy==="date"){
     const d = new Date(it.dateSoin+"T00:00:00");
     const y=d.getFullYear(), m=d.getMonth();
-    return {key:y+"-"+U.pad2(m+1), label:cap(U.fmtMonthYear(y,m)), sortVal:y*12+m};
+    return {key:y+"-"+U.pad2(m+1), label:U.fmtMonthYearCap(y,m), sortVal:y*12+m};
   }
   if(groupBy==="termine"){
     return it.termine ? {key:"done", label:"Terminé"} : {key:"pending", label:"Non terminé"};
@@ -11977,73 +11568,11 @@ function wireSanteChecklist(listId, set){
   });
 }
 function santeGroupeFilterHtml(){
-  const {sections, flat, preSorted} = AGG.groupeHierarchyChrono(Store.transactions);
-  const sectionNames = preSorted ? Array.from(sections.keys()) : Array.from(sections.keys()).sort((a,b)=>a.localeCompare(b,'fr'));
-  const filterSet = SFilters.groupes;
-  let html = `<div class="field-label">Groupe</div><input type="text" class="search-mini" id="sf-search-groupe" placeholder="Rechercher un groupe…">
-    <div id="sf-list-groupe" class="check-list" style="max-height:none;margin-bottom:6px;">`;
-  sectionNames.forEach(sup=>{
-    const children = sections.get(sup);
-    const totalCount = children.reduce((s,c)=>s+c.count,0);
-    const selected = filterSet.has(sup);
-    html += `<div class="groupe-section" data-super="${U.escHtml(sup)}">
-      <div class="check-item groupe-section-head ${selected?'selected':''}" data-val="${U.escHtml(sup)}">
-        <span class="cbox">${ICONS.check}</span>
-        <span class="lbl" style="font-weight:800;">${U.escHtml(sup)}</span>
-        <span class="cnt">${totalCount}</span>
-      </div>
-      <div class="groupe-section-children">
-        ${children.map(c=>`
-          <div class="check-item groupe-child-item ${filterSet.has(c.base)?'selected':''}" data-val="${U.escHtml(c.base)}" data-childname="${U.escHtml(c.base)}">
-            <span class="cbox">${ICONS.check}</span>
-            <span class="lbl">${U.escHtml(c.base)}</span>
-            <span class="cnt">${c.count}</span>
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-  });
-  flat.slice().sort((a,b)=>a.base.localeCompare(b.base,'fr')).forEach(f=>{
-    const selected = filterSet.has(f.base);
-    html += `<div class="check-item groupe-flat-item" data-val="${U.escHtml(f.base)}">
-      <span class="cbox">${ICONS.check}</span><span class="lbl">${U.escHtml(f.base)}</span><span class="cnt">${f.count}</span>
-    </div>`;
-  });
-  html += `</div>`;
-  return html;
+  return `<div class="field-label">Groupe</div><input type="text" class="search-mini" id="sf-search-groupe" placeholder="Rechercher un groupe…">
+    <div id="sf-list-groupe" class="check-list" style="max-height:none;margin-bottom:6px;">${U.hierarchyCheckListHtml(AGG.groupeHierarchyChrono(Store.transactions), SFilters.groupes)}</div>`;
 }
 function wireSanteGroupeFilter(){
-  const list = document.getElementById("sf-list-groupe");
-  if(!list) return;
-  list.querySelectorAll(".check-item[data-val]").forEach(el=>{
-    el.onclick = ()=>{
-      const v = el.dataset.val;
-      if(SFilters.groupes.has(v)) SFilters.groupes.delete(v); else SFilters.groupes.add(v);
-      el.classList.toggle("selected");
-      SFilters.persist();
-      updateSanteApplyButton();
-    };
-  });
-  const search = document.getElementById("sf-search-groupe");
-  if(search){
-    search.oninput = ()=>{
-      const q = U.normalize(search.value);
-      list.querySelectorAll(".groupe-section").forEach(sec=>{
-        const supMatch = U.normalize(sec.dataset.super).includes(q);
-        let any=false;
-        sec.querySelectorAll(".groupe-child-item").forEach(ch=>{
-          const match = !q || U.normalize(ch.dataset.childname).includes(q);
-          ch.style.display = match?"flex":"none";
-          if(match) any=true;
-        });
-        sec.style.display = (!q||supMatch||any) ? "" : "none";
-      });
-      list.querySelectorAll(".groupe-flat-item").forEach(el=>{
-        const match = !q || U.normalize(el.dataset.val).includes(q);
-        el.style.display = match ? "flex" : "none";
-      });
-    };
-  }
+  U.wireHierarchyCheckList(document.getElementById("sf-list-groupe"), SFilters.groupes, ()=>{ SFilters.persist(); updateSanteApplyButton(); }, document.getElementById("sf-search-groupe"));
 }
 function updateSanteApplyButton(){
   document.querySelectorAll(".sante-filter-apply-btn").forEach(btn=>{
@@ -12212,19 +11741,6 @@ function renderSanteListEditor(key){
 }
 
 /* ---------------- Excel dédié à l'onglet Santé (export/import propres, séparés du reste) ---------------- */
-function isoToDateObjS(iso){
-  if(!iso) return null;
-  const [y,m,d] = String(iso).split("-").map(Number);
-  if(!y||!m||!d) return null;
-  return new Date(y,m-1,d);
-}
-function setDateColFormatS(ws, colIndex, startRow, rowCount){
-  for(let r=startRow;r<startRow+rowCount;r++){
-    const addr = XLSX.utils.encode_cell({r, c:colIndex});
-    const cell = ws[addr];
-    if(cell && cell.t==="d") cell.z = "dd/mm/yyyy";
-  }
-}
 const SANTE_XLSX_HEADER = ["Date du soin","Bénéficiaire","Devise","Montant €","Montant devise","Médecin/hôpital","Type de prestation","Statut","Statut mis à jour le",
   "Remb. tiers payant €","Date remb. tiers","Remb. sécu €","Date remb. sécu","Remb. mutuelle €","Date remb. mutuelle","Groupe","Mutuelle","Part moi (%)","Terminé"];
 const SANTE_DATE_COLS = [0,8,10,12,14]; // index des colonnes date dans SANTE_XLSX_HEADER
@@ -12234,11 +11750,11 @@ const SANTE_DATE_COLS = [0,8,10,12,14]; // index des colonnes date dans SANTE_XL
    Paramètres/Santé du module Menu (cf. window.__SF_MENU / exportExcel), qui compose son propre classeur. */
 function buildSanteExportRows(){
   const rows = Store.santeItems.map(it=>[
-    isoToDateObjS(it.dateSoin), it.beneficiaire, it.devise, it.montantEur, it.montantDevise,
-    it.medecin, it.typePrestation, it.statut, isoToDateObjS(it.statutDate),
-    it.rembTiersMontant, isoToDateObjS(it.rembTiersDate),
-    it.rembSecuMontant, isoToDateObjS(it.rembSecuDate),
-    it.rembMutuelleMontant, isoToDateObjS(it.rembMutuelleDate),
+    U.isoToDateObj(it.dateSoin), it.beneficiaire, it.devise, it.montantEur, it.montantDevise,
+    it.medecin, it.typePrestation, it.statut, U.isoToDateObj(it.statutDate),
+    it.rembTiersMontant, U.isoToDateObj(it.rembTiersDate),
+    it.rembSecuMontant, U.isoToDateObj(it.rembSecuDate),
+    it.rembMutuelleMontant, U.isoToDateObj(it.rembMutuelleDate),
     it.groupe, it.mutuelle, it.partMoi, it.termine ? "Oui" : "Non"
   ]);
   return {header: SANTE_XLSX_HEADER.slice(), rows, dateCols: SANTE_DATE_COLS.slice()};
@@ -12246,10 +11762,11 @@ function buildSanteExportRows(){
 
 function exportSanteExcel(){
   if(Store.santeItems.length===0){ APP.showToast("Aucun soin à exporter"); return; }
+  if(!U.xlsxAvailable()){ APP.showToast(U.XLSX_MISSING_MSG); return; }
   const {header, rows, dateCols} = buildSanteExportRows();
   const data = [header, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
-  dateCols.forEach(col=> setDateColFormatS(ws, col, 1, data.length-1));
+  dateCols.forEach(col=> U.setDateColumnFormat(ws, col, 1, data.length-1));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Santé");
   const stamp = U.toISO(new Date());
@@ -12399,6 +11916,7 @@ function handleSanteFile(file){
   };
   reader.onload = (e)=>{
     try{
+      if(!U.xlsxAvailable()) throw new Error(U.XLSX_MISSING_MSG);
       let wb;
       if(isCsv){
         wb = XLSX.read(e.target.result, {type:"binary", cellDates:true, raw:false});
