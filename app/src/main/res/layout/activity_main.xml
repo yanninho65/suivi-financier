@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Écran principal (24/09/2026) : plus d'onglets, cinq entrées qui ouvrent chacune leur écran —
+    voir MainActivity. Les réglages, l'export/import et les autorisations ont quitté la liste des
+    applications pour que celle-ci soit en plein écran.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/one_ui_background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/one_ui_text_primary"
+            android:textStyle="bold"
+            android:textSize="28sp"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="24dp"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/main_description"
+            android:textColor="@color/one_ui_text_secondary"
+            android:textSize="15sp"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="20dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginHorizontal="16dp"
+            android:background="@drawable/bg_card">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/app_selection_button"
+                style="@style/MainMenuButton"
+                android:text="@string/app_selection_title" />
+
+            <View style="@style/MainMenuDivider" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/sport_button"
+                style="@style/MainMenuButton"
+                android:text="@string/sport_title" />
+
+            <View style="@style/MainMenuDivider" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/message_apps_button"
+                style="@style/MainMenuButton"
+                android:text="@string/message_apps_title" />
+
+            <View style="@style/MainMenuDivider" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/settings_button"
+                style="@style/MainMenuButton"
+                android:text="@string/settings_title" />
+
+            <View style="@style/MainMenuDivider" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/permissions_button"
+                style="@style/MainMenuButton"
+                android:text="@string/permissions_title" />
+
+        </LinearLayout>
+
+        <!-- Résumé des autorisations (MainActivity.refreshStatus). -->
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/one_ui_text_secondary"
+            android:textSize="14sp"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="20dp" />
+
+    </LinearLayout>
+</ScrollView>

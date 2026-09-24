@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_selection_title">Applications à mirrorer</string>
+    <string name="message_apps_title">Applications de messagerie (montre)</string>
+    <string name="message_apps_hint">Leurs notifications alimentent la complication montre « Messages ».</string>
+    <string name="message_apps_order_label">Sélectionnées — même ordre sur la montre (▲ ▼)</string>
+    <string name="message_apps_others_label">Autres applications</string>
+
+    <!-- Order must match MirrorMode enum ordinals: NONE, LATEST, ALL -->
+    <string-array name="mirror_mode_labels">
+        <item>Aucun</item>
+        <item>Dernière notif</item>
+        <item>Toutes</item>
+    </string-array>
+
+    <!-- Short labels for the segmented mode buttons -->
+    <string name="mode_button_none">Aucun</string>
+    <string name="mode_button_latest">Dernière</string>
+    <string name="mode_button_all">Toutes</string>
+
+    <string name="service_enabled_label">Service actif</string>
+    <string name="latest_mode_fallback_label">Revenir à la précédente après suppression</string>
+    <string name="widget_actions_label">Actions dans le widget</string>
+    <string name="export_settings">Exporter</string>
+    <string name="import_settings">Importer</string>
+    <string name="export_success">Réglages exportés</string>
+    <string name="export_failed">Échec de l\'export</string>
+    <string name="import_success">Réglages importés</string>
+    <string name="import_failed">Échec de l\'import</string>
+</resources>
