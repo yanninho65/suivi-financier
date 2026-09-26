@@ -476,7 +476,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.24.12.09";
+const APP_VERSION = "v 2026.09.26.09.22";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -9435,10 +9435,13 @@ function renderImportSummary(){
   render();
 }
 
-function openImportModal(){
+/* file (facultatif) : fichier déjà obtenu par un autre chemin (ex. Excel téléchargé depuis Google Drive,
+   §10) — analysé directement, comme s'il venait d'être choisi dans la zone de dépôt. */
+function openImportModal(file){
   parsedResult = null;
   renderImportStep1();
   APP.openOverlay("overlay-import");
+  if(file && typeof Blob!=="undefined" && file instanceof Blob) handleFile(file);
 }
 
 window.__SF_IMPORT = {open: openImportModal, applyParamsImport};
@@ -9540,6 +9543,19 @@ function voyageMonthToDateObj(ym){
 function exportExcel(scope){
   scope = scope || {transactions:true, params:true, sante:false};
   if(!U.xlsxAvailable()){ APP.showToast(U.XLSX_MISSING_MSG); return; }
+  const wb = buildExcelWorkbook(scope);
+  const parts = [];
+  if(scope.transactions) parts.push("transactions");
+  if(scope.params) parts.push("parametres");
+  if(scope.sante) parts.push("sante");
+  const suffix = parts.length===3 ? "" : "_"+parts.join("_");
+  const stamp = U.toISO(new Date());
+  XLSX.writeFile(wb, "suivi_financier"+suffix+"_"+stamp+".xlsx");
+  APP.showToast("Export Excel généré");
+}
+/* Construit le classeur multi-feuilles de l'export Excel (sans le télécharger) — partagé entre l'export
+   manuel (exportExcel) et le miroir Excel déposé sur Google Drive par la synchronisation (§10). */
+function buildExcelWorkbook(scope){
   const wb = XLSX.utils.book_new();
 
   if(scope.transactions){
@@ -9684,15 +9700,7 @@ function exportExcel(scope){
     s.dateCols.forEach(col=> U.setDateColumnFormat(wsSante, col, 1, sData.length-1));
     XLSX.utils.book_append_sheet(wb, wsSante, "Santé");
   }
-
-  const parts = [];
-  if(scope.transactions) parts.push("transactions");
-  if(scope.params) parts.push("parametres");
-  if(scope.sante) parts.push("sante");
-  const suffix = parts.length===3 ? "" : "_"+parts.join("_");
-  const stamp = U.toISO(new Date());
-  XLSX.writeFile(wb, "suivi_financier"+suffix+"_"+stamp+".xlsx");
-  APP.showToast("Export Excel généré");
+  return wb;
 }
 
 /* Modal dédiée à l'export Excel : Transactions / Paramètres / Santé sont indépendants (cases à cocher),
@@ -9820,7 +9828,7 @@ function renderMenuSheet(){
       <div class="field-label" style="margin-top:18px;">Synchronisation</div>
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-sync" style="cursor:pointer;">
-          <span class="u-row-label">${ICONS.cloud} Sauvegarde GitHub Gist</span>
+          <span class="u-row-label">${ICONS.cloud} Google Drive (et Gist de secours)</span>
         </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Paramètres</div>
@@ -9903,10 +9911,19 @@ function openMenuSheet(){
   APP.openOverlay("overlay-menu");
 }
 
-window.__SF_MENU = {open: openMenuSheet, buildParamsPayload};
+window.__SF_MENU = {open: openMenuSheet, buildParamsPayload, buildExcelWorkbook};
 })();
 
-/* ================= SYNCHRONISATION (GitHub Gist) ================= */
+/* ================= SYNCHRONISATION (Google Drive principal + GitHub Gist de secours) ================= */
+/* Deux fournisseurs partageant exactement le même payload (buildSyncPayload : transactions + paramètres +
+   soins et réglages Santé — même format que la sauvegarde .json) et la même logique de décision
+   (smartSync, hash local / distant / de référence) :
+   - DRIVE (principal) : relais Google Apps Script déployé par l'utilisateur dans son propre compte
+     (URL + clé secrète, cf. en-tête de google-apps-script.gs). Synchronisation AUTOMATIQUE (démarrage, retour sur l'app,
+     retour du réseau, quelques secondes après chaque modification locale). Dépose aussi, à chaque envoi
+     de données modifiées, un miroir Excel (.xlsx) jamais relu automatiquement — réimport uniquement
+     manuel via "Importer l'Excel depuis Drive" (flux d'import habituel).
+   - GIST (secours, amené à disparaître) : inchangé fonctionnellement, uniquement manuel. */
 (function(){
 "use strict";
 const U = window.__SF_UTILS;
@@ -9914,21 +9931,21 @@ const Store = window.__SF_STORE;
 const APP = window.__SF_APP;
 const ICONS = U.ICONS;
 
-let syncing = false;
-let lastError = null;
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const AUTO_DELAY_MS = 10000;       // délai après la dernière modification locale avant envoi automatique
+const RESUME_MIN_GAP_MS = 60000;   // intervalle minimal entre deux vérifications au retour sur l'app
+const DRIVE_TIMEOUT_MS = 60000;
 
-function getConfig(){ return Store.settings.sync || {}; }
-/* "Configuré" = jeton présent. L'ID du Gist est optionnel : s'il manque, le premier
-   "Sauvegarder" crée automatiquement un nouveau Gist secret et mémorise son ID. */
-function isConfigured(){ return !!(getConfig().token); }
+let syncing = null;                // fournisseur en cours de synchronisation (ou null)
+const lastError = {drive:null, gist:null};
+const conflictPending = {drive:false, gist:false};
+let excelBusy = false, excelError = null;
+let autoTimer = null, lastAutoCheck = 0, started = false;
 
-function saveConfig(token, gistId){
-  Store.settings.sync = Object.assign({}, Store.settings.sync, {token: token.trim(), gistId: (gistId||"").trim()});
-  Store.saveSettings();
-}
-
-/* Construit le même payload que la sauvegarde .json (§ exportBackup), sans le champ exportedAt
-   dans le calcul de hash (il change à chaque appel et ne reflète pas un changement de données). */
+/* ---------- Payload commun ---------- */
+/* Construit le même payload que la sauvegarde .json (§ exportBackup) — transactions, paramètres,
+   soins Santé et réglages Santé —, sans le champ exportedAt dans le calcul de hash (il change à chaque
+   appel et ne reflète pas un changement de données). */
 function buildSyncPayload(){
   return {
     version: 2,
@@ -9946,212 +9963,336 @@ function hashPayload(payload){
   for(let i=0;i<str.length;i++){ h = (Math.imul(31,h) + str.charCodeAt(i))|0; }
   return String(h);
 }
-
-/* "unconfigured" | "syncing" | "error" | "synced" | "unsynced" */
-function computeStatus(){
-  if(syncing) return "syncing";
-  const c = getConfig();
-  if(!c.token) return "unconfigured";
-  if(lastError) return "error";
-  if(!c.gistId || !c.lastSyncedHash) return "unsynced";
-  return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
+function payloadIsEmpty(p){
+  return !(p && ((p.transactions||[]).length || (p.santeItems||[]).length));
 }
+function localIsEmpty(){ return !Store.transactions.length && !Store.santeItems.length; }
 
-async function fetchRemotePayload(c){
-  const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-    headers: gistHeaders(c)
-  });
-  if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
-  const data = await res.json();
-  const fname = c.filename || "suivi_financier_sync.json";
-  const files = data.files || {};
-  const file = files[fname] || Object.values(files)[0];
-  if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
-  let content = file.content;
-  if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
-  return JSON.parse(content);
-}
-
+/* ---------- Fournisseur GitHub Gist (secours) ---------- */
 /* En-têtes HTTP de l'API GitHub Gist (jeton personnel ; "json" ajoute le Content-Type des écritures). */
 function gistHeaders(c, json){
   const h = {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"};
   if(json) h["Content-Type"] = "application/json";
   return h;
 }
-
-/* Envoie un payload donné vers le Gist (création si aucun gistId encore connu, sinon mise à jour).
-   Met à jour Store.settings.sync (gistId/lastSyncedAt/lastSyncedHash) sur succès. Ne gère ni
-   `syncing` ni les toasts — laissé aux appelants (pushToGist, smartSync, résolution de conflit). */
-async function pushPayloadToGist(c, payload, hash){
-  const filename = c.filename || "suivi_financier_sync.json";
-  const creating = !c.gistId;
-  const res = creating
-    ? await fetch("https://api.github.com/gists", {
-        method: "POST",
-        headers: gistHeaders(c, true),
-        body: JSON.stringify({
-          description: "Suivi financier — sauvegarde synchronisée",
-          public: false,
-          files: {[filename]: {content: JSON.stringify(payload)}}
+const GIST = {
+  id: "gist", key: "sync", label: "GitHub Gist",
+  isConfigured: c=> !!c.token,
+  /* null = aucun Gist encore créé (le premier envoi le crée). */
+  async fetchRemote(c){
+    if(!c.gistId) return null;
+    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {headers: gistHeaders(c)});
+    if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
+    const data = await res.json();
+    const fname = c.filename || "suivi_financier_sync.json";
+    const files = data.files || {};
+    const file = files[fname] || Object.values(files)[0];
+    if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
+    let content = file.content;
+    if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
+    return JSON.parse(content);
+  },
+  /* Création si aucun gistId encore connu, sinon mise à jour. Retourne les champs à mémoriser. */
+  async push(c, payload){
+    const filename = c.filename || "suivi_financier_sync.json";
+    const creating = !c.gistId;
+    const res = creating
+      ? await fetch("https://api.github.com/gists", {
+          method: "POST", headers: gistHeaders(c, true),
+          body: JSON.stringify({description: "Suivi financier — sauvegarde synchronisée", public: false,
+            files: {[filename]: {content: JSON.stringify(payload)}}})
         })
-      })
-    : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-        method: "PATCH",
-        headers: gistHeaders(c, true),
-        body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
-      });
-  if(!res.ok){
-    const txt = await res.text().catch(()=>"");
-    throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
+      : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
+          method: "PATCH", headers: gistHeaders(c, true),
+          body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
+        });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>"");
+      throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
+    }
+    const data = await res.json();
+    return {extra: {gistId: creating ? data.id : c.gistId}, created: creating};
   }
-  const data = await res.json();
-  markSynced(hash, {gistId: creating ? data.id : c.gistId});
-  return creating;
+};
+
+/* ---------- Fournisseur Google Drive (principal, via relais Apps Script) ---------- */
+/* Appel du relais Apps Script : POST en text/plain (requête "simple", sans pré-vol CORS), clé secrète
+   dans le corps (jamais dans l'URL). Le script répond toujours {ok:true,…} ou {ok:false, error}. */
+async function driveCall(c, body){
+  const ctrl = (typeof AbortController!=="undefined") ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(()=>ctrl.abort(), DRIVE_TIMEOUT_MS) : null;
+  let res;
+  try{
+    res = await fetch(c.url, {method:"POST", body: JSON.stringify(Object.assign({key: c.key}, body)),
+      redirect:"follow", signal: ctrl ? ctrl.signal : undefined});
+  }catch(e){
+    if(e && e.name==="AbortError") throw new Error("Délai dépassé — Google Drive ne répond pas");
+    throw new Error("Connexion impossible au script Google (réseau ou URL)");
+  }finally{ if(timer) clearTimeout(timer); }
+  if(!res.ok) throw new Error("Erreur Google Drive (" + res.status + ")");
+  let data;
+  try{ data = await res.json(); }
+  catch(e){ throw new Error("Réponse inattendue du script — vérifie l'URL (…/exec) et l'accès « Tout le monde »"); }
+  if(!data || !data.ok) throw new Error((data && data.error) || "Erreur Google Drive");
+  return data;
+}
+const DRIVE = {
+  id: "drive", key: "drive", label: "Google Drive",
+  isConfigured: c=> !!(c.url && c.key),
+  /* null = aucun fichier JSON encore présent sur le Drive (le premier envoi le crée). */
+  async fetchRemote(c){
+    const r = await driveCall(c, {action:"getJson"});
+    if(!r.exists) return null;
+    try{ return JSON.parse(r.content); }
+    catch(e){ throw new Error("Le fichier JSON sur le Drive est illisible"); }
+  },
+  async push(c, payload){
+    const r = await driveCall(c, {action:"putJson", content: JSON.stringify(payload)});
+    return {extra: {lastRemoteAt: r.modified || new Date().toISOString()}, created: false};
+  },
+  /* Miroir Excel : régénéré et déposé seulement si les données ont changé depuis le dernier dépôt.
+     Un échec ici n'invalide jamais la synchronisation JSON (source de vérité). */
+  async afterPush(hash, opts){
+    if(cfg(DRIVE).lastExcelHash === hash) return;
+    try{ await uploadExcel(hash); }
+    catch(e){
+      excelError = (e && e.message) ? e.message : String(e);
+      if(!opts.auto) APP.showToast("Excel non mis à jour sur Drive : " + excelError);
+    }
+  }
+};
+
+const PROVIDERS = [DRIVE, GIST];
+function cfg(p){ return Store.settings[p.key] || {}; }
+function setCfg(p, fields){
+  Store.settings[p.key] = Object.assign({}, Store.settings[p.key], fields);
+  Store.saveSettings();
+}
+/* Fournisseur piloté par l'indicateur du haut : Drive dès qu'il est configuré, sinon le Gist (comportement
+   historique conservé tant que le Drive n'est pas en place), sinon aucun. */
+function primaryProvider(){
+  if(DRIVE.isConfigured(cfg(DRIVE))) return DRIVE;
+  if(GIST.isConfigured(cfg(GIST))) return GIST;
+  return null;
 }
 
-/* Remplace les transactions/paramètres locaux par ceux d'un payload distant déjà récupéré.
-   Ne gère ni la sauvegarde IndexedDB (Store.saveTransactions), ni lastSyncedHash/At, ni le
-   rafraîchissement d'écran — laissé aux appelants. */
+/* ---------- Excel sur Drive ---------- */
+async function uploadExcel(hash){
+  const M = window.__SF_MENU;
+  if(!U.xlsxAvailable() || !M || !M.buildExcelWorkbook) throw new Error(U.XLSX_MISSING_MSG || "Excel indisponible");
+  const wb = M.buildExcelWorkbook({transactions:true, params:true, sante:true});
+  const b64 = XLSX.write(wb, {bookType:"xlsx", type:"base64"});
+  const r = await driveCall(cfg(DRIVE), {action:"putExcel", b64});
+  excelError = null;
+  setCfg(DRIVE, {lastExcelHash: hash || hashPayload(buildSyncPayload()), lastExcelAt: r.modified || new Date().toISOString()});
+}
+async function runExcelOp(failLabel, fn){
+  if(excelBusy) return;
+  excelBusy = true; excelError = null; renderSyncSheet(true);
+  try{ await fn(); }
+  catch(e){
+    excelError = (e && e.message) ? e.message : String(e);
+    APP.showToast(failLabel + " : " + excelError);
+  }finally{ excelBusy = false; renderSyncSheet(true); }
+}
+function pushExcelNow(){
+  return runExcelOp("Échec de l'envoi de l'Excel", async ()=>{
+    await uploadExcel(null);
+    APP.showToast("Excel mis à jour sur Google Drive");
+  });
+}
+/* Télécharge le .xlsx du Drive et l'ouvre dans le flux d'import habituel (choix Ajouter/Remplacer,
+   réconciliation…) — seul chemin par lequel une modification faite dans l'Excel revient dans l'app. */
+function importExcelFromDrive(){
+  return runExcelOp("Échec du téléchargement de l'Excel", async ()=>{
+    const r = await driveCall(cfg(DRIVE), {action:"getExcel"});
+    if(!r.exists) throw new Error("aucun fichier Excel sur le Drive pour l'instant");
+    const bin = atob(r.b64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    const file = new File([bytes], "suivi_financier.xlsx", {type: XLSX_MIME});
+    APP.closeOverlay("overlay-sync");
+    window.__SF_IMPORT.open(file);
+  });
+}
+
+/* ---------- Cœur commun ---------- */
+/* Enveloppe commune des opérations de synchronisation : indicateur "en cours" pendant l'opération, puis
+   mémorisation de l'erreur éventuelle (+ toast "<failLabel> : <message>" hors mode automatique). */
+async function runSyncOp(p, failLabel, fn, opts){
+  opts = opts || {};
+  syncing = p; lastError[p.id] = null; conflictPending[p.id] = false; updateIndicator(); renderSyncSheet(true);
+  try{
+    await fn();
+  }catch(e){
+    lastError[p.id] = (e && e.message) ? e.message : String(e);
+    if(!opts.auto) APP.showToast(failLabel + " : " + lastError[p.id]);
+  }finally{
+    syncing = null;
+    updateIndicator();
+    renderSyncSheet(true);
+  }
+}
+/* Mémorise l'état de référence de la dernière synchronisation réussie : hash local et hash distant
+   (distincts si la normalisation locale d'un payload récupéré le modifie légèrement — évite de
+   re-récupérer indéfiniment le même contenu distant). */
+function markSynced(p, localHash, remoteHash, extra){
+  setCfg(p, Object.assign({}, extra||{}, {lastSyncedAt: new Date().toISOString(),
+    lastSyncedHash: localHash, lastRemoteHash: remoteHash || localHash}));
+}
+/* Remplace les transactions/paramètres/soins locaux par ceux d'un payload distant déjà récupéré. */
 function applyRemotePayloadLocally(payload){
   const txns = (payload.transactions||[]).map(t=>({...t, date:new Date(t.date)})).filter(t=>t.date && !isNaN(t.date));
   window.__SF_DATA.importTxns(txns, "replace");
   if(payload.params) window.__SF_IMPORT.applyParamsImport(payload.params, "replace");
-  // Onglet Santé : miroir complet comme pour les transactions (remplacement, pas de fusion —
-  // cohérent avec le fonctionnement "replace" de la synchro Gist pour le reste des données).
+  // Onglet Santé : miroir complet comme pour les transactions (remplacement, pas de fusion).
   if(payload.santeItems) Store.santeItems = payload.santeItems.slice();
   if(payload.santeSettings) Store.settings.sante = payload.santeSettings;
   Store.normalizeSettings();
 }
-
-/* Enveloppe commune des opérations Gist déclenchées par l'utilisateur : indicateur "en cours" pendant
-   l'opération, puis mémorisation + toast de l'erreur éventuelle ("<failLabel> : <message>"). */
-async function runSyncOp(failLabel, fn){
-  syncing = true; lastError = null; updateIndicator();
-  try{
-    await fn();
-  }catch(e){
-    lastError = (e && e.message) ? e.message : String(e);
-    APP.showToast(failLabel + " : " + lastError);
-  }finally{
-    syncing = false;
-    updateIndicator();
-  }
-}
-/* Mémorise l'état de référence de la dernière synchronisation réussie (+ champs supplémentaires, ex. gistId). */
-function markSynced(hash, extra){
-  Store.settings.sync = Object.assign({}, Store.settings.sync, extra||{}, {lastSyncedAt: new Date().toISOString(), lastSyncedHash: hash});
-  Store.saveSettings();
-}
-/* Adopte un payload distant : remplace les données locales, mémorise le nouveau hash de référence,
-   persiste transactions + soins et rafraîchit l'onglet courant. */
-async function adoptRemotePayload(remotePayload, toastMsg){
+/* Adopte un payload distant : remplace les données locales, mémorise les hash de référence, persiste
+   transactions + soins et rafraîchit l'onglet courant. */
+async function adoptRemotePayload(p, remotePayload, toastMsg){
+  const remoteHash = hashPayload(remotePayload);
   applyRemotePayloadLocally(remotePayload);
-  markSynced(hashPayload(buildSyncPayload()));
+  const localHash = hashPayload(buildSyncPayload());
+  // Drive : l'appareil qui a envoyé ces données a déjà déposé l'Excel correspondant — pas de ré-envoi.
+  markSynced(p, localHash, remoteHash, p===DRIVE ? {lastExcelHash: localHash} : null);
   await Store.saveTransactions();
   await Store.saveSanteItems();
   APP.refreshCurrentTab();
-  APP.showToast(toastMsg);
+  if(toastMsg) APP.showToast(toastMsg);
+}
+async function pushPayload(p, payload, hash, opts){
+  const r = await p.push(cfg(p), payload);
+  markSynced(p, hash, hash, r.extra);
+  if(p.afterPush) await p.afterPush(hash, opts||{});
+  return r;
 }
 
-/* Sauvegarde FORCÉE vers le Gist (écrase le contenu distant avec l'état local actuel, quel que
-   soit ce qu'il contenait). Utilisée par le bouton "Forcer la sauvegarde" et en résolution de
-   conflit ; crée le Gist si aucun gistId n'est encore connu. */
-async function pushToGist(){
-  const c = getConfig();
-  if(!c.token){ openSyncSheet(); return; }
-  await runSyncOp("Échec de la sauvegarde", async ()=>{
-    const payload = buildSyncPayload();
-    const creating = await pushPayloadToGist(c, payload, hashPayload(payload));
-    APP.showToast(creating ? "Gist créé et sauvegardé" : "Sauvegardé sur GitHub Gist");
-  });
-}
-
-/* Récupération FORCÉE depuis le Gist (écrase les données locales, quelles qu'elles soient).
-   Utilisée par le bouton "Forcer la récupération" (après confirmation) et en résolution de conflit. */
-async function pullFromGist(){
-  const c = getConfig();
-  if(!c.token || !c.gistId){ openSyncSheet(); return; }
-  await runSyncOp("Échec de la récupération", async ()=>{
-    await adoptRemotePayload(await fetchRemotePayload(c), "Données récupérées depuis GitHub Gist");
-  });
-}
-
-/* Synchronisation dans les deux sens (action de l'indicateur en haut et bouton principal de
-   la feuille Synchronisation). Compare le hash local actuel, le hash distant, et le hash mémorisé
-   lors de la dernière synchronisation réussie (`lastSyncedHash`) pour déterminer sans ambiguïté
-   quel côté a changé :
-   - seul le distant a changé depuis la dernière synchro → récupère automatiquement (le local n'a
-     rien à perdre, rien n'a été modifié ici) ;
-   - seul le local a changé → sauvegarde automatiquement (le distant n'a rien à perdre) ;
-   - les deux ont changé indépendamment (ou identiques) → pas de fusion automatique possible avec
-     un simple hash global : demande explicitement à l'utilisateur lequel garder. */
-async function smartSync(){
-  const c = getConfig();
-  if(!c.token){ openSyncSheet(); return; }
-  if(!c.gistId){ await pushToGist(); return; }
-  await runSyncOp("Échec de la synchronisation", async ()=>{
+/* Synchronisation dans les deux sens. Compare le hash local actuel, le hash distant et l'état de
+   référence de la dernière synchronisation réussie :
+   - rien côté distant → envoi (création) ;
+   - seul le distant a changé → récupération automatique ;
+   - seul le local a changé → envoi automatique — SAUF si cet appareil est vide alors que le distant ne
+     l'est pas (réinitialisation, nouvel appareil) : jamais d'écrasement automatique du distant par du vide ;
+   - appareil vide jamais synchronisé face à un distant rempli → récupération directe (nouvel appareil) ;
+   - les deux ont changé → modale de choix (en mode automatique : signalé, sans modale, jusqu'à ce
+     que l'utilisateur appuie sur l'indicateur). */
+async function smartSync(p, opts){
+  p = p || primaryProvider();
+  opts = opts || {};
+  if(!p){ if(!opts.auto) openSyncSheet(); return; }
+  if(!p.isConfigured(cfg(p))){ if(!opts.auto) openSyncSheet(); return; }
+  if(syncing){ if(opts.auto) scheduleAuto(AUTO_DELAY_MS); return; }
+  await runSyncOp(p, "Échec de la synchronisation", async ()=>{
+    const c = cfg(p);
     const localPayload = buildSyncPayload();
     const localHash = hashPayload(localPayload);
-    const remotePayload = await fetchRemotePayload(c);
+    const remotePayload = await p.fetchRemote(c);
+    if(!remotePayload){
+      const r = await pushPayload(p, localPayload, localHash, opts);
+      if(!opts.auto || r.created) APP.showToast(p===GIST && r.created ? "Gist créé et sauvegardé" : "Sauvegardé sur " + p.label);
+      return;
+    }
     const remoteHash = hashPayload(remotePayload);
-    const lastHash = c.lastSyncedHash;
-
     if(remoteHash === localHash){
-      markSynced(localHash);
-      APP.showToast("Déjà à jour");
+      markSynced(p, localHash, remoteHash);
+      if(p.afterPush) await p.afterPush(localHash, opts);
+      if(!opts.auto) APP.showToast("Déjà à jour");
       return;
     }
+    const lastHash = c.lastSyncedHash;
+    const lastRemote = c.lastRemoteHash || lastHash;
     const localChanged = localHash !== lastHash;
-    const remoteChanged = remoteHash !== lastHash;
-    if(remoteChanged && !localChanged){
-      await adoptRemotePayload(remotePayload, "Données récupérées depuis GitHub Gist");
+    const remoteChanged = remoteHash !== lastRemote;
+    const remoteEmpty = payloadIsEmpty(remotePayload);
+    if((remoteChanged && !localChanged) || (!lastHash && localIsEmpty() && !remoteEmpty)){
+      await adoptRemotePayload(p, remotePayload, "Données récupérées depuis " + p.label);
       return;
     }
-    if(localChanged && !remoteChanged){
-      await pushPayloadToGist(c, localPayload, localHash);
-      APP.showToast("Sauvegardé sur GitHub Gist");
+    if(localChanged && !remoteChanged && !(localIsEmpty() && !remoteEmpty)){
+      await pushPayload(p, localPayload, localHash, opts);
+      if(!opts.auto) APP.showToast("Sauvegardé sur " + p.label);
       return;
     }
-    // Modifications des deux côtés (ou état de référence inconnu) : demander à l'utilisateur.
-    showConflictModal(c, localPayload, localHash, remotePayload);
+    // Modifications des deux côtés, état de référence inconnu, ou appareil vidé face à un distant rempli.
+    if(opts.auto){
+      conflictPending[p.id] = true;
+      APP.showToast(p.label + " : à vérifier — appuie sur l'icône de synchronisation pour choisir");
+      return;
+    }
+    showConflictModal(p, localPayload, localHash, remotePayload);
+  }, opts);
+}
+
+/* Sauvegarde FORCÉE (écrase le distant avec l'état local, sans vérification). */
+async function forcePush(p){
+  if(!p.isConfigured(cfg(p))){ openSyncSheet(); return; }
+  await runSyncOp(p, "Échec de la sauvegarde", async ()=>{
+    const payload = buildSyncPayload();
+    const r = await pushPayload(p, payload, hashPayload(payload), {});
+    APP.showToast(p===GIST && r.created ? "Gist créé et sauvegardé" : "Sauvegardé sur " + p.label);
+  });
+}
+/* Récupération FORCÉE (écrase les données locales, sans vérification). */
+async function forcePull(p){
+  const c = cfg(p);
+  if(!p.isConfigured(c) || (p===GIST && !c.gistId)){ openSyncSheet(); return; }
+  await runSyncOp(p, "Échec de la récupération", async ()=>{
+    const remote = await p.fetchRemote(c);
+    if(!remote) throw new Error("aucune sauvegarde trouvée sur " + p.label);
+    await adoptRemotePayload(p, remote, "Données récupérées depuis " + p.label);
   });
 }
 
-function showConflictModal(c, localPayload, localHash, remotePayload){
+function fmtStamp(iso){
+  if(!iso) return "jamais";
+  const d = new Date(iso);
+  if(isNaN(d)) return "date inconnue";
+  return U.fmtDateShort(d)+" à "+U.pad2(d.getHours())+":"+U.pad2(d.getMinutes());
+}
+function countLabel(p){
+  const t = (p.transactions||[]).length, s = (p.santeItems||[]).length;
+  return t.toLocaleString('fr-FR') + " transaction(s)" + (s ? ", " + s.toLocaleString('fr-FR') + " soin(s)" : "");
+}
+
+function showConflictModal(p, localPayload, localHash, remotePayload){
   const modal = document.getElementById("modal-confirm");
-  const rd = remotePayload.exportedAt ? new Date(remotePayload.exportedAt) : null;
-  const remoteTxt = rd ? (U.fmtDateShort(rd)+" à "+U.pad2(rd.getHours())+":"+U.pad2(rd.getMinutes())) : "date inconnue";
+  const remoteTxt = remotePayload.exportedAt ? fmtStamp(remotePayload.exportedAt) : "date inconnue";
   modal.innerHTML = `
-    <h3 class="u-title-md">Modifications des deux côtés</h3>
-    <p class="u-desc">Cet appareil et le Gist ont chacun des changements depuis la dernière synchronisation (dernière écriture du Gist : ${remoteTxt}). Choisissez lequel garder — l'autre sera écrasé.</p>
+    <h3 class="u-title-md">Choisir la version à garder</h3>
+    <p class="u-desc">Cet appareil et ${p.label} ont chacun des changements depuis la dernière synchronisation. Choisissez lequel garder — l'autre sera écrasé.<br><br>
+    <b>Cet appareil</b> : ${countLabel(localPayload)}<br>
+    <b>${p.label}</b> : ${countLabel(remotePayload)} (écrit le ${remoteTxt})</p>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn btn-primary btn-block" id="conflict-keep-local">Garder cet appareil</button>
-      <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser le Gist</button>
+      <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser ${p.label}</button>
       <button class="btn btn-ghost btn-block" id="conflict-cancel">Annuler</button>
     </div>
   `;
-  document.getElementById("conflict-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
+  document.getElementById("conflict-cancel").onclick = ()=>{ conflictPending[p.id] = true; updateIndicator(); APP.closeOverlay("overlay-confirm"); };
   document.getElementById("conflict-keep-local").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    await runSyncOp("Échec de la sauvegarde", async ()=>{
-      await pushPayloadToGist(c, localPayload, localHash);
-      APP.showToast("Sauvegardé sur GitHub Gist (a écrasé le Gist)");
+    await runSyncOp(p, "Échec de la sauvegarde", async ()=>{
+      await pushPayload(p, localPayload, localHash, {});
+      APP.showToast("Sauvegardé sur " + p.label + " (a écrasé la version distante)");
     });
   };
   document.getElementById("conflict-keep-remote").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    await runSyncOp("Échec de la récupération", async ()=>{
-      await adoptRemotePayload(remotePayload, "Données récupérées depuis GitHub Gist (a écrasé cet appareil)");
+    await runSyncOp(p, "Échec de la récupération", async ()=>{
+      await adoptRemotePayload(p, remotePayload, "Données récupérées depuis " + p.label + " (a écrasé cet appareil)");
     });
   };
   APP.openOverlay("overlay-confirm");
 }
 
-function confirmPull(){
+function confirmPull(p){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 class="u-title-md">Forcer la récupération depuis GitHub Gist ?</h3>
-    <p class="u-desc">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)) seront remplacées par celles du Gist, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt le bouton "Synchroniser" ci-dessus, qui gère les deux sens automatiquement.</p>
+    <h3 class="u-title-md">Forcer la récupération depuis ${p.label} ?</h3>
+    <p class="u-desc">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)${Store.santeItems.length ? ", " + Store.santeItems.length.toLocaleString('fr-FR') + " soin(s)" : ""}) seront remplacées par celles de ${p.label}, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt "Synchroniser", qui gère les deux sens automatiquement.</p>
     <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="syncpull-cancel">Annuler</button>
       <button class="btn btn-primary" style="flex:1;" id="syncpull-confirm">Récupérer</button>
@@ -10160,75 +10301,227 @@ function confirmPull(){
   document.getElementById("syncpull-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
   document.getElementById("syncpull-confirm").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    pullFromGist().then(()=>renderSyncSheet());
+    forcePull(p);
   };
   APP.openOverlay("overlay-confirm");
 }
 
-function statusMeta(){
-  const st = computeStatus();
+/* ---------- État / indicateur ---------- */
+/* "unconfigured" | "syncing" | "error" | "conflict" | "synced" | "unsynced" */
+function computeStatus(p){
+  if(!p) return "unconfigured";
+  if(syncing===p) return "syncing";
+  const c = cfg(p);
+  if(!p.isConfigured(c)) return "unconfigured";
+  if(lastError[p.id]) return "error";
+  if(conflictPending[p.id]) return "conflict";
+  if(!c.lastSyncedHash || (p===GIST && !c.gistId)) return "unsynced";
+  return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
+}
+function statusMeta(p){
   return {
-    unconfigured: {label:"Jeton non configuré", color:"var(--text-faint)"},
+    unconfigured: {label:"Non configuré", color:"var(--text-faint)"},
     syncing: {label:"Synchronisation en cours…", color:"var(--text-sub)"},
     error: {label:"Échec de la dernière synchronisation", color:"var(--expense)"},
+    conflict: {label:"Changements des deux côtés — à choisir", color:"var(--expense)"},
     synced: {label:"Synchronisé", color:"var(--income)"},
-    unsynced: {label:"Modifications non synchronisées", color:"var(--expense)"}
-  }[st];
+    unsynced: {label: p===DRIVE ? "Modifications en attente d'envoi" : "Modifications non synchronisées", color:"var(--expense)"}
+  }[computeStatus(p)];
 }
 
-function renderSyncSheet(){
+function updateIndicator(){
+  const btn = document.getElementById("btn-sync");
+  if(!btn) return;
+  const p = primaryProvider();
+  const st = computeStatus(p);
+  let icon, color, title;
+  if(st==="syncing"){ icon=ICONS.refreshCw; color="var(--text-sub)"; title="Synchronisation en cours…"; }
+  else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation"; }
+  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé ("+p.label+") — appuyez pour vérifier les mises à jour"; }
+  else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec ("+p.label+") — appuyez pour réessayer"; }
+  else if(st==="conflict"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Changements des deux côtés — appuyez pour choisir"; }
+  else if(p===DRIVE){ icon=ICONS.cloud; color="var(--text-sub)"; title="Modifications en attente d'envoi vers Google Drive — appuyez pour envoyer maintenant"; }
+  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Non synchronisé — appuyez pour synchroniser"; }
+  btn.innerHTML = icon;
+  btn.style.color = color;
+  btn.classList.toggle("sync-spin", st==="syncing");
+  btn.title = title;
+  btn.onclick = ()=>{
+    if(st==="syncing") return;
+    if(!p){ openSyncSheet(); return; }
+    smartSync(p);
+  };
+}
+
+/* ---------- Synchronisation automatique (Drive uniquement) ---------- */
+function scheduleAuto(delay){
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(()=>{ autoTimer = null; autoSync("change"); }, delay);
+}
+/* reason : "start" | "resume" | "online" | "change". Sur "change", aucun appel réseau si les données
+   n'ont pas réellement changé depuis la dernière synchronisation (réglages d'affichage, filtres…). */
+async function autoSync(reason){
+  const c = cfg(DRIVE);
+  if(!DRIVE.isConfigured(c) || conflictPending.drive) return;
+  if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+  if(syncing){ scheduleAuto(AUTO_DELAY_MS); return; }
+  if(reason==="change" && c.lastSyncedHash && hashPayload(buildSyncPayload())===c.lastSyncedHash){ updateIndicator(); return; }
+  lastAutoCheck = Date.now();
+  await smartSync(DRIVE, {auto:true});
+}
+function onLocalChange(){
+  if(!DRIVE.isConfigured(cfg(DRIVE))) return;
+  scheduleAuto(AUTO_DELAY_MS);
+}
+/* Branché une seule fois au démarrage (init) : toute écriture locale (transactions, soins, réglages)
+   programme un envoi différé ; retour sur l'app / retour du réseau → vérification ; passage en
+   arrière-plan → envoi immédiat de ce qui est en attente. */
+function start(){
+  if(started) return;
+  started = true;
+  ["saveTransactions","saveSanteItems","saveSettings"].forEach(fn=>{
+    const orig = Store[fn];
+    if(typeof orig!=="function") return;
+    Store[fn] = function(){ const r = orig.apply(this, arguments); onLocalChange(); return r; };
+  });
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState==="visible"){
+      if(Date.now()-lastAutoCheck > RESUME_MIN_GAP_MS) autoSync("resume");
+    } else if(autoTimer){
+      clearTimeout(autoTimer); autoTimer = null;
+      autoSync("change");
+    }
+  });
+  window.addEventListener("online", ()=>autoSync("online"));
+  setTimeout(()=>autoSync("start"), 1500);
+}
+
+/* ---------- Feuille Synchronisation ---------- */
+function statusCardHtml(p){
+  const c = cfg(p);
+  const meta = statusMeta(p);
+  return `
+    <div class="import-summary" style="margin-top:10px;border:1.5px solid ${meta.color};">
+      <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${fmtStamp(c.lastSyncedAt)}
+      ${lastError[p.id] ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError[p.id])}</span>` : ""}
+    </div>`;
+}
+
+/* background=true : rafraîchissement déclenché par une opération (éventuellement automatique) — ignoré
+   si la feuille n'a jamais été ouverte ou si un champ de saisie y a le focus (pour ne pas effacer une
+   URL/clé en cours de frappe). */
+function renderSyncSheet(background){
   const sheet = document.getElementById("sheet-sync");
   if(!sheet) return;
-  const c = getConfig();
-  const configured = isConfigured();
-  const meta = statusMeta();
-  const lastTxt = c.lastSyncedAt ? (()=>{ const d=new Date(c.lastSyncedAt); return U.fmtDateShort(d)+" à "+U.pad2(d.getHours())+":"+U.pad2(d.getMinutes()); })() : "jamais";
+  if(background && (!sheet.innerHTML || (document.activeElement && sheet.contains(document.activeElement) && document.activeElement.tagName==="INPUT"))) return;
+  const d = cfg(DRIVE), g = cfg(GIST);
+  const dOk = DRIVE.isConfigured(d), gOk = GIST.isConfigured(g);
+  const busy = !!syncing;
+  const gistOpen = sheet.querySelector("#gist-details") ? sheet.querySelector("#gist-details").open : false;
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Synchronisation</h2><button class="icon-btn" id="sync-close">${ICONS.close}</button></div>
     <div class="sheet-body">
+      <div class="field-label" style="margin-top:0;">Google Drive — principal</div>
       <div class="import-summary">
-        Sauvegardez vos données (transactions et paramètres) sur un Gist GitHub privé pour les récupérer sur un autre appareil. Créez un jeton d'accès personnel avec uniquement le scope <b>gist</b> — il reste stocké localement sur cet appareil et n'est envoyé qu'à l'API GitHub.
+        Transactions, paramètres et Santé sont synchronisés automatiquement dans un dossier <b>Suivi financier</b> de ton Google Drive (fichier <b>suivi_financier.json</b>), à l'ouverture de l'app et quelques secondes après chaque modification. Un fichier <b>suivi_financier.xlsx</b> y est aussi déposé à chaque changement, pour consultation ou modification — il n'est jamais relu automatiquement.
       </div>
-      ${configured ? `
-      <div class="import-summary" style="margin-top:10px;border:1.5px solid ${meta.color};">
-        <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${lastTxt}
-        ${lastError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError)}</span>` : ""}
-      </div>
-      <button class="btn btn-primary btn-block" id="sync-smart" style="margin-top:16px;">${ICONS.refreshCw} Synchroniser</button>
-      ${!c.gistId ? `<div class="import-summary" style="margin-top:10px;">Aucun Gist enregistré pour l'instant : "Synchroniser" en créera un nouveau (secret) et mémorisera son ID automatiquement.</div>` : `
+      ${dOk ? `
+      ${statusCardHtml(DRIVE)}
+      <button class="btn btn-primary btn-block" id="drive-smart" style="margin-top:14px;" ${busy?"disabled":""}>${ICONS.refreshCw} Synchroniser maintenant</button>
       <div class="field-label" style="margin-top:18px;">Actions manuelles (forcent un sens sans vérifier l'autre)</div>
       <div class="u-row-gap10">
-        <button class="btn btn-ghost" style="flex:1;" id="sync-pull">${ICONS.download} Forcer récupération</button>
-        <button class="btn btn-ghost" style="flex:1;" id="sync-push">${ICONS.upload} Forcer sauvegarde</button>
-      </div>`}` : ""}
-      <div class="field-label" style="margin-top:20px;">${configured ? "Modifier la configuration" : "Configuration"}</div>
-      <div class="card" style="padding:14px;">
-        <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
-        <input type="password" id="sync-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(c.token||"")}">
-        <div class="field-label">ID du Gist</div>
-        <input type="text" id="sync-gistid" class="search-mini" style="margin:0;" placeholder="Laisser vide pour créer un nouveau Gist" autocomplete="off" value="${U.escHtml(c.gistId||"")}">
-        <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Laisse ce champ vide sur le premier appareil : le prochain "Synchroniser" crée le Gist et remplit l'ID ici. Sur un deuxième appareil, colle l'ID affiché sur le premier (visible ci-dessus une fois configuré, ou dans l'URL du Gist sur github.com).</div>
-        <button class="btn btn-primary btn-block" id="sync-save-config" style="margin-top:14px;">Enregistrer la configuration</button>
+        <button class="btn btn-ghost" style="flex:1;" id="drive-pull" ${busy?"disabled":""}>${ICONS.download} Forcer récupération</button>
+        <button class="btn btn-ghost" style="flex:1;" id="drive-push" ${busy?"disabled":""}>${ICONS.upload} Forcer sauvegarde</button>
       </div>
+      <div class="field-label" style="margin-top:18px;">Fichier Excel sur Drive</div>
+      <div class="import-summary">
+        Dernier dépôt : ${fmtStamp(d.lastExcelAt)}${excelBusy ? "<br>Opération en cours…" : ""}
+        ${excelError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(excelError)}</span>` : ""}
+      </div>
+      <div class="u-row-gap10" style="margin-top:10px;">
+        <button class="btn btn-ghost" style="flex:1;" id="drive-excel-import" ${excelBusy?"disabled":""}>${ICONS.download} Importer l'Excel</button>
+        <button class="btn btn-ghost" style="flex:1;" id="drive-excel-push" ${excelBusy?"disabled":""}>${ICONS.upload} Mettre à jour l'Excel</button>
+      </div>` : ""}
+      <div class="field-label" style="margin-top:20px;">${dOk ? "Modifier la configuration Drive" : "Configuration Drive"}</div>
+      <div class="card" style="padding:14px;">
+        <div class="field-label" style="margin-top:0;">URL du script Google (se termine par /exec)</div>
+        <input type="url" id="drive-url" class="search-mini" style="margin:0;" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" value="${U.escHtml(d.url||"")}">
+        <div class="field-label">Clé secrète (celle écrite dans le script)</div>
+        <input type="password" id="drive-key" class="search-mini" style="margin:0;" autocomplete="off" value="${U.escHtml(d.key||"")}">
+        <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Installation du script (une seule fois, ~5 min) : suivre les étapes en tête du fichier google-apps-script.gs. Sur un deuxième appareil, saisis la même URL et la même clé : la première synchronisation récupère les données du Drive.</div>
+        <div class="u-row-gap10" style="margin-top:14px;">
+          ${dOk ? `<button class="btn btn-ghost" style="flex:1;" id="drive-disconnect">Déconnecter</button>` : ""}
+          <button class="btn btn-primary" style="flex:1;" id="drive-save-config">Enregistrer</button>
+        </div>
+      </div>
+
+      <details id="gist-details" style="margin-top:22px;" ${gistOpen?"open":""}>
+        <summary style="cursor:pointer;font-weight:600;color:var(--text-sub);padding:6px 0;">GitHub Gist — secours (sera retiré)</summary>
+        <div class="import-summary" style="margin-top:8px;">
+          Ancienne synchronisation, désormais uniquement manuelle. À conserver le temps de valider Google Drive.
+        </div>
+        ${gOk ? `
+        ${statusCardHtml(GIST)}
+        <button class="btn btn-ghost btn-block" id="gist-smart" style="margin-top:12px;" ${busy?"disabled":""}>${ICONS.refreshCw} Synchroniser le Gist</button>
+        ${g.gistId ? `
+        <div class="u-row-gap10" style="margin-top:10px;">
+          <button class="btn btn-ghost" style="flex:1;" id="gist-pull" ${busy?"disabled":""}>${ICONS.download} Forcer récupération</button>
+          <button class="btn btn-ghost" style="flex:1;" id="gist-push" ${busy?"disabled":""}>${ICONS.upload} Forcer sauvegarde</button>
+        </div>` : ""}` : ""}
+        <div class="card" style="padding:14px;margin-top:12px;">
+          <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
+          <input type="password" id="gist-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(g.token||"")}">
+          <div class="field-label">ID du Gist</div>
+          <input type="text" id="gist-id" class="search-mini" style="margin:0;" placeholder="Laisser vide pour créer un nouveau Gist" autocomplete="off" value="${U.escHtml(g.gistId||"")}">
+          <button class="btn btn-ghost btn-block" id="gist-save-config" style="margin-top:14px;">Enregistrer la configuration Gist</button>
+        </div>
+      </details>
     </div>
   `;
-  document.getElementById("sync-close").onclick = ()=>APP.closeOverlay("overlay-sync");
-  document.getElementById("sync-save-config").onclick = ()=>{
-    const token = document.getElementById("sync-token").value.trim();
-    const gistId = document.getElementById("sync-gistid").value.trim();
-    if(!token){ APP.showToast("Renseignez le jeton d'accès"); return; }
-    lastError = null;
-    saveConfig(token, gistId);
-    APP.showToast("Configuration enregistrée");
-    renderSyncSheet();
-    updateIndicator();
+  const $ = id => sheet.querySelector("#"+id);
+  $("sync-close").onclick = ()=>APP.closeOverlay("overlay-sync");
+  $("drive-save-config").onclick = ()=>{
+    const url = $("drive-url").value.trim();
+    const key = $("drive-key").value.trim();
+    if(!/^https:\/\/script\.google\.com\/.+\/exec(\?.*)?$/.test(url)){ APP.showToast("URL invalide — elle doit commencer par https://script.google.com/ et finir par /exec"); return; }
+    if(!key){ APP.showToast("Renseigne la clé secrète"); return; }
+    const changed = url!==d.url || key!==d.key;
+    // Nouvelle cible → état de référence remis à zéro : la première synchronisation compare sans a priori.
+    setCfg(DRIVE, changed ? {url, key, lastSyncedHash:null, lastRemoteHash:null, lastSyncedAt:null, lastExcelHash:null, lastExcelAt:null} : {url, key});
+    lastError.drive = null; conflictPending.drive = false; excelError = null;
+    APP.showToast("Configuration Drive enregistrée");
+    renderSyncSheet(); updateIndicator();
+    smartSync(DRIVE);
   };
-  if(configured){
-    document.getElementById("sync-smart").onclick = ()=>{ smartSync().then(()=>renderSyncSheet()); };
-    if(c.gistId){
-      document.getElementById("sync-push").onclick = ()=>{ pushToGist().then(()=>renderSyncSheet()); };
-      document.getElementById("sync-pull").onclick = confirmPull;
+  if(dOk){
+    $("drive-disconnect").onclick = ()=>{
+      Store.settings.drive = {};
+      Store.saveSettings();
+      lastError.drive = null; conflictPending.drive = false; excelError = null;
+      APP.showToast("Google Drive déconnecté sur cet appareil (fichiers conservés sur le Drive)");
+      renderSyncSheet(); updateIndicator();
+    };
+    $("drive-smart").onclick = ()=>smartSync(DRIVE);
+    $("drive-push").onclick = ()=>forcePush(DRIVE);
+    $("drive-pull").onclick = ()=>confirmPull(DRIVE);
+    $("drive-excel-push").onclick = pushExcelNow;
+    $("drive-excel-import").onclick = importExcelFromDrive;
+  }
+  $("gist-save-config").onclick = ()=>{
+    const token = $("gist-token").value.trim();
+    const gistId = $("gist-id").value.trim();
+    if(!token){ APP.showToast("Renseignez le jeton d'accès"); return; }
+    lastError.gist = null;
+    setCfg(GIST, {token, gistId});
+    APP.showToast("Configuration Gist enregistrée");
+    renderSyncSheet(); updateIndicator();
+  };
+  if(gOk){
+    $("gist-smart").onclick = ()=>smartSync(GIST);
+    if(g.gistId){
+      $("gist-push").onclick = ()=>forcePush(GIST);
+      $("gist-pull").onclick = ()=>confirmPull(GIST);
     }
   }
 }
@@ -10238,29 +10531,14 @@ function openSyncSheet(){
   APP.openOverlay("overlay-sync");
 }
 
-function updateIndicator(){
-  const btn = document.getElementById("btn-sync");
-  if(!btn) return;
-  const st = computeStatus();
-  const configured = isConfigured();
-  let icon, color, title;
-  if(st==="syncing"){ icon=ICONS.refreshCw; color="var(--text-sub)"; title="Synchronisation en cours…"; }
-  else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation"; }
-  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé — appuyez pour vérifier les mises à jour"; }
-  else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec — appuyez pour réessayer"; }
-  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Non synchronisé — appuyez pour synchroniser"; }
-  btn.innerHTML = icon;
-  btn.style.color = color;
-  btn.classList.toggle("sync-spin", st==="syncing");
-  btn.title = title;
-  btn.onclick = ()=>{
-    if(st==="syncing") return;
-    if(!configured){ openSyncSheet(); return; }
-    smartSync();
-  };
-}
-
-window.__SF_SYNC = {open: openSyncSheet, updateIndicator, pushToGist, pullFromGist, smartSync};
+window.__SF_SYNC = {
+  open: openSyncSheet, updateIndicator, start, autoSync,
+  smartSync: (id)=>smartSync(id==="gist" ? GIST : id==="drive" ? DRIVE : null),
+  pushToGist: ()=>forcePush(GIST), pullFromGist: ()=>forcePull(GIST),
+  pushToDrive: ()=>forcePush(DRIVE), pullFromDrive: ()=>forcePull(DRIVE),
+  pushExcelNow, importExcelFromDrive,
+  _internal: {buildSyncPayload, hashPayload, computeStatus: (id)=>computeStatus(id==="gist"?GIST:DRIVE), conflictPending, lastError}
+};
 })();
 
 /* ================= Générateur générique : gestion des alias (groupes / personnes) ================= */
@@ -12010,6 +12288,7 @@ async function init(){
   if(window.__SF_SANTE_FILTERS) window.__SF_SANTE_FILTERS.restore();
   APP.buildShell();
   APP.refreshCurrentTab();
+  if(window.__SF_SYNC && window.__SF_SYNC.start) window.__SF_SYNC.start();
 
   const mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
   if(mq && mq.addEventListener){
