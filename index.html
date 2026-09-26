@@ -476,7 +476,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.26.09.22";
+const APP_VERSION = "v 2026.09.26.09.58";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -1133,12 +1133,9 @@ const Store = {
     if(b.compare.periodFrom===undefined) b.compare.periodFrom = null;
     if(b.compare.periodTo===undefined) b.compare.periodTo = null;
     if(!b.compare.predefined || typeof b.compare.predefined!=="object") b.compare.predefined = {};
-    if(!s.sync || typeof s.sync!=="object") s.sync = {};
-    if(typeof s.sync.token!=="string") s.sync.token = "";
-    if(typeof s.sync.gistId!=="string") s.sync.gistId = "";
-    if(!s.sync.filename) s.sync.filename = "suivi_financier_sync.json";
-    if(s.sync.lastSyncedAt===undefined) s.sync.lastSyncedAt = null;
-    if(s.sync.lastSyncedHash===undefined) s.sync.lastSyncedHash = null;
+    // Ancienne synchronisation GitHub Gist retirée : sa configuration (dont le jeton d'accès) est effacée.
+    if("sync" in s) delete s.sync;
+    if(!s.drive || typeof s.drive!=="object") s.drive = {};
     if(typeof s.txnGroupsExpanded!=="boolean") s.txnGroupsExpanded = false;
     // ---- Onglet Santé : listes personnalisables + filtres mémorisés ----
     if(!s.sante || typeof s.sante!=="object") s.sante = {};
@@ -1471,7 +1468,7 @@ function parseParametresSheet(wb){
   // différentes : une ligne par ligne définie vs une ligne par mois renseigné) plutôt qu'un onglet combiné à
   // colonnes dupliquées (Personne/Catégorie/Ligne identiques dans les deux blocs) — lus par nom d'en-tête,
   // robuste à un réordonnancement/ajout de colonne fait à la main dans Excel (contrairement à une lecture
-  // par position). Revenus_Reglages (période + filtre groupes) supprimé : géré uniquement via JSON/Gist.
+  // par position). Revenus_Reglages (période + filtre groupes) supprimé : géré uniquement via JSON/Drive.
   const revLinesSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_lignes");
   const revMontantsSheetName = wb.SheetNames.find(n=>U.normalize(n)==="revenus_montants");
   // Sentinelles de la colonne "Catégorie" identifiant une ligne de transfert (jamais une vraie catégorie) —
@@ -8983,7 +8980,7 @@ function applyParamsImport(params, mode){
   if(mode==="replace"){
     // Import "Remplacer" ciblé par onglet (Excel) : un onglet absent du classeur importé laisse le réglage
     // correspondant intact au lieu de le vider — seuls les onglets réellement présents écrasent l'existant.
-    // Une sauvegarde JSON ou une synchro Gist n'a pas cette notion de "feuille absente" (pas de
+    // Une sauvegarde JSON ou une synchro Drive n'a pas cette notion de "feuille absente" (pas de
     // sheetsPresent) et s'applique donc toujours intégralement.
     if(!params.sheetsPresent || sheetsPresent.parametres){
       Store.settings.groupAliasRules = groupRules.slice();
@@ -8997,7 +8994,7 @@ function applyParamsImport(params, mode){
     }
     // Ordre des types de compte, décimales, soldes personnalisés : n'existent plus dans aucun onglet Excel
     // (Reglages_Generaux / Comptes_Soldes_Perso supprimés, § simplification Excel) — gérés uniquement via
-    // JSON/Gist désormais, jamais touchés par un import Excel.
+    // JSON/Drive désormais, jamais touchés par un import Excel.
     if(!params.sheetsPresent){
       Store.settings.accountTypeOrder = accountTypeOrder.slice();
       if(decimalsImported===2 || decimalsImported===0) Store.settings.decimals = decimalsImported;
@@ -9009,7 +9006,7 @@ function applyParamsImport(params, mode){
     if(budgetSettings){
       // Ce bloc n'est plus jamais déclenché par un import Excel — l'onglet Budget_Reglages a été
       // entièrement supprimé (§ simplification Excel), Store.settings.budget n'est donc plus modifiable
-      // que via une sauvegarde JSON ou une synchro Gist (cf. buildParamsPayload, seule source restante de
+      // que via une sauvegarde JSON ou une synchro Drive (cf. buildParamsPayload, seule source restante de
       // budgetSettings). periodFrom/periodTo/mode/scope gardent leur repli sur la valeur actuelle si
       // absents de l'import, par cohérence avec le reste de ce bloc.
       Object.assign(Store.settings.budget, {
@@ -9043,7 +9040,7 @@ function applyParamsImport(params, mode){
       if(evolutionSettings.view) Store.settings.evolution.view = evolutionSettings.view;
       if(evolutionSettings.monthBasis) Store.settings.evolution.monthBasis = evolutionSettings.monthBasis;
       // Fusions de sections Évolution : n'existent plus dans aucun onglet Excel (Evolution_Fusions
-      // supprimé), gérées uniquement via JSON/Gist désormais.
+      // supprimé), gérées uniquement via JSON/Drive désormais.
       if(!params.sheetsPresent && evolutionSettings.merges){
         Store.settings.evolution.merges = {
           groupe: (evolutionSettings.merges.groupe || []).slice(),
@@ -9054,7 +9051,7 @@ function applyParamsImport(params, mode){
       }
     }
     // sheetsPresent n'existe (et ne doit gater) que pour un import Excel ciblé par onglet ; une sauvegarde
-    // JSON ou une synchro Gist n'a pas cette notion de "feuille absente" et s'applique donc toujours.
+    // JSON ou une synchro Drive n'a pas cette notion de "feuille absente" et s'applique donc toujours.
     if(revenus && (!params.sheetsPresent || sheetsPresent.revenus) && window.__SF_REVENUS){
       window.__SF_REVENUS.applyParamsImportPart(revenus, "replace");
     }
@@ -9510,7 +9507,7 @@ function exportBackup(scope){
     payload.params = buildParamsPayload();
   }
   // Les soins de l'onglet Santé voyagent toujours avec la sauvegarde JSON (quel que soit le
-  // périmètre choisi ci-dessus), au même titre que la synchro Gist — cf. buildSyncPayload.
+  // périmètre choisi ci-dessus), au même titre que la synchro Drive — cf. buildSyncPayload.
   if(Store.santeItems.length || Object.values((Store.settings.sante||{}).lists||{}).some(l=>l.length)){
     payload.santeItems = Store.santeItems.slice();
     payload.santeSettings = Store.settings.sante;
@@ -9664,7 +9661,7 @@ function buildExcelWorkbook(scope){
     // plutôt qu'un seul onglet à colonnes dupliquées (Personne/Catégorie/Ligne identiques dans les deux
     // blocs), qui serait fragile à l'édition manuelle dans Excel (insertion/suppression de colonne, tri)
     // et ambigu pour Excel/tableur lui-même (en-têtes en double) — période/filtre groupes de l'ex-onglet
-    // "Revenus_Reglages" supprimés : gérés uniquement via la sauvegarde JSON / synchro Gist désormais.
+    // "Revenus_Reglages" supprimés : gérés uniquement via la sauvegarde JSON / synchro Drive désormais.
     const revData = (window.__SF_REVENUS && window.__SF_REVENUS.buildParamsPayloadPart()) || null;
     const revTypeLabel = {manual:"Manuel", recurring:"Récurrent", budgetSalary:"Salaire (Budget)"};
     // Colonne "Catégorie" conservée uniquement pour porter les sentinelles de transfert (compatibilité avec
@@ -9828,7 +9825,7 @@ function renderMenuSheet(){
       <div class="field-label" style="margin-top:18px;">Synchronisation</div>
       <div class="card" style="padding:4px 6px;">
         <div class="rowline" id="menu-sync" style="cursor:pointer;">
-          <span class="u-row-label">${ICONS.cloud} Google Drive (et Gist de secours)</span>
+          <span class="u-row-label">${ICONS.cloud} Synchronisation Google Drive</span>
         </div>
       </div>
       <div class="field-label" style="margin-top:18px;">Paramètres</div>
@@ -9914,16 +9911,17 @@ function openMenuSheet(){
 window.__SF_MENU = {open: openMenuSheet, buildParamsPayload, buildExcelWorkbook};
 })();
 
-/* ================= SYNCHRONISATION (Google Drive principal + GitHub Gist de secours) ================= */
-/* Deux fournisseurs partageant exactement le même payload (buildSyncPayload : transactions + paramètres +
-   soins et réglages Santé — même format que la sauvegarde .json) et la même logique de décision
-   (smartSync, hash local / distant / de référence) :
-   - DRIVE (principal) : relais Google Apps Script déployé par l'utilisateur dans son propre compte
-     (URL + clé secrète, cf. en-tête de google-apps-script.gs). Synchronisation AUTOMATIQUE (démarrage, retour sur l'app,
-     retour du réseau, quelques secondes après chaque modification locale). Dépose aussi, à chaque envoi
-     de données modifiées, un miroir Excel (.xlsx) jamais relu automatiquement — réimport uniquement
-     manuel via "Importer l'Excel depuis Drive" (flux d'import habituel).
-   - GIST (secours, amené à disparaître) : inchangé fonctionnellement, uniquement manuel. */
+/* ================= SYNCHRONISATION (Google Drive) ================= */
+/* Synchronisation via un relais Google Apps Script déployé par l'utilisateur dans son propre compte
+   (URL + clé secrète, cf. en-tête de google-apps-script.gs). Payload = buildSyncPayload (transactions +
+   paramètres + soins et réglages Santé — même format que la sauvegarde .json).
+   - JSON (source de vérité) : synchronisation AUTOMATIQUE — au démarrage, au retour sur l'app, au retour du
+     réseau, 30 s après la dernière modification locale, et immédiatement au passage en arrière-plan si un
+     envoi était en attente.
+   - Excel (.xlsx, miroir de consultation) : jamais relu automatiquement ; déposé seulement quand l'app passe
+     en arrière-plan (ou au démarrage, en rattrapage), si les données ont changé depuis le dernier dépôt ET
+     au plus une fois par heure. Bouton "Mettre à jour l'Excel" pour forcer. Réimport uniquement manuel via
+     "Importer l'Excel" (flux d'import habituel). */
 (function(){
 "use strict";
 const U = window.__SF_UTILS;
@@ -9932,20 +9930,20 @@ const APP = window.__SF_APP;
 const ICONS = U.ICONS;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const AUTO_DELAY_MS = 10000;       // délai après la dernière modification locale avant envoi automatique
-const RESUME_MIN_GAP_MS = 60000;   // intervalle minimal entre deux vérifications au retour sur l'app
+const AUTO_DELAY_MS = 30000;        // délai après la dernière modification locale avant envoi automatique du JSON
+const RESUME_MIN_GAP_MS = 60000;    // intervalle minimal entre deux vérifications au retour sur l'app
+const EXCEL_MIN_GAP_MS = 3600000;   // au plus un dépôt Excel automatique par heure
 const DRIVE_TIMEOUT_MS = 60000;
 
-let syncing = null;                // fournisseur en cours de synchronisation (ou null)
-const lastError = {drive:null, gist:null};
-const conflictPending = {drive:false, gist:false};
+let syncing = false;
+let lastError = null;
+let conflictPending = false;
 let excelBusy = false, excelError = null;
 let autoTimer = null, lastAutoCheck = 0, started = false;
 
-/* ---------- Payload commun ---------- */
-/* Construit le même payload que la sauvegarde .json (§ exportBackup) — transactions, paramètres,
-   soins Santé et réglages Santé —, sans le champ exportedAt dans le calcul de hash (il change à chaque
-   appel et ne reflète pas un changement de données). */
+/* ---------- Payload ---------- */
+/* Même payload que la sauvegarde .json (§ exportBackup) — transactions, paramètres, soins Santé et
+   réglages Santé —, sans le champ exportedAt dans le calcul de hash (il change à chaque appel). */
 function buildSyncPayload(){
   return {
     version: 2,
@@ -9963,62 +9961,22 @@ function hashPayload(payload){
   for(let i=0;i<str.length;i++){ h = (Math.imul(31,h) + str.charCodeAt(i))|0; }
   return String(h);
 }
-function payloadIsEmpty(p){
-  return !(p && ((p.transactions||[]).length || (p.santeItems||[]).length));
-}
+function payloadIsEmpty(p){ return !(p && ((p.transactions||[]).length || (p.santeItems||[]).length)); }
 function localIsEmpty(){ return !Store.transactions.length && !Store.santeItems.length; }
 
-/* ---------- Fournisseur GitHub Gist (secours) ---------- */
-/* En-têtes HTTP de l'API GitHub Gist (jeton personnel ; "json" ajoute le Content-Type des écritures). */
-function gistHeaders(c, json){
-  const h = {"Authorization": "token "+c.token, "Accept": "application/vnd.github+json"};
-  if(json) h["Content-Type"] = "application/json";
-  return h;
+/* ---------- Configuration ---------- */
+function cfg(){ return Store.settings.drive || {}; }
+function setCfg(fields){
+  Store.settings.drive = Object.assign({}, Store.settings.drive, fields);
+  Store.saveSettings();
 }
-const GIST = {
-  id: "gist", key: "sync", label: "GitHub Gist",
-  isConfigured: c=> !!c.token,
-  /* null = aucun Gist encore créé (le premier envoi le crée). */
-  async fetchRemote(c){
-    if(!c.gistId) return null;
-    const res = await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {headers: gistHeaders(c)});
-    if(!res.ok) throw new Error("Erreur GitHub (" + res.status + ")");
-    const data = await res.json();
-    const fname = c.filename || "suivi_financier_sync.json";
-    const files = data.files || {};
-    const file = files[fname] || Object.values(files)[0];
-    if(!file) throw new Error("Aucun fichier trouvé dans ce Gist");
-    let content = file.content;
-    if(file.truncated) content = await fetch(file.raw_url).then(r=>r.text());
-    return JSON.parse(content);
-  },
-  /* Création si aucun gistId encore connu, sinon mise à jour. Retourne les champs à mémoriser. */
-  async push(c, payload){
-    const filename = c.filename || "suivi_financier_sync.json";
-    const creating = !c.gistId;
-    const res = creating
-      ? await fetch("https://api.github.com/gists", {
-          method: "POST", headers: gistHeaders(c, true),
-          body: JSON.stringify({description: "Suivi financier — sauvegarde synchronisée", public: false,
-            files: {[filename]: {content: JSON.stringify(payload)}}})
-        })
-      : await fetch("https://api.github.com/gists/"+encodeURIComponent(c.gistId), {
-          method: "PATCH", headers: gistHeaders(c, true),
-          body: JSON.stringify({files: {[filename]: {content: JSON.stringify(payload)}}})
-        });
-    if(!res.ok){
-      const txt = await res.text().catch(()=>"");
-      throw new Error("Erreur GitHub (" + res.status + ")" + (txt ? " : " + txt.slice(0,200) : ""));
-    }
-    const data = await res.json();
-    return {extra: {gistId: creating ? data.id : c.gistId}, created: creating};
-  }
-};
+function isConfigured(){ const c = cfg(); return !!(c.url && c.key); }
 
-/* ---------- Fournisseur Google Drive (principal, via relais Apps Script) ---------- */
-/* Appel du relais Apps Script : POST en text/plain (requête "simple", sans pré-vol CORS), clé secrète
-   dans le corps (jamais dans l'URL). Le script répond toujours {ok:true,…} ou {ok:false, error}. */
-async function driveCall(c, body){
+/* ---------- Relais Apps Script ---------- */
+/* POST en text/plain (requête "simple", sans pré-vol CORS), clé secrète dans le corps (jamais dans l'URL).
+   Le script répond toujours {ok:true,…} ou {ok:false, error}. */
+async function driveCall(body){
+  const c = cfg();
   const ctrl = (typeof AbortController!=="undefined") ? new AbortController() : null;
   const timer = ctrl ? setTimeout(()=>ctrl.abort(), DRIVE_TIMEOUT_MS) : null;
   let res;
@@ -10036,55 +9994,41 @@ async function driveCall(c, body){
   if(!data || !data.ok) throw new Error((data && data.error) || "Erreur Google Drive");
   return data;
 }
-const DRIVE = {
-  id: "drive", key: "drive", label: "Google Drive",
-  isConfigured: c=> !!(c.url && c.key),
-  /* null = aucun fichier JSON encore présent sur le Drive (le premier envoi le crée). */
-  async fetchRemote(c){
-    const r = await driveCall(c, {action:"getJson"});
-    if(!r.exists) return null;
-    try{ return JSON.parse(r.content); }
-    catch(e){ throw new Error("Le fichier JSON sur le Drive est illisible"); }
-  },
-  async push(c, payload){
-    const r = await driveCall(c, {action:"putJson", content: JSON.stringify(payload)});
-    return {extra: {lastRemoteAt: r.modified || new Date().toISOString()}, created: false};
-  },
-  /* Miroir Excel : régénéré et déposé seulement si les données ont changé depuis le dernier dépôt.
-     Un échec ici n'invalide jamais la synchronisation JSON (source de vérité). */
-  async afterPush(hash, opts){
-    if(cfg(DRIVE).lastExcelHash === hash) return;
-    try{ await uploadExcel(hash); }
-    catch(e){
-      excelError = (e && e.message) ? e.message : String(e);
-      if(!opts.auto) APP.showToast("Excel non mis à jour sur Drive : " + excelError);
-    }
-  }
-};
-
-const PROVIDERS = [DRIVE, GIST];
-function cfg(p){ return Store.settings[p.key] || {}; }
-function setCfg(p, fields){
-  Store.settings[p.key] = Object.assign({}, Store.settings[p.key], fields);
-  Store.saveSettings();
-}
-/* Fournisseur piloté par l'indicateur du haut : Drive dès qu'il est configuré, sinon le Gist (comportement
-   historique conservé tant que le Drive n'est pas en place), sinon aucun. */
-function primaryProvider(){
-  if(DRIVE.isConfigured(cfg(DRIVE))) return DRIVE;
-  if(GIST.isConfigured(cfg(GIST))) return GIST;
-  return null;
+/* null = aucun fichier JSON encore présent sur le Drive (le premier envoi le crée). */
+async function fetchRemote(){
+  const r = await driveCall({action:"getJson"});
+  if(!r.exists) return null;
+  try{ return JSON.parse(r.content); }
+  catch(e){ throw new Error("Le fichier JSON sur le Drive est illisible"); }
 }
 
 /* ---------- Excel sur Drive ---------- */
-async function uploadExcel(hash){
+function currentHash(){ return hashPayload(buildSyncPayload()); }
+async function uploadExcel(){
   const M = window.__SF_MENU;
   if(!U.xlsxAvailable() || !M || !M.buildExcelWorkbook) throw new Error(U.XLSX_MISSING_MSG || "Excel indisponible");
+  const hash = currentHash();
   const wb = M.buildExcelWorkbook({transactions:true, params:true, sante:true});
   const b64 = XLSX.write(wb, {bookType:"xlsx", type:"base64"});
-  const r = await driveCall(cfg(DRIVE), {action:"putExcel", b64});
+  const r = await driveCall({action:"putExcel", b64});
   excelError = null;
-  setCfg(DRIVE, {lastExcelHash: hash || hashPayload(buildSyncPayload()), lastExcelAt: r.modified || new Date().toISOString()});
+  setCfg({lastExcelHash: hash, lastExcelAt: r.modified || new Date().toISOString()});
+}
+/* Excel en retard sur les données actuelles ? */
+function excelDirty(){ const c = cfg(); return !!c.lastSyncedHash && c.lastExcelHash !== currentHash(); }
+/* Dépôt automatique de l'Excel, uniquement si les données ont changé depuis le dernier dépôt et au plus une
+   fois par heure (le tout premier dépôt n'attend pas). Silencieux : une erreur est seulement affichée dans
+   la feuille Synchronisation — elle n'invalide jamais la synchronisation JSON. */
+async function maybeUploadExcel(){
+  if(!isConfigured() || excelBusy || conflictPending || lastError) return;
+  if(typeof navigator!=="undefined" && navigator.onLine===false) return;
+  const c = cfg();
+  if(!excelDirty()) return;
+  if(c.lastExcelAt && Date.now() - new Date(c.lastExcelAt).getTime() < EXCEL_MIN_GAP_MS) return;
+  excelBusy = true;
+  try{ await uploadExcel(); }
+  catch(e){ excelError = (e && e.message) ? e.message : String(e); }
+  finally{ excelBusy = false; renderSyncSheet(true); }
 }
 async function runExcelOp(failLabel, fn){
   if(excelBusy) return;
@@ -10097,7 +10041,7 @@ async function runExcelOp(failLabel, fn){
 }
 function pushExcelNow(){
   return runExcelOp("Échec de l'envoi de l'Excel", async ()=>{
-    await uploadExcel(null);
+    await uploadExcel();
     APP.showToast("Excel mis à jour sur Google Drive");
   });
 }
@@ -10105,7 +10049,7 @@ function pushExcelNow(){
    réconciliation…) — seul chemin par lequel une modification faite dans l'Excel revient dans l'app. */
 function importExcelFromDrive(){
   return runExcelOp("Échec du téléchargement de l'Excel", async ()=>{
-    const r = await driveCall(cfg(DRIVE), {action:"getExcel"});
+    const r = await driveCall({action:"getExcel"});
     if(!r.exists) throw new Error("aucun fichier Excel sur le Drive pour l'instant");
     const bin = atob(r.b64);
     const bytes = new Uint8Array(bin.length);
@@ -10116,19 +10060,19 @@ function importExcelFromDrive(){
   });
 }
 
-/* ---------- Cœur commun ---------- */
-/* Enveloppe commune des opérations de synchronisation : indicateur "en cours" pendant l'opération, puis
-   mémorisation de l'erreur éventuelle (+ toast "<failLabel> : <message>" hors mode automatique). */
-async function runSyncOp(p, failLabel, fn, opts){
+/* ---------- Cœur ---------- */
+/* Enveloppe des opérations : indicateur "en cours", puis mémorisation de l'erreur éventuelle
+   (+ toast "<failLabel> : <message>" hors mode automatique). */
+async function runSyncOp(failLabel, fn, opts){
   opts = opts || {};
-  syncing = p; lastError[p.id] = null; conflictPending[p.id] = false; updateIndicator(); renderSyncSheet(true);
+  syncing = true; lastError = null; conflictPending = false; updateIndicator(); renderSyncSheet(true);
   try{
     await fn();
   }catch(e){
-    lastError[p.id] = (e && e.message) ? e.message : String(e);
-    if(!opts.auto) APP.showToast(failLabel + " : " + lastError[p.id]);
+    lastError = (e && e.message) ? e.message : String(e);
+    if(!opts.auto) APP.showToast(failLabel + " : " + lastError);
   }finally{
-    syncing = null;
+    syncing = false;
     updateIndicator();
     renderSyncSheet(true);
   }
@@ -10136,8 +10080,8 @@ async function runSyncOp(p, failLabel, fn, opts){
 /* Mémorise l'état de référence de la dernière synchronisation réussie : hash local et hash distant
    (distincts si la normalisation locale d'un payload récupéré le modifie légèrement — évite de
    re-récupérer indéfiniment le même contenu distant). */
-function markSynced(p, localHash, remoteHash, extra){
-  setCfg(p, Object.assign({}, extra||{}, {lastSyncedAt: new Date().toISOString(),
+function markSynced(localHash, remoteHash, extra){
+  setCfg(Object.assign({}, extra||{}, {lastSyncedAt: new Date().toISOString(),
     lastSyncedHash: localHash, lastRemoteHash: remoteHash || localHash}));
 }
 /* Remplace les transactions/paramètres/soins locaux par ceux d'un payload distant déjà récupéré. */
@@ -10151,54 +10095,51 @@ function applyRemotePayloadLocally(payload){
   Store.normalizeSettings();
 }
 /* Adopte un payload distant : remplace les données locales, mémorise les hash de référence, persiste
-   transactions + soins et rafraîchit l'onglet courant. */
-async function adoptRemotePayload(p, remotePayload, toastMsg){
+   transactions + soins et rafraîchit l'onglet courant. L'appareil qui a envoyé ces données est
+   responsable de l'Excel correspondant : pas de ré-envoi ici. */
+async function adoptRemotePayload(remotePayload, toastMsg){
   const remoteHash = hashPayload(remotePayload);
   applyRemotePayloadLocally(remotePayload);
-  const localHash = hashPayload(buildSyncPayload());
-  // Drive : l'appareil qui a envoyé ces données a déjà déposé l'Excel correspondant — pas de ré-envoi.
-  markSynced(p, localHash, remoteHash, p===DRIVE ? {lastExcelHash: localHash} : null);
+  const localHash = currentHash();
+  markSynced(localHash, remoteHash, {lastExcelHash: localHash});
   await Store.saveTransactions();
   await Store.saveSanteItems();
   APP.refreshCurrentTab();
   if(toastMsg) APP.showToast(toastMsg);
 }
-async function pushPayload(p, payload, hash, opts){
-  const r = await p.push(cfg(p), payload);
-  markSynced(p, hash, hash, r.extra);
-  if(p.afterPush) await p.afterPush(hash, opts||{});
-  return r;
+async function pushPayload(payload, hash){
+  const r = await driveCall({action:"putJson", content: JSON.stringify(payload)});
+  markSynced(hash, hash, {lastRemoteAt: r.modified || new Date().toISOString()});
+  // Tout premier dépôt : l'Excel suit immédiatement (ensuite, seulement à la sortie de l'app).
+  if(!cfg().lastExcelAt) await maybeUploadExcel();
 }
 
 /* Synchronisation dans les deux sens. Compare le hash local actuel, le hash distant et l'état de
    référence de la dernière synchronisation réussie :
-   - rien côté distant → envoi (création) ;
+   - rien sur le Drive → envoi (création) ;
    - seul le distant a changé → récupération automatique ;
-   - seul le local a changé → envoi automatique — SAUF si cet appareil est vide alors que le distant ne
-     l'est pas (réinitialisation, nouvel appareil) : jamais d'écrasement automatique du distant par du vide ;
-   - appareil vide jamais synchronisé face à un distant rempli → récupération directe (nouvel appareil) ;
+   - seul le local a changé → envoi automatique — SAUF si cet appareil est vide alors que le Drive ne
+     l'est pas (réinitialisation, nouvel appareil) : jamais d'écrasement automatique du Drive par du vide ;
+   - appareil vide jamais synchronisé face à un Drive rempli → récupération directe (nouvel appareil) ;
    - les deux ont changé → modale de choix (en mode automatique : signalé, sans modale, jusqu'à ce
      que l'utilisateur appuie sur l'indicateur). */
-async function smartSync(p, opts){
-  p = p || primaryProvider();
+async function smartSync(opts){
   opts = opts || {};
-  if(!p){ if(!opts.auto) openSyncSheet(); return; }
-  if(!p.isConfigured(cfg(p))){ if(!opts.auto) openSyncSheet(); return; }
+  if(!isConfigured()){ if(!opts.auto) openSyncSheet(); return; }
   if(syncing){ if(opts.auto) scheduleAuto(AUTO_DELAY_MS); return; }
-  await runSyncOp(p, "Échec de la synchronisation", async ()=>{
-    const c = cfg(p);
+  await runSyncOp("Échec de la synchronisation", async ()=>{
+    const c = cfg();
     const localPayload = buildSyncPayload();
     const localHash = hashPayload(localPayload);
-    const remotePayload = await p.fetchRemote(c);
+    const remotePayload = await fetchRemote();
     if(!remotePayload){
-      const r = await pushPayload(p, localPayload, localHash, opts);
-      if(!opts.auto || r.created) APP.showToast(p===GIST && r.created ? "Gist créé et sauvegardé" : "Sauvegardé sur " + p.label);
+      await pushPayload(localPayload, localHash);
+      APP.showToast("Sauvegardé sur Google Drive");
       return;
     }
     const remoteHash = hashPayload(remotePayload);
     if(remoteHash === localHash){
-      markSynced(p, localHash, remoteHash);
-      if(p.afterPush) await p.afterPush(localHash, opts);
+      markSynced(localHash, remoteHash);
       if(!opts.auto) APP.showToast("Déjà à jour");
       return;
     }
@@ -10208,41 +10149,40 @@ async function smartSync(p, opts){
     const remoteChanged = remoteHash !== lastRemote;
     const remoteEmpty = payloadIsEmpty(remotePayload);
     if((remoteChanged && !localChanged) || (!lastHash && localIsEmpty() && !remoteEmpty)){
-      await adoptRemotePayload(p, remotePayload, "Données récupérées depuis " + p.label);
+      await adoptRemotePayload(remotePayload, "Données récupérées depuis Google Drive");
       return;
     }
     if(localChanged && !remoteChanged && !(localIsEmpty() && !remoteEmpty)){
-      await pushPayload(p, localPayload, localHash, opts);
-      if(!opts.auto) APP.showToast("Sauvegardé sur " + p.label);
+      await pushPayload(localPayload, localHash);
+      if(!opts.auto) APP.showToast("Sauvegardé sur Google Drive");
       return;
     }
-    // Modifications des deux côtés, état de référence inconnu, ou appareil vidé face à un distant rempli.
+    // Modifications des deux côtés, état de référence inconnu, ou appareil vidé face à un Drive rempli.
     if(opts.auto){
-      conflictPending[p.id] = true;
-      APP.showToast(p.label + " : à vérifier — appuie sur l'icône de synchronisation pour choisir");
+      conflictPending = true;
+      APP.showToast("Google Drive : à vérifier — appuie sur l'icône de synchronisation pour choisir");
       return;
     }
-    showConflictModal(p, localPayload, localHash, remotePayload);
+    showConflictModal(localPayload, localHash, remotePayload);
   }, opts);
 }
 
-/* Sauvegarde FORCÉE (écrase le distant avec l'état local, sans vérification). */
-async function forcePush(p){
-  if(!p.isConfigured(cfg(p))){ openSyncSheet(); return; }
-  await runSyncOp(p, "Échec de la sauvegarde", async ()=>{
+/* Sauvegarde FORCÉE (écrase le Drive avec l'état local, sans vérification). */
+async function forcePush(){
+  if(!isConfigured()){ openSyncSheet(); return; }
+  await runSyncOp("Échec de la sauvegarde", async ()=>{
     const payload = buildSyncPayload();
-    const r = await pushPayload(p, payload, hashPayload(payload), {});
-    APP.showToast(p===GIST && r.created ? "Gist créé et sauvegardé" : "Sauvegardé sur " + p.label);
+    await pushPayload(payload, hashPayload(payload));
+    APP.showToast("Sauvegardé sur Google Drive");
   });
 }
 /* Récupération FORCÉE (écrase les données locales, sans vérification). */
-async function forcePull(p){
-  const c = cfg(p);
-  if(!p.isConfigured(c) || (p===GIST && !c.gistId)){ openSyncSheet(); return; }
-  await runSyncOp(p, "Échec de la récupération", async ()=>{
-    const remote = await p.fetchRemote(c);
-    if(!remote) throw new Error("aucune sauvegarde trouvée sur " + p.label);
-    await adoptRemotePayload(p, remote, "Données récupérées depuis " + p.label);
+async function forcePull(){
+  if(!isConfigured()){ openSyncSheet(); return; }
+  await runSyncOp("Échec de la récupération", async ()=>{
+    const remote = await fetchRemote();
+    if(!remote) throw new Error("aucune sauvegarde trouvée sur Google Drive");
+    await adoptRemotePayload(remote, "Données récupérées depuis Google Drive");
   });
 }
 
@@ -10257,42 +10197,42 @@ function countLabel(p){
   return t.toLocaleString('fr-FR') + " transaction(s)" + (s ? ", " + s.toLocaleString('fr-FR') + " soin(s)" : "");
 }
 
-function showConflictModal(p, localPayload, localHash, remotePayload){
+function showConflictModal(localPayload, localHash, remotePayload){
   const modal = document.getElementById("modal-confirm");
   const remoteTxt = remotePayload.exportedAt ? fmtStamp(remotePayload.exportedAt) : "date inconnue";
   modal.innerHTML = `
     <h3 class="u-title-md">Choisir la version à garder</h3>
-    <p class="u-desc">Cet appareil et ${p.label} ont chacun des changements depuis la dernière synchronisation. Choisissez lequel garder — l'autre sera écrasé.<br><br>
+    <p class="u-desc">Cet appareil et Google Drive ont chacun des changements depuis la dernière synchronisation. Choisissez lequel garder — l'autre sera écrasé.<br><br>
     <b>Cet appareil</b> : ${countLabel(localPayload)}<br>
-    <b>${p.label}</b> : ${countLabel(remotePayload)} (écrit le ${remoteTxt})</p>
+    <b>Google Drive</b> : ${countLabel(remotePayload)} (écrit le ${remoteTxt})</p>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="btn btn-primary btn-block" id="conflict-keep-local">Garder cet appareil</button>
-      <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser ${p.label}</button>
+      <button class="btn btn-ghost btn-block" id="conflict-keep-remote">Utiliser Google Drive</button>
       <button class="btn btn-ghost btn-block" id="conflict-cancel">Annuler</button>
     </div>
   `;
-  document.getElementById("conflict-cancel").onclick = ()=>{ conflictPending[p.id] = true; updateIndicator(); APP.closeOverlay("overlay-confirm"); };
+  document.getElementById("conflict-cancel").onclick = ()=>{ conflictPending = true; updateIndicator(); APP.closeOverlay("overlay-confirm"); };
   document.getElementById("conflict-keep-local").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    await runSyncOp(p, "Échec de la sauvegarde", async ()=>{
-      await pushPayload(p, localPayload, localHash, {});
-      APP.showToast("Sauvegardé sur " + p.label + " (a écrasé la version distante)");
+    await runSyncOp("Échec de la sauvegarde", async ()=>{
+      await pushPayload(localPayload, localHash);
+      APP.showToast("Sauvegardé sur Google Drive (a écrasé la version du Drive)");
     });
   };
   document.getElementById("conflict-keep-remote").onclick = async ()=>{
     APP.closeOverlay("overlay-confirm");
-    await runSyncOp(p, "Échec de la récupération", async ()=>{
-      await adoptRemotePayload(p, remotePayload, "Données récupérées depuis " + p.label + " (a écrasé cet appareil)");
+    await runSyncOp("Échec de la récupération", async ()=>{
+      await adoptRemotePayload(remotePayload, "Données récupérées depuis Google Drive (a écrasé cet appareil)");
     });
   };
   APP.openOverlay("overlay-confirm");
 }
 
-function confirmPull(p){
+function confirmPull(){
   const modal = document.getElementById("modal-confirm");
   modal.innerHTML = `
-    <h3 class="u-title-md">Forcer la récupération depuis ${p.label} ?</h3>
-    <p class="u-desc">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)${Store.santeItems.length ? ", " + Store.santeItems.length.toLocaleString('fr-FR') + " soin(s)" : ""}) seront remplacées par celles de ${p.label}, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt "Synchroniser", qui gère les deux sens automatiquement.</p>
+    <h3 class="u-title-md">Forcer la récupération depuis Google Drive ?</h3>
+    <p class="u-desc">Les données actuellement sur cet appareil (${Store.transactions.length.toLocaleString('fr-FR')} transaction(s)${Store.santeItems.length ? ", " + Store.santeItems.length.toLocaleString('fr-FR') + " soin(s)" : ""}) seront remplacées par celles du Drive, sans vérifier si cet appareil a aussi des changements récents. Préférez plutôt "Synchroniser maintenant", qui gère les deux sens automatiquement.</p>
     <div class="u-row-gap10">
       <button class="btn btn-ghost" style="flex:1;" id="syncpull-cancel">Annuler</button>
       <button class="btn btn-primary" style="flex:1;" id="syncpull-confirm">Récupérer</button>
@@ -10301,59 +10241,56 @@ function confirmPull(p){
   document.getElementById("syncpull-cancel").onclick = ()=>APP.closeOverlay("overlay-confirm");
   document.getElementById("syncpull-confirm").onclick = ()=>{
     APP.closeOverlay("overlay-confirm");
-    forcePull(p);
+    forcePull();
   };
   APP.openOverlay("overlay-confirm");
 }
 
 /* ---------- État / indicateur ---------- */
 /* "unconfigured" | "syncing" | "error" | "conflict" | "synced" | "unsynced" */
-function computeStatus(p){
-  if(!p) return "unconfigured";
-  if(syncing===p) return "syncing";
-  const c = cfg(p);
-  if(!p.isConfigured(c)) return "unconfigured";
-  if(lastError[p.id]) return "error";
-  if(conflictPending[p.id]) return "conflict";
-  if(!c.lastSyncedHash || (p===GIST && !c.gistId)) return "unsynced";
-  return hashPayload(buildSyncPayload())===c.lastSyncedHash ? "synced" : "unsynced";
+function computeStatus(){
+  if(syncing) return "syncing";
+  const c = cfg();
+  if(!isConfigured()) return "unconfigured";
+  if(lastError) return "error";
+  if(conflictPending) return "conflict";
+  if(!c.lastSyncedHash) return "unsynced";
+  return currentHash()===c.lastSyncedHash ? "synced" : "unsynced";
 }
-function statusMeta(p){
+function statusMeta(){
   return {
     unconfigured: {label:"Non configuré", color:"var(--text-faint)"},
     syncing: {label:"Synchronisation en cours…", color:"var(--text-sub)"},
     error: {label:"Échec de la dernière synchronisation", color:"var(--expense)"},
     conflict: {label:"Changements des deux côtés — à choisir", color:"var(--expense)"},
     synced: {label:"Synchronisé", color:"var(--income)"},
-    unsynced: {label: p===DRIVE ? "Modifications en attente d'envoi" : "Modifications non synchronisées", color:"var(--expense)"}
-  }[computeStatus(p)];
+    unsynced: {label:"Modifications en attente d'envoi", color:"var(--text-sub)"}
+  }[computeStatus()];
 }
 
 function updateIndicator(){
   const btn = document.getElementById("btn-sync");
   if(!btn) return;
-  const p = primaryProvider();
-  const st = computeStatus(p);
+  const st = computeStatus();
   let icon, color, title;
   if(st==="syncing"){ icon=ICONS.refreshCw; color="var(--text-sub)"; title="Synchronisation en cours…"; }
-  else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation"; }
-  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé ("+p.label+") — appuyez pour vérifier les mises à jour"; }
-  else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec ("+p.label+") — appuyez pour réessayer"; }
+  else if(st==="unconfigured"){ icon=ICONS.cloud; color="var(--text-faint)"; title="Configurer la synchronisation Google Drive"; }
+  else if(st==="synced"){ icon=ICONS.cloudCheck; color="var(--income)"; title="Synchronisé (Google Drive) — appuyez pour vérifier les mises à jour"; }
+  else if(st==="error"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Échec (Google Drive) — appuyez pour réessayer"; }
   else if(st==="conflict"){ icon=ICONS.alertTriangle; color="var(--expense)"; title="Changements des deux côtés — appuyez pour choisir"; }
-  else if(p===DRIVE){ icon=ICONS.cloud; color="var(--text-sub)"; title="Modifications en attente d'envoi vers Google Drive — appuyez pour envoyer maintenant"; }
-  else { icon=ICONS.alertTriangle; color="var(--expense)"; title="Non synchronisé — appuyez pour synchroniser"; }
+  else { icon=ICONS.cloud; color="var(--text-sub)"; title="Modifications en attente d'envoi vers Google Drive — appuyez pour envoyer maintenant"; }
   btn.innerHTML = icon;
   btn.style.color = color;
   btn.classList.toggle("sync-spin", st==="syncing");
   btn.title = title;
   btn.onclick = ()=>{
     if(st==="syncing") return;
-    if(!p){ openSyncSheet(); return; }
-    smartSync(p);
+    if(st==="unconfigured"){ openSyncSheet(); return; }
+    smartSync();
   };
 }
 
-/* ---------- Synchronisation automatique (Drive uniquement) ---------- */
+/* ---------- Synchronisation automatique ---------- */
 function scheduleAuto(delay){
   clearTimeout(autoTimer);
   autoTimer = setTimeout(()=>{ autoTimer = null; autoSync("change"); }, delay);
@@ -10361,21 +10298,27 @@ function scheduleAuto(delay){
 /* reason : "start" | "resume" | "online" | "change". Sur "change", aucun appel réseau si les données
    n'ont pas réellement changé depuis la dernière synchronisation (réglages d'affichage, filtres…). */
 async function autoSync(reason){
-  const c = cfg(DRIVE);
-  if(!DRIVE.isConfigured(c) || conflictPending.drive) return;
+  const c = cfg();
+  if(!isConfigured() || conflictPending) return;
   if(typeof navigator!=="undefined" && navigator.onLine===false) return;
   if(syncing){ scheduleAuto(AUTO_DELAY_MS); return; }
-  if(reason==="change" && c.lastSyncedHash && hashPayload(buildSyncPayload())===c.lastSyncedHash){ updateIndicator(); return; }
+  if(reason==="change" && c.lastSyncedHash && currentHash()===c.lastSyncedHash){ updateIndicator(); return; }
   lastAutoCheck = Date.now();
-  await smartSync(DRIVE, {auto:true});
+  await smartSync({auto:true});
 }
 function onLocalChange(){
-  if(!DRIVE.isConfigured(cfg(DRIVE))) return;
+  if(!isConfigured()) return;
   scheduleAuto(AUTO_DELAY_MS);
+}
+/* Passage en arrière-plan : envoie immédiatement le JSON en attente, puis l'Excel si nécessaire. */
+async function onHidden(){
+  if(!isConfigured()) return;
+  if(autoTimer){ clearTimeout(autoTimer); autoTimer = null; await autoSync("change"); }
+  await maybeUploadExcel();
 }
 /* Branché une seule fois au démarrage (init) : toute écriture locale (transactions, soins, réglages)
    programme un envoi différé ; retour sur l'app / retour du réseau → vérification ; passage en
-   arrière-plan → envoi immédiat de ce qui est en attente. */
+   arrière-plan → envoi de ce qui est en attente (JSON puis Excel). */
 function start(){
   if(started) return;
   started = true;
@@ -10387,26 +10330,17 @@ function start(){
   document.addEventListener("visibilitychange", ()=>{
     if(document.visibilityState==="visible"){
       if(Date.now()-lastAutoCheck > RESUME_MIN_GAP_MS) autoSync("resume");
-    } else if(autoTimer){
-      clearTimeout(autoTimer); autoTimer = null;
-      autoSync("change");
+    } else {
+      onHidden();
     }
   });
+  window.addEventListener("pagehide", ()=>{ onHidden(); });
   window.addEventListener("online", ()=>autoSync("online"));
-  setTimeout(()=>autoSync("start"), 1500);
+  // Démarrage : vérification JSON, puis rattrapage de l'Excel s'il est resté en retard (sortie interrompue).
+  setTimeout(async ()=>{ await autoSync("start"); await maybeUploadExcel(); }, 1500);
 }
 
 /* ---------- Feuille Synchronisation ---------- */
-function statusCardHtml(p){
-  const c = cfg(p);
-  const meta = statusMeta(p);
-  return `
-    <div class="import-summary" style="margin-top:10px;border:1.5px solid ${meta.color};">
-      <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${fmtStamp(c.lastSyncedAt)}
-      ${lastError[p.id] ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError[p.id])}</span>` : ""}
-    </div>`;
-}
-
 /* background=true : rafraîchissement déclenché par une opération (éventuellement automatique) — ignoré
    si la feuille n'a jamais été ouverte ou si un champ de saisie y a le focus (pour ne pas effacer une
    URL/clé en cours de frappe). */
@@ -10414,36 +10348,38 @@ function renderSyncSheet(background){
   const sheet = document.getElementById("sheet-sync");
   if(!sheet) return;
   if(background && (!sheet.innerHTML || (document.activeElement && sheet.contains(document.activeElement) && document.activeElement.tagName==="INPUT"))) return;
-  const d = cfg(DRIVE), g = cfg(GIST);
-  const dOk = DRIVE.isConfigured(d), gOk = GIST.isConfigured(g);
-  const busy = !!syncing;
-  const gistOpen = sheet.querySelector("#gist-details") ? sheet.querySelector("#gist-details").open : false;
+  const d = cfg();
+  const ok = isConfigured();
+  const meta = statusMeta();
+  const dirty = ok && excelDirty();
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Synchronisation</h2><button class="icon-btn" id="sync-close">${ICONS.close}</button></div>
     <div class="sheet-body">
-      <div class="field-label" style="margin-top:0;">Google Drive — principal</div>
       <div class="import-summary">
-        Transactions, paramètres et Santé sont synchronisés automatiquement dans un dossier <b>Suivi financier</b> de ton Google Drive (fichier <b>suivi_financier.json</b>), à l'ouverture de l'app et quelques secondes après chaque modification. Un fichier <b>suivi_financier.xlsx</b> y est aussi déposé à chaque changement, pour consultation ou modification — il n'est jamais relu automatiquement.
+        Transactions, paramètres et Santé sont synchronisés automatiquement dans un dossier <b>Suivi financier</b> de ton Google Drive (fichier <b>suivi_financier.json</b>) : à l'ouverture de l'app, 30 secondes après une modification et quand tu quittes l'app. Le fichier <b>suivi_financier.xlsx</b> y est mis à jour quand tu quittes l'app (au plus une fois par heure), pour consultation ou modification — il n'est jamais relu automatiquement.
       </div>
-      ${dOk ? `
-      ${statusCardHtml(DRIVE)}
-      <button class="btn btn-primary btn-block" id="drive-smart" style="margin-top:14px;" ${busy?"disabled":""}>${ICONS.refreshCw} Synchroniser maintenant</button>
+      ${ok ? `
+      <div class="import-summary" style="margin-top:10px;border:1.5px solid ${meta.color};">
+        <b style="color:${meta.color};">${meta.label}</b><br>Dernière synchronisation : ${fmtStamp(d.lastSyncedAt)}
+        ${lastError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(lastError)}</span>` : ""}
+      </div>
+      <button class="btn btn-primary btn-block" id="drive-smart" style="margin-top:14px;" ${syncing?"disabled":""}>${ICONS.refreshCw} Synchroniser maintenant</button>
       <div class="field-label" style="margin-top:18px;">Actions manuelles (forcent un sens sans vérifier l'autre)</div>
       <div class="u-row-gap10">
-        <button class="btn btn-ghost" style="flex:1;" id="drive-pull" ${busy?"disabled":""}>${ICONS.download} Forcer récupération</button>
-        <button class="btn btn-ghost" style="flex:1;" id="drive-push" ${busy?"disabled":""}>${ICONS.upload} Forcer sauvegarde</button>
+        <button class="btn btn-ghost" style="flex:1;" id="drive-pull" ${syncing?"disabled":""}>${ICONS.download} Forcer récupération</button>
+        <button class="btn btn-ghost" style="flex:1;" id="drive-push" ${syncing?"disabled":""}>${ICONS.upload} Forcer sauvegarde</button>
       </div>
       <div class="field-label" style="margin-top:18px;">Fichier Excel sur Drive</div>
       <div class="import-summary">
-        Dernier dépôt : ${fmtStamp(d.lastExcelAt)}${excelBusy ? "<br>Opération en cours…" : ""}
+        Dernier dépôt : ${fmtStamp(d.lastExcelAt)}${excelBusy ? "<br>Opération en cours…" : (dirty ? "<br>Des changements seront ajoutés à la prochaine sortie de l'app." : "<br>À jour.")}
         ${excelError ? `<br><span style="color:var(--expense);font-size:12.5px;">${U.escHtml(excelError)}</span>` : ""}
       </div>
       <div class="u-row-gap10" style="margin-top:10px;">
         <button class="btn btn-ghost" style="flex:1;" id="drive-excel-import" ${excelBusy?"disabled":""}>${ICONS.download} Importer l'Excel</button>
         <button class="btn btn-ghost" style="flex:1;" id="drive-excel-push" ${excelBusy?"disabled":""}>${ICONS.upload} Mettre à jour l'Excel</button>
       </div>` : ""}
-      <div class="field-label" style="margin-top:20px;">${dOk ? "Modifier la configuration Drive" : "Configuration Drive"}</div>
+      <div class="field-label" style="margin-top:20px;">${ok ? "Modifier la configuration" : "Configuration"}</div>
       <div class="card" style="padding:14px;">
         <div class="field-label" style="margin-top:0;">URL du script Google (se termine par /exec)</div>
         <input type="url" id="drive-url" class="search-mini" style="margin:0;" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" value="${U.escHtml(d.url||"")}">
@@ -10451,32 +10387,10 @@ function renderSyncSheet(background){
         <input type="password" id="drive-key" class="search-mini" style="margin:0;" autocomplete="off" value="${U.escHtml(d.key||"")}">
         <div style="font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.5;">Installation du script (une seule fois, ~5 min) : suivre les étapes en tête du fichier google-apps-script.gs. Sur un deuxième appareil, saisis la même URL et la même clé : la première synchronisation récupère les données du Drive.</div>
         <div class="u-row-gap10" style="margin-top:14px;">
-          ${dOk ? `<button class="btn btn-ghost" style="flex:1;" id="drive-disconnect">Déconnecter</button>` : ""}
+          ${ok ? `<button class="btn btn-ghost" style="flex:1;" id="drive-disconnect">Déconnecter</button>` : ""}
           <button class="btn btn-primary" style="flex:1;" id="drive-save-config">Enregistrer</button>
         </div>
       </div>
-
-      <details id="gist-details" style="margin-top:22px;" ${gistOpen?"open":""}>
-        <summary style="cursor:pointer;font-weight:600;color:var(--text-sub);padding:6px 0;">GitHub Gist — secours (sera retiré)</summary>
-        <div class="import-summary" style="margin-top:8px;">
-          Ancienne synchronisation, désormais uniquement manuelle. À conserver le temps de valider Google Drive.
-        </div>
-        ${gOk ? `
-        ${statusCardHtml(GIST)}
-        <button class="btn btn-ghost btn-block" id="gist-smart" style="margin-top:12px;" ${busy?"disabled":""}>${ICONS.refreshCw} Synchroniser le Gist</button>
-        ${g.gistId ? `
-        <div class="u-row-gap10" style="margin-top:10px;">
-          <button class="btn btn-ghost" style="flex:1;" id="gist-pull" ${busy?"disabled":""}>${ICONS.download} Forcer récupération</button>
-          <button class="btn btn-ghost" style="flex:1;" id="gist-push" ${busy?"disabled":""}>${ICONS.upload} Forcer sauvegarde</button>
-        </div>` : ""}` : ""}
-        <div class="card" style="padding:14px;margin-top:12px;">
-          <div class="field-label" style="margin-top:0;">Jeton d'accès personnel (scope gist)</div>
-          <input type="password" id="gist-token" class="search-mini" style="margin:0;" placeholder="ghp_…" autocomplete="off" value="${U.escHtml(g.token||"")}">
-          <div class="field-label">ID du Gist</div>
-          <input type="text" id="gist-id" class="search-mini" style="margin:0;" placeholder="Laisser vide pour créer un nouveau Gist" autocomplete="off" value="${U.escHtml(g.gistId||"")}">
-          <button class="btn btn-ghost btn-block" id="gist-save-config" style="margin-top:14px;">Enregistrer la configuration Gist</button>
-        </div>
-      </details>
     </div>
   `;
   const $ = id => sheet.querySelector("#"+id);
@@ -10488,41 +10402,25 @@ function renderSyncSheet(background){
     if(!key){ APP.showToast("Renseigne la clé secrète"); return; }
     const changed = url!==d.url || key!==d.key;
     // Nouvelle cible → état de référence remis à zéro : la première synchronisation compare sans a priori.
-    setCfg(DRIVE, changed ? {url, key, lastSyncedHash:null, lastRemoteHash:null, lastSyncedAt:null, lastExcelHash:null, lastExcelAt:null} : {url, key});
-    lastError.drive = null; conflictPending.drive = false; excelError = null;
-    APP.showToast("Configuration Drive enregistrée");
+    setCfg(changed ? {url, key, lastSyncedHash:null, lastRemoteHash:null, lastSyncedAt:null, lastExcelHash:null, lastExcelAt:null} : {url, key});
+    lastError = null; conflictPending = false; excelError = null;
+    APP.showToast("Configuration enregistrée");
     renderSyncSheet(); updateIndicator();
-    smartSync(DRIVE);
+    smartSync();
   };
-  if(dOk){
+  if(ok){
     $("drive-disconnect").onclick = ()=>{
       Store.settings.drive = {};
       Store.saveSettings();
-      lastError.drive = null; conflictPending.drive = false; excelError = null;
+      lastError = null; conflictPending = false; excelError = null;
       APP.showToast("Google Drive déconnecté sur cet appareil (fichiers conservés sur le Drive)");
       renderSyncSheet(); updateIndicator();
     };
-    $("drive-smart").onclick = ()=>smartSync(DRIVE);
-    $("drive-push").onclick = ()=>forcePush(DRIVE);
-    $("drive-pull").onclick = ()=>confirmPull(DRIVE);
+    $("drive-smart").onclick = ()=>smartSync();
+    $("drive-push").onclick = ()=>forcePush();
+    $("drive-pull").onclick = confirmPull;
     $("drive-excel-push").onclick = pushExcelNow;
     $("drive-excel-import").onclick = importExcelFromDrive;
-  }
-  $("gist-save-config").onclick = ()=>{
-    const token = $("gist-token").value.trim();
-    const gistId = $("gist-id").value.trim();
-    if(!token){ APP.showToast("Renseignez le jeton d'accès"); return; }
-    lastError.gist = null;
-    setCfg(GIST, {token, gistId});
-    APP.showToast("Configuration Gist enregistrée");
-    renderSyncSheet(); updateIndicator();
-  };
-  if(gOk){
-    $("gist-smart").onclick = ()=>smartSync(GIST);
-    if(g.gistId){
-      $("gist-push").onclick = ()=>forcePush(GIST);
-      $("gist-pull").onclick = ()=>confirmPull(GIST);
-    }
   }
 }
 
@@ -10533,11 +10431,9 @@ function openSyncSheet(){
 
 window.__SF_SYNC = {
   open: openSyncSheet, updateIndicator, start, autoSync,
-  smartSync: (id)=>smartSync(id==="gist" ? GIST : id==="drive" ? DRIVE : null),
-  pushToGist: ()=>forcePush(GIST), pullFromGist: ()=>forcePull(GIST),
-  pushToDrive: ()=>forcePush(DRIVE), pullFromDrive: ()=>forcePull(DRIVE),
-  pushExcelNow, importExcelFromDrive,
-  _internal: {buildSyncPayload, hashPayload, computeStatus: (id)=>computeStatus(id==="gist"?GIST:DRIVE), conflictPending, lastError}
+  smartSync: ()=>smartSync(), pushToDrive: forcePush, pullFromDrive: forcePull,
+  pushExcelNow, importExcelFromDrive, maybeUploadExcel,
+  _internal: {buildSyncPayload, hashPayload, computeStatus, isConflict: ()=>conflictPending, lastError: ()=>lastError, onHidden}
 };
 })();
 

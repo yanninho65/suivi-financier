@@ -1,8 +1,8 @@
 # Suivi financier — Documentation de référence
 
-**Version documentée : `v 2026.09.24.12.09`** — à comparer à `APP_VERSION` en tête du `<script>` du fichier `index.html` (format `v AAAA.MM.JJ.HH.MM`, affichée en petit sous le titre "Suivi financier" sans le préfixe `v `). Mise à jour uniquement sur demande explicite : si les versions diffèrent, vérifier en priorité §2, §4, §5, §6.1, §6.2, §6.3, §6.4, §6.6, §6.7, §7.2, §8, §14 et §15 (zones les plus souvent modifiées).
+**Version documentée : `v 2026.09.26.09.58`** — à comparer à `APP_VERSION` en tête du `<script>` du fichier `index.html` (format `v AAAA.MM.JJ.HH.MM`, affichée en petit sous le titre "Suivi financier" sans le préfixe `v `). Mise à jour uniquement sur demande explicite : si les versions diffèrent, vérifier en priorité §2, §4, §5, §6.1, §6.2, §6.3, §6.4, §6.6, §6.7, §7.2, §8, §10, §14 et §15 (zones les plus souvent modifiées).
 
-Fichiers livrés : **`index.html`** (application, style One UI, vanilla JS), accompagné de son manifeste et service worker de Progressive Web App — `manifest.json`, `service-worker.js`, icônes (§14). Les huit fichiers doivent être uploadés ensemble sur GitHub à chaque livraison. CDN au runtime : SheetJS (`xlsx`, import/export Excel, chargé en `defer` — §14) et Google Fonts. Aucun backend, aucune donnée envoyée nulle part (le service worker ne fait que mettre en cache localement, sans télémétrie).
+Fichiers livrés : **`index.html`** (application, style One UI, vanilla JS), accompagné de son manifeste et service worker de Progressive Web App — `manifest.json`, `service-worker.js`, icônes (§14). Les huit fichiers doivent être uploadés ensemble sur GitHub à chaque livraison. Fichier compagnon **`google-apps-script.gs`** : relais Google Apps Script de la synchronisation Google Drive (§10), à installer une fois dans le compte Google de l'utilisateur — inutile au fonctionnement de la page elle-même, et ne contient jamais la vraie clé secrète (valeur factice `CHANGE_ME_…`). CDN au runtime : SheetJS (`xlsx`, import/export Excel, chargé en `defer` — §14) et Google Fonts. Aucun backend propre : la seule donnée envoyée hors de l'appareil est la synchronisation vers le Google Drive personnel de l'utilisateur, via son propre script (§10) — rien si elle n'est pas configurée (le service worker ne fait que mettre en cache localement, sans télémétrie).
 
 Sert de visualisation/filtrage mobile d'un suivi Excel existant, saisi manuellement. Le classeur Excel de l'utilisateur reste la source de vérité ; import incrémental avec déduplication.
 
@@ -158,13 +158,13 @@ Solde total (tous comptes), puis les comptes regroupés par type (Courant / Épa
 
 Une seule ligne de boutons sous la carte de solde (`display:flex;gap:8px;flex-wrap:nowrap`) :
 - **Copier pour Excel** (`buildAccountsClipboardText` + `copyTextToClipboard`) : copie dans le presse-papiers un texte tabulé (TSV) `Compte / Solde` — une ligne par compte (2 décimales, virgule, sans séparateur de milliers), plus une ligne "Total". Collé dans Excel, forme directement deux colonnes. Repli sur `document.execCommand("copy")` si l'API Clipboard moderne échoue (ex. ouverture en `file://`). Toujours calculée sur l'ensemble des comptes, indépendamment du filtre "masquer les comptes à 0 €".
-- **Réorganiser** (visible dès qu'il y a plus d'un groupe de type) : pop-up avec flèches haut/bas par groupe (`openAccountTypeReorderSheet`). Ordre mémorisé dans `Store.settings.accountTypeOrder`, persisté entre sessions, inclus dans la sauvegarde `.json`/Gist (pas dans l'Excel, §7.2).
+- **Réorganiser** (visible dès qu'il y a plus d'un groupe de type) : pop-up avec flèches haut/bas par groupe (`openAccountTypeReorderSheet`). Ordre mémorisé dans `Store.settings.accountTypeOrder`, persisté entre sessions, inclus dans la sauvegarde `.json`/synchro Drive (pas dans l'Excel, §7.2).
 - Bouton décimales (§5).
 - **Masquer les comptes à 0 €** (pilule "0€", `U.hideZeroAccountsBtnHtml`/`U.toggleHideZeroAccounts`) : filtre les comptes dont le solde arrondit à 0,00 € au centime près (`U.isZeroBalance(bal)`). Réglage local à l'appareil (`Store.settings.hideZeroAccounts`, jamais synchronisé, §7.2). Un groupe de type sans compte visible une fois le filtre appliqué n'est pas affiché.
 
 Taper sur un compte filtre les Transactions sur ce compte.
 
-**Soldes personnalisés** (`Store.settings.customBalances`, tableau de `{title, accounts}`) : jusqu'à 2 soldes additionnels, chacun calculé sur une sélection de comptes, affichés dans le bloc solde à côté du solde total. Titre vide = solde masqué. Inclus dans la sauvegarde `.json`/Gist, pas dans l'Excel (§7.2).
+**Soldes personnalisés** (`Store.settings.customBalances`, tableau de `{title, accounts}`) : jusqu'à 2 soldes additionnels, chacun calculé sur une sélection de comptes, affichés dans le bloc solde à côté du solde total. Titre vide = solde masqué. Inclus dans la sauvegarde `.json`/synchro Drive, pas dans l'Excel (§7.2).
 
 ### 6.2 Transactions
 
@@ -334,7 +334,7 @@ Vue **Groupe** uniquement : sections et items triés chronologiquement (§2.1 bi
 Première ligne du tableau (toujours visible, jamais repliable), somme de toutes les sections pour chaque colonne. Cliquable (`data-global="1"`) — ouvre la liste de toutes les transactions de la dimension pour la période cliquée.
 
 #### 6.4.5 Fusion de sections
-Une fusion (`{name, members:[clés de section]}`, stockée dans `Store.settings.evolution.merges[dimension]`) se configure uniquement via la sauvegarde `.json` ou la synchronisation Gist (§7.2) — pas de création depuis l'interface, pas de feuille Excel dédiée.
+Une fusion (`{name, members:[clés de section]}`, stockée dans `Store.settings.evolution.merges[dimension]`) se configure uniquement via la sauvegarde `.json` ou la synchronisation Google Drive (§7.2, §10) — pas de création depuis l'interface, pas de feuille Excel dédiée.
 
 L'onglet Évolution se limite à :
 - **Afficher** les fusions actives sous forme de chips sous les sélecteurs de vue.
@@ -342,7 +342,7 @@ L'onglet Évolution se limite à :
 
 À l'affichage, `buildEvolutionIndex` fusionne les sections membres en une seule section synthétique (`__merged:true`, items préfixés en interne pour éviter les collisions de clé, affichés sous leur libellé d'origine).
 
-Inclus dans la sauvegarde `.json`/Gist, fusionné par dédoublonnage à l'import (§7.2) — contrairement à la vue actuellement affichée (`evolution.view`/`monthBasis`/`cumulative`), jamais modifiée par un import "Ajouter".
+Inclus dans la sauvegarde `.json`/synchro Drive, fusionné par dédoublonnage à l'import (§7.2) — contrairement à la vue actuellement affichée (`evolution.view`/`monthBasis`/`cumulative`), jamais modifiée par un import "Ajouter".
 
 ---
 
@@ -391,7 +391,7 @@ Sélectionner un **Statut** horodate automatiquement `statutDate` à aujourd'hui
 - **Export** (`exportSanteExcel`) : une feuille "Santé" dédiée, 19 colonnes (`SANTE_XLSX_HEADER`, dont "Terminé" en `Oui`/`Non`), dates au format Excel natif `dd/mm/yyyy`. Construction des lignes factorisée dans `buildSanteExportRows()`, réutilisée par l'export Excel principal (§8) quand la case "Santé" y est cochée.
 - **Import** (`rowToSanteItem`) : `.xlsx`/`.xls`/`.csv`, en-têtes reconnus par nom normalisé, montants tolérants à la virgule décimale, "Terminé" reconnu depuis `Oui/Yes/True/1/x`. **Réconciliation casse/accents silencieuse** (même principe que §7.1 bis) : Groupe est aligné sur un groupe déjà utilisé par une transaction existante, et Bénéficiaire/Devise/Médecin/Type de prestation/Statut/Mutuelle sont alignés sur une valeur déjà présente dans la liste personnalisable correspondante (`U.alignToCanon`/`U.transactionFieldCanon`/`U.valueListCanon`) — appliquée avant le calcul de l'id (`buildSanteId`), pour qu'une simple faute de casse ne crée ni entrée fantôme dans une liste déroulante, ni doublon du soin à un réimport ultérieur. Fusion (dédup par id, comme Transactions) ou remplacement complet ; les valeurs réellement nouvelles sont ajoutées automatiquement aux 6 listes personnalisables (`registerNewListValuesFromItems`). `rowToSanteItem` est aussi utilisée par le flux d'import principal (§7) pour détecter et lire une feuille "Santé" au sein d'un classeur Transactions/Paramètres.
 
-**Stockage et sauvegarde** : `Store.santeItems` en IndexedDB (clé `sante_items`, repli `localStorage` `sf_sante_items_v1`, §9) ; `Store.settings.sante`/`Store.settings.santeFilters` dans le même `localStorage` que le reste des réglages. Inclus dans la sauvegarde `.json` complète (§8) et dans le payload de synchronisation Gist (§10, remplacement complet, jamais de fusion) et, si la case dédiée est cochée, dans l'export Excel multi-feuilles principal. "Réinitialiser toutes les données" (Menu ☰) efface aussi les soins.
+**Stockage et sauvegarde** : `Store.santeItems` en IndexedDB (clé `sante_items`, repli `localStorage` `sf_sante_items_v1`, §9) ; `Store.settings.sante`/`Store.settings.santeFilters` dans le même `localStorage` que le reste des réglages. Inclus dans la sauvegarde `.json` complète (§8) et dans le payload de synchronisation Google Drive (§10, remplacement complet, jamais de fusion) et, si la case dédiée est cochée, dans l'export Excel multi-feuilles principal. "Réinitialiser toutes les données" (Menu ☰) efface aussi les soins.
 
 ### 6.7 Revenus
 
@@ -455,11 +455,11 @@ Comme tous les autres réglages (§7.2), `revenus` est un champ de plus dans le 
 
 **Réconciliation casse/accents silencieuse** (même principe que §7.1 bis) : "Catégorie récurrente" est alignée sur une catégorie déjà utilisée par une transaction existante (`U.alignToCanon`/`U.transactionFieldCanon`), pour qu'une faute de casse ne fasse pas échouer silencieusement le rattachement d'une ligne récurrente à ses transactions sources (`AGG.buildRecurringIndex`, §6.7.1). Par ailleurs, la recherche d'une "Ligne" dans `Revenus_Lignes` lors de la lecture de `Revenus_Montants` retombe sur une comparaison insensible casse/accents si la correspondance exacte échoue (`findRevLine`/`findRevTransferLine`) — sans cela, une même "Ligne" retapée avec une casse différente dans un seul des deux onglets perdrait silencieusement le montant du mois concerné plutôt que de créer un doublon.
 
-`periodFrom`/`periodTo`/`groupFilter` ne voyagent que via la sauvegarde `.json` ou la synchro Gist (§7.2, §8), jamais via Excel (`groupFilter` conserve un garde-fou contre un tableau vide qui écraserait un filtre existant, cf. `applyParamsImportPart` — un tableau vide `[]` est "truthy" en JS).
+`periodFrom`/`periodTo`/`groupFilter` ne voyagent que via la sauvegarde `.json` ou la synchro Drive (§7.2, §8), jamais via Excel (`groupFilter` conserve un garde-fou contre un tableau vide qui écraserait un filtre existant, cf. `applyParamsImportPart` — un tableau vide `[]` est "truthy" en JS).
 
 **Colonne "Catégorie" conservée uniquement pour les sentinelles de transfert** — une ligne normale (destinée à `lines`) l'exporte vide ; seules les deux sentinelles réservées (`"(Transfert - vers)"`/`"(Transfert - depuis)"`) y ont un sens, pour router une ligne vers `transferOut`/`transferIn` à l'import.
 
-**Fusion (mode "Ajouter")** : le bloc `revenus` complet (les deux personnes ensemble) suit la famille "adoption non destructive" (§7.2, famille 2) — adopté uniquement si rien n'est encore configuré localement pour aucune des deux personnes, jamais fusionné champ par champ. En mode "Remplacer" depuis Excel, gaté par `sheetsPresent.revenus` (§7.2) — un classeur ne contenant que, par exemple, `Budget` ne vide jamais une configuration Revenus existante. Une sauvegarde `.json`/synchro Gist applique toujours le remplacement si la clé `revenus` est présente.
+**Fusion (mode "Ajouter")** : le bloc `revenus` complet (les deux personnes ensemble) suit la famille "adoption non destructive" (§7.2, famille 2) — adopté uniquement si rien n'est encore configuré localement pour aucune des deux personnes, jamais fusionné champ par champ. En mode "Remplacer" depuis Excel, gaté par `sheetsPresent.revenus` (§7.2) — un classeur ne contenant que, par exemple, `Budget` ne vide jamais une configuration Revenus existante. Une sauvegarde `.json`/synchro Drive applique toujours le remplacement si la clé `revenus` est présente.
 
 ---
 
@@ -467,7 +467,7 @@ Comme tous les autres réglages (§7.2), `revenus` est un champ de plus dans le 
 
 - Formats : `.xlsx`/`.xls`, `.csv` (données), `.json` (sauvegarde propre, v2). Colonnes de données (Date/Type/Montant) : formats acceptés en §1.1.
 - `findDataSheetName()` détecte la feuille de données via ses en-têtes Date+Montant (ignore "Paramètres").
-- **Six feuilles optionnelles**, indépendantes les unes des autres (aucune requise), lisibles depuis un classeur Excel de paramètres — toutes alimentent `params`, retourné par `parseParametresSheet(wb)` avec exactement la même forme que `buildParamsPayload()` (§7.2), donc consommées par le même `applyParamsImport(params, mode)` que la sauvegarde `.json`/la synchro Gist :
+- **Six feuilles optionnelles**, indépendantes les unes des autres (aucune requise), lisibles depuis un classeur Excel de paramètres — toutes alimentent `params`, retourné par `parseParametresSheet(wb)` avec exactement la même forme que `buildParamsPayload()` (§7.2), donc consommées par le même `applyParamsImport(params, mode)` que la sauvegarde `.json`/la synchro Drive :
 
 | Feuille | Colonnes | Alimente |
 |---|---|---|
@@ -520,11 +520,11 @@ Appliqué (`parseParametresSheet`, sauf Santé qui a son propre point d'entrée 
 
 ### 7.2 Ce qui voyage réellement dans "params" (`buildParamsPayload()` / `applyParamsImport()`)
 
-**Un seul et même payload `params`**, quelle que soit la porte d'entrée — sauvegarde `.json` (§8), synchronisation Gist (§10), ou les feuilles Excel (§7, `parseParametresSheet` construit un objet de forme identique). Toute correction ici s'applique automatiquement aux trois mécanismes à la fois. L'Excel (six feuilles, §7) ne peuple qu'un sous-ensemble de ces champs ; les champs qu'aucune feuille Excel ne porte sont simplement absents/`null`/vides dans l'objet retourné par `parseParametresSheet`, jamais activement écrasés (garde-fous détaillés ci-dessous).
+**Un seul et même payload `params`**, quelle que soit la porte d'entrée — sauvegarde `.json` (§8), synchronisation Google Drive (§10), ou les feuilles Excel (§7, `parseParametresSheet` construit un objet de forme identique). Toute correction ici s'applique automatiquement aux trois mécanismes à la fois. L'Excel (six feuilles, §7) ne peuple qu'un sous-ensemble de ces champs ; les champs qu'aucune feuille Excel ne porte sont simplement absents/`null`/vides dans l'objet retourné par `parseParametresSheet`, jamais activement écrasés (garde-fous détaillés ci-dessous).
 
 **Inclus** : `groupAliasRules`, `personAliasRules`, `accountTypes`, `accountAcronyms`, `accountTypeOrder` (§6.1), `customBalances` (§6.1), `decimals` (§5), `groupKind`/`groupVoyageMonth`/`groupDateRange`, `categoryTypeOverride`, `budget.{adjustments,mode,scope,startMonth,endMonth,mainGroup,extraGroups,amortCategories,excludedAccounts,periodFrom,periodTo,salaryEntries,compare,mergeVoyages,mergeVoyagesGroups}`, `evolution.{view,monthBasis,merges}` (§6.4.5), `revenus.*` (§6.7.7 — bloc à part, sémantique de fusion détaillée là-bas).
 
-**Ne voyage que par JSON/Gist, jamais par Excel** — pas de feuille Excel dédiée pour ces champs :
+**Ne voyage que par JSON/Drive, jamais par Excel** — pas de feuille Excel dédiée pour ces champs :
 - `budget.{mode,scope,startMonth,endMonth,mainGroup,extraGroups,amortCategories,excludedAccounts,periodFrom,periodTo}`
 - `budget.compare.{enabled,mode,periodFrom,periodTo}` (`budget.compare.predefined` reste porté par la feuille `Budget_Predefini`)
 - `accountTypeOrder` (§6.1), `decimals` (§5)
@@ -535,9 +535,9 @@ Appliqué (`parseParametresSheet`, sauf Santé qui a son propre point d'entrée 
 **Garde-fous anti-perte de données** (l'absence d'un champ dans l'Excel ne doit jamais l'écraser à vide/`null` en réimportant) :
 1. `applyParamsImport`, mode "Remplacer" : `budget.periodFrom`/`periodTo` reprennent un repli sur la valeur déjà en place si l'import ne les fournit pas (`budgetSettings.periodFrom || Store.settings.budget.periodFrom`), même logique que `mode`/`scope`.
 2. `window.__SF_REVENUS.applyParamsImportPart` : `revenus.groupFilter` n'est adopté que si le tableau importé est **non vide** — un tableau vide `[]` est "truthy" en JavaScript, un test de simple présence viderait le filtre à chaque import Excel.
-3. `applyParamsImport`, mode "Remplacer" : chaque bloc de réglages Excel n'est écrasé que si `!params.sheetsPresent || sheetsPresent.xxx` — vrai systématiquement pour un payload JSON/Gist (`sheetsPresent` y est toujours absent), donc un remplacement JSON/Gist applique bien tous les champs sans exception ; pour un import Excel ciblé par onglet, seul le bloc dont la feuille est effectivement présente dans le classeur est écrasé.
+3. `applyParamsImport`, mode "Remplacer" : chaque bloc de réglages Excel n'est écrasé que si `!params.sheetsPresent || sheetsPresent.xxx` — vrai systématiquement pour un payload JSON/Drive (`sheetsPresent` y est toujours absent), donc un remplacement JSON/Drive applique bien tous les champs sans exception ; pour un import Excel ciblé par onglet, seul le bloc dont la feuille est effectivement présente dans le classeur est écrasé.
 
-**Volontairement exclus** (état d'affichage/session courant, jamais synchronisé — même principe que les filtres Transactions, `Store.settings.filters`) : `theme`, sélection de filtres courante (Transactions comme Santé), `txnGroupsExpanded`/`recurrent.groupsExpanded`/`santeGroupsExpanded`, `budget.{detailView,monthlyView,displayMode}`, `recurrent.{periodFrom,periodTo}`, `evolution.cumulative` (§6.4.2 bis), `hideZeroAccounts` (§6.1). `Store.settings.sync` (jeton, ID de Gist) est exclu pour une raison différente et non négociable : des identifiants ne doivent jamais se retrouver dans un fichier de sauvegarde ou repartir vers le Gist qu'ils servent à authentifier.
+**Volontairement exclus** (état d'affichage/session courant, jamais synchronisé — même principe que les filtres Transactions, `Store.settings.filters`) : `theme`, sélection de filtres courante (Transactions comme Santé), `txnGroupsExpanded`/`recurrent.groupsExpanded`/`santeGroupsExpanded`, `budget.{detailView,monthlyView,displayMode}`, `recurrent.{periodFrom,periodTo}`, `evolution.cumulative` (§6.4.2 bis), `hideZeroAccounts` (§6.1). `Store.settings.drive` (URL du script, clé secrète, états de référence de synchronisation) est exclu pour une raison différente et non négociable : des identifiants ne doivent jamais se retrouver dans un fichier de sauvegarde ni dans le fichier du Drive qu'ils servent à protéger.
 
 **Sémantique de fusion (mode "Ajouter", tous mécanismes confondus)** — trois familles de comportement, jamais mélangées pour un même champ :
 1. **Fusion par dédoublonnage** (listes de règles/entités identifiables individuellement) : `groupAliasRules`, `personAliasRules`, `budget.adjustments`, `evolution.merges.*` — chaque élément importé est ajouté sauf s'il existe déjà localement (`mergeRuleList`, clé de signature propre à chaque type de liste).
@@ -545,7 +545,7 @@ Appliqué (`parseParametresSheet`, sauf Santé qui a son propre point d'entrée 
 3. **Jamais touché par un import "Ajouter"** : `evolution.view`/`evolution.monthBasis` et `decimals` en mode fusion — seul un import "Remplacer" les modifie.
 
 **Mode "Remplacer" (`mode === "replace"`) : deux comportements distincts selon la porte d'entrée**, tous deux dans `applyParamsImport` :
-- **Sauvegarde `.json` / synchro Gist** (`payload.params` n'a jamais de champ `sheetsPresent`) : écrase toujours tout sans distinction, quel que soit le champ.
+- **Sauvegarde `.json` / synchro Drive** (`payload.params` n'a jamais de champ `sheetsPresent`) : écrase toujours tout sans distinction, quel que soit le champ.
 - **Import Excel ciblé par onglet** (`params.sheetsPresent` présent) : chaque bloc de réglages n'est écrasé que si la feuille Excel correspondante est effectivement présente dans le classeur (`sheetsPresent.parametres`, `.budget`, `.revenus`) — un classeur ne contenant que, par exemple, `Budget` ne vide jamais `groupAliasRules`/`accountTypes`/etc. Les champs qui ne voyagent par aucune feuille Excel (liste ci-dessus) ne sont jamais écrasés par un import Excel.
 
 ---
@@ -566,28 +566,44 @@ Menu → Excel (.xlsx) ou sauvegarde (.json).
 ---
 
 ## 9. Stockage local
-IndexedDB (`sf_finance_db`) pour les transactions, repli `localStorage` si indisponible. `Store.settings` (thème, règles, types de compte, acronymes, réglages budget/évolution/récurrent, `groupDateRange`, `sync`, `sante`/`santeFilters`…) en `localStorage` (`sf_settings_v1`).
+IndexedDB (`sf_finance_db`) pour les transactions, repli `localStorage` si indisponible. `Store.settings` (thème, règles, types de compte, acronymes, réglages budget/évolution/récurrent, `groupDateRange`, `drive` (§10), `sante`/`santeFilters`…) en `localStorage` (`sf_settings_v1`).
 
 Les soins de l'onglet Santé (§6.6) suivent le même principe dans une clé IndexedDB séparée (`sante_items`, repli `localStorage` `sf_sante_items_v1`), avec sa propre gestion d'erreur (`Store.lastSanteSaveError`). `saveTransactions()` et `saveSanteItems()` délèguent à un unique `Store._persistJson(getData, idbKey, lsKey, errKey, msg)` : sérialisation, écriture IndexedDB, repli d'urgence `localStorage` (< 4 Mo) — seules les transactions basculent durablement l'appli en mode `localStorage` après un tel repli (comportement inchangé).
 
 ---
 
-## 10. Synchronisation manuelle (GitHub Gist)
+## 10. Synchronisation Google Drive (automatique)
 
-Mécanisme de transfert entre appareils alternatif à l'export/import de fichier, sans backend : sauvegarde/récupération du payload complet (transactions + paramètres + soins et réglages Santé, §6.6 — même format que la sauvegarde `.json` §7/§8) sur un Gist GitHub privé, via l'API `api.github.com/gists/{id}` appelée directement depuis le navigateur. Les soins Santé suivent la même règle "distant/local/hash" que les transactions ci-dessous, sans fusion possible à la récupération (remplacement complet).
+Remplace depuis `v 2026.09.26.09.58` l'ancienne synchronisation manuelle GitHub Gist, entièrement retirée (interface, code et réglages — `Store.normalizeSettings()` supprime `Store.settings.sync`, jeton GitHub compris, au premier lancement). Sans backend propre : l'app dialogue avec un **relais Google Apps Script** que l'utilisateur déploie une fois dans son propre compte Google (`google-apps-script.gs`, étapes d'installation en tête du fichier).
 
-**Configuration** (`Store.settings.sync = {token, gistId, filename, lastSyncedAt, lastSyncedHash}`) : jeton d'accès personnel (scope **`gist`** uniquement recommandé). L'**ID du Gist est optionnel** : laissé vide, le premier "Synchroniser" crée automatiquement un nouveau Gist secret et mémorise l'ID retourné.
+**Fichiers sur le Drive** — dossier `Suivi financier` (créé à la racine au premier envoi, puis retrouvé par son identifiant mémorisé dans la propriété de script `FOLDER_ID` : il peut être déplacé ou renommé librement ; `FOLDER_ID` peut aussi être renseignée à la main pour cibler un dossier existant) :
+- `suivi_financier.json` — **source de vérité de la synchronisation**, payload complet `buildSyncPayload()` : transactions + `params` (`buildParamsPayload()`, §7.2) + soins et réglages Santé (§6.6). Même format que la sauvegarde `.json` (§8).
+- `suivi_financier.xlsx` — **miroir de consultation**, classeur multi-feuilles de l'export Excel (`__SF_MENU.buildExcelWorkbook({transactions, params, sante:true})`, partagé avec `exportExcel`, §8). **Jamais relu automatiquement.**
+- Les mises à jour remplacent le contenu en place (API Drive v3 `uploadType=media`, même ID de fichier) : l'historique des versions Drive est conservé. Repli si l'appel est refusé : fichier recréé (historique de ce fichier perdu).
 
-**Synchroniser** (`smartSync`) : sens **automatique** dans les deux directions.
-1. Calcule trois hash : local actuel, distant actuel, `lastSyncedHash`.
-2. Seul le distant a changé → récupère automatiquement. Seul le local a changé → sauvegarde automatiquement. Identiques → rien à faire.
-3. **Les deux ont changé indépendamment** → modale de conflit demandant explicitement "Garder cet appareil" ou "Utiliser le Gist".
+**Relais Apps Script** (`doPost`, clé secrète `SECRET` codée dans le script, refus de toute requête tant qu'elle vaut la valeur factice) : actions `getJson`, `putJson` (refuse un JSON invalide), `getExcel`, `putExcel` (base64), `ping` ; `doGet` renvoie un simple `{"ok":true,…}` pour vérifier le déploiement dans un navigateur. `LockService` sérialise les écritures concurrentes. Déploiement : Application Web, **Exécuter en tant que : Moi**, **Accès : Tout le monde** (sinon Google répond par une page de connexion/autorisation et l'app affiche "Connexion impossible au script Google"). Après modification du code : Gérer les déploiements → Nouvelle version (URL `/exec` inchangée).
 
-**Forcer sauvegarde** / **Forcer récupération** : action à sens unique, pour un rattrapage manuel.
+**Appel côté app** (`driveCall(body)`) : `fetch` POST vers l'URL `/exec`, corps JSON envoyé en `text/plain` (requête "simple", sans pré-vol CORS), clé dans le corps — jamais dans l'URL —, délai max 60 s. Réponse `{ok:false, error}` → erreur affichée telle quelle.
 
-**Indicateur** (`#btn-sync`) : icône + couleur selon l'état (`computeStatus()`). Module `window.__SF_SYNC` : `{open, updateIndicator, pushToGist, pullFromGist, smartSync}`.
+**Configuration** (`Store.settings.drive = {url, key, lastSyncedAt, lastSyncedHash, lastRemoteHash, lastRemoteAt, lastExcelHash, lastExcelAt}`), Menu → Synchronisation Google Drive : URL (doit commencer par `https://script.google.com/` et finir par `/exec`) + clé. Changer l'une des deux remet à zéro les états de référence ; **Déconnecter** efface la configuration de l'appareil sans toucher aux fichiers du Drive.
 
-**Structure interne** : toute opération déclenchée par l'utilisateur passe par `runSyncOp(failLabel, fn)` (indicateur "en cours", mémorisation de l'erreur, toast `"<failLabel> : <message>"`) ; `markSynced(hash, extra?)` mémorise `lastSyncedAt`/`lastSyncedHash` (+ `gistId` à la création) ; `adoptRemotePayload(payload, toast)` applique un payload distant, mémorise le nouveau hash, persiste et rafraîchit (récupération forcée, récupération automatique de `smartSync`, choix "Utiliser le Gist" en conflit) ; `gistHeaders(c, json?)` construit les en-têtes de l'API.
+**Décision de synchronisation** (`smartSync`) — hash local actuel, hash distant, et états de référence de la dernière synchro réussie (`lastSyncedHash` côté local, `lastRemoteHash` côté distant — distincts si la normalisation d'un payload récupéré le modifie légèrement, ce qui évite de re-récupérer indéfiniment le même contenu) :
+1. Aucun fichier sur le Drive → envoi (création).
+2. Hash identiques → rien (état de référence mémorisé).
+3. Seul le distant a changé → **récupération automatique** (`adoptRemotePayload`, remplacement complet, pas de fusion).
+4. Seul le local a changé → **envoi automatique** — sauf si cet appareil est **vide** (ni transaction ni soin) alors que le Drive ne l'est pas : jamais d'écrasement automatique du Drive par du vide (réinitialisation, stockage effacé).
+5. Appareil vide jamais synchronisé face à un Drive rempli → récupération directe (nouvel appareil).
+6. Sinon (changements des deux côtés, cas 4 bloqué…) → **choix explicite** "Garder cet appareil" / "Utiliser Google Drive", avec le nombre de transactions et de soins de chaque côté. En mode automatique, pas de modale : état `conflict` (icône en alerte, toast unique), synchronisation automatique suspendue jusqu'à ce que l'utilisateur appuie sur l'indicateur.
+
+**Déclencheurs automatiques** (`start()`, appelé une fois par `init()` ; enrobe `Store.saveTransactions`/`saveSanteItems`/`saveSettings`) :
+- **JSON** : au démarrage (1,5 s après `init`), au retour sur l'app (`visibilitychange`, au plus une vérification par minute), au retour du réseau (`online`), **30 s après la dernière écriture locale** (délai remis à zéro à chaque écriture, `AUTO_DELAY_MS`), et immédiatement au passage en arrière-plan (`visibilitychange` caché / `pagehide`) si un envoi était en attente. Une écriture qui ne change pas les données synchronisées (thème, filtres, affichage…) ne provoque aucun appel réseau (comparaison de hash préalable).
+- **Excel** (`maybeUploadExcel`) : seulement au passage en arrière-plan — et au démarrage, en rattrapage d'une sortie interrompue —, si les données ont changé depuis le dernier dépôt (`lastExcelHash`) **et** au plus une fois par heure (`EXCEL_MIN_GAP_MS`, depuis `lastExcelAt`). Exception : le tout premier dépôt suit immédiatement le premier envoi du JSON. Après une récupération, l'appareil ne redépose pas l'Excel (celui qui a envoyé les données en est responsable). Un échec Excel n'est affiché que dans la feuille Synchronisation et n'invalide jamais la synchronisation JSON.
+
+**Feuille Synchronisation** : état + date de dernière synchro, **Synchroniser maintenant**, **Forcer récupération** (après confirmation) / **Forcer sauvegarde** (sens unique, sans vérification) ; bloc Excel : date du dernier dépôt + "À jour" / "Des changements seront ajoutés à la prochaine sortie de l'app", **Importer l'Excel** (télécharge le `.xlsx` et l'ouvre dans le flux d'import habituel via `__SF_IMPORT.open(file)` — choix Ajouter/Remplacer, réconciliation §7.1 ; seul chemin par lequel une modification faite dans l'Excel revient dans l'app, puis repart vers le JSON par la synchro normale) et **Mettre à jour l'Excel** (dépôt immédiat, hors limite horaire). Les rafraîchissements déclenchés en arrière-plan ne réécrivent pas la feuille si un champ de saisie y a le focus.
+
+**Indicateur** (`#btn-sync`, `computeStatus()`) : `unconfigured` (nuage gris → ouvre la feuille), `syncing` (rotation), `synced` (nuage coché vert), `unsynced` (nuage gris : envoi en attente — appui = envoi immédiat), `error` / `conflict` (alerte rouge — appui = nouvelle tentative / modale de choix). Module `window.__SF_SYNC` : `{open, updateIndicator, start, autoSync, smartSync, pushToDrive, pullFromDrive, pushExcelNow, importExcelFromDrive, maybeUploadExcel}`.
+
+**Structure interne** : `runSyncOp(failLabel, fn, opts)` (indicateur "en cours", mémorisation de l'erreur, toast hors mode automatique) ; `markSynced(localHash, remoteHash, extra?)` ; `adoptRemotePayload(payload, toast)` ; `pushPayload(payload, hash)` ; `runExcelOp` pour les deux boutons Excel.
 
 ---
 
@@ -616,8 +632,8 @@ Classe CSS `.chev-rot` : fait pivoter une flèche `<svg>` de 180° quand son `<d
 | Vue Récurrent | idem, dans `window.__SF_VIEWS.renderRecurrent` | tableau catégorie → transaction sans date, colonne année spéciale, filtre de période, `openRecurringTxnSheet()` (§6.5) |
 | Vue Revenus | idem, dans `window.__SF_VIEWS.renderRevenus` ; `window.__SF_REVENUS` (`buildParamsPayloadPart`/`applyParamsImportPart`) | Moi/Ma femme, catégories + transferts miroir, `openRevManager()`/`openRevFilterSheet()`/`openRevYearEditor()` (§6.7) |
 | Feuille de filtre | `window.__SF_FILTERSHEET` | menu de filtre en deux étapes ; `moisGroupedHtml`/`wireMoisGrouped` et `comptesGroupedHtml`/`wireComptesGrouped` (§4), `quickSelectRowHtml`/`wireQuickSelect`, `activeFiltersSectionHtml`, `NESTED_DIM_CONFIG` (filtre Groupe chronologique, §2.1 bis ; rendu délégué à `U.hierarchyCheckListHtml`, également utilisé par les filtres Groupe de Santé §6.6 et Revenus §6.7.5) |
-| Import/Menu | `window.__SF_IMPORT`, `window.__SF_MENU` | import, export, réinitialisation ; `buildParamsPayload()`/`applyParamsImport()` exposés pour réemploi (Synchronisation §10, `parseParametresSheet` §7.2 — un seul payload `params`, trois portes d'entrée) ; `DATA.buildReconciliation(txns)`/`renderImportReconcile()` (§7.1) |
-| Synchronisation | `window.__SF_SYNC` | sauvegarde/récupération bidirectionnelle via GitHub Gist (§10) ; `runSyncOp`/`markSynced`/`adoptRemotePayload`/`gistHeaders` internes |
+| Import/Menu | `window.__SF_IMPORT`, `window.__SF_MENU` | import (`__SF_IMPORT.open(file?)` : un fichier fourni est analysé directement, cf. §10), export (`buildExcelWorkbook(scope)` construit le classeur sans le télécharger, partagé par `exportExcel` et le miroir Drive §10), réinitialisation ; `buildParamsPayload()`/`applyParamsImport()` exposés pour réemploi (Synchronisation §10, `parseParametresSheet` §7.2 — un seul payload `params`, trois portes d'entrée) ; `DATA.buildReconciliation(txns)`/`renderImportReconcile()` (§7.1) |
+| Synchronisation | `window.__SF_SYNC` | synchronisation automatique bidirectionnelle via Google Drive + miroir Excel (§10) ; `driveCall`/`runSyncOp`/`markSynced`/`adoptRemotePayload`/`maybeUploadExcel` internes |
 | Onglet Santé (IIFE unique) | `window.__SF_SANTE`, `window.__SF_SANTE_DATA`, `window.__SF_SANTE_FILTERS`, `window.__SF_SANTE_FILTERSHEET`, `window.__SF_SANTE_SETTINGS` | modèle, stockage, filtres, agrégations, vues et réglages de §6.6 ; `computeMaPart`/`buildSanteId`/`sanitizeItem` (`__SF_SANTE_DATA`), `rowToSanteItem`/`exportSanteExcel`/`buildSanteExportRows` (Excel dédié §6.6, aussi consommée par l'export principal §8), `importSanteItems` (fusion/remplacement) |
 | `createAliasManager(cfg)` (fonction globale) | — | fabrique réutilisée par Groupes et Personnes ; vue hiérarchique unique, édition par occurrence, dates de jours (+ case "toujours aujourd'hui", §2.5), icônes de type, scroll préservé, `obsoleteRules()`/nettoyage des règles obsolètes (§2.4), suppression protégée par `APP.confirmAction`. Toutes les requêtes DOM internes (`am-*`) doivent être scopées au `sheet` local, jamais à `document` (§2.4) |
 | Gérer les groupes | `window.__SF_GROUPMGR` | `hasDates:true, showKind:true` |
@@ -635,12 +651,12 @@ Classe CSS `.chev-rot` : fait pivoter une flèche `<svg>` de 180° quand son `<d
 ---
 
 ## 13. Limites connues
-- Pas de synchronisation automatique entre appareils : export/import JSON ou Excel, ou synchronisation manuelle GitHub Gist (§10), comme mécanismes de transfert. Résolution de conflit au hash global uniquement (pas de fusion champ par champ).
+- Synchronisation Google Drive (§10) : résolution de conflit au hash global uniquement (pas de fusion champ par champ) — des modifications faites sur deux appareils entre deux synchronisations obligent à choisir une version entière. Dépend du relais Apps Script de l'utilisateur (quotas Google gratuits, application "non validée" par Google — normal pour un script personnel). L'Excel du Drive n'est jamais relu automatiquement : une modification faite dans l'Excel n'est prise en compte qu'après "Importer l'Excel".
 - Détection "Paramètres"/"Budget"/etc. et mapping de colonnes basés sur des noms d'en-tête normalisés, pas sur la position.
 - Règles de groupe : résolution "occurrence précise d'abord, règle générique en repli" (§2.1), toujours manuelle (aucune déduction géographique/temporelle automatique). Pas de fenêtre de dates sur les règles elles-mêmes (§2.5) — seule la présence/absence d'un libellé complet distingue les occurrences.
 - `groupDateRange` est une donnée déclarative simple (aucune vérification de cohérence avec les dates réelles des transactions du groupe, hormis le garde-fou jours ≤ 0). La date de fin dynamique "aujourd'hui" (§2.5) ne s'applique qu'à `dateTo` ; pas d'équivalent pour `dateFrom`.
-- Onglet Évolution : les fusions de sections (§6.4.5) sont indépendantes par dimension et non partagées avec un quelconque mécanisme de groupe de groupe/personne — fusionner deux sections dans Évolution ne crée aucune règle `groupAliasRules`/`personAliasRules` et inversement. Une nouvelle fusion ne peut être créée que via JSON/Gist (§7.2) — l'onglet ne permet que d'en supprimer une existante.
-- `evolution.cumulative` (§6.4.2 bis) et `hideZeroAccounts` (§6.1) sont des réglages locaux à l'appareil, absents de `buildParamsPayload` (§7.2) : un changement d'appareil réinitialise ces deux affichages à leur valeur par défaut. `evolution.view`/`monthBasis`/`merges` sont bien inclus dans `buildParamsPayload` et voyagent via `.json`/Gist, mais pas via l'Excel (§7.2).
+- Onglet Évolution : les fusions de sections (§6.4.5) sont indépendantes par dimension et non partagées avec un quelconque mécanisme de groupe de groupe/personne — fusionner deux sections dans Évolution ne crée aucune règle `groupAliasRules`/`personAliasRules` et inversement. Une nouvelle fusion ne peut être créée que via JSON/Drive (§7.2) — l'onglet ne permet que d'en supprimer une existante.
+- `evolution.cumulative` (§6.4.2 bis) et `hideZeroAccounts` (§6.1) sont des réglages locaux à l'appareil, absents de `buildParamsPayload` (§7.2) : un changement d'appareil réinitialise ces deux affichages à leur valeur par défaut. `evolution.view`/`monthBasis`/`merges` sont bien inclus dans `buildParamsPayload` et voyagent via `.json`/synchro Drive, mais pas via l'Excel (§7.2).
 - `AGG.getGroupStartDate` (§2.1 bis) interprète le suffixe entre parenthèses d'un groupe (`AA-MM-JJ`/`AA-MM_MM`/`AA-MM`/`AAAA`) uniquement en repli, quand aucune date de début n'est configurée manuellement — un suffixe dans un format non reconnu retombe silencieusement sur la date de la transaction la plus ancienne du groupe, sans avertissement.
 - Réconciliation d'import interactive (§7.1) : ne couvre que Catégorie/Personne/Compte/Compte cible/Groupe de la feuille de transactions — pas Remarque, pas Type. Ne s'exécute que pour un import Excel/CSV avec des transactions déjà présentes ; une restauration `.json` ne passe jamais par cette étape. Les feuilles de réglages (Paramètres/Budget/Budget_Predefini/Revenus) et l'import Santé ont leur propre réconciliation silencieuse, sans écran de confirmation (§7.1 bis) — mécanisme distinct, jamais de choix "Nouveau"/"Remplacer par…".
 - Onglet Santé (§6.6) : la fusion à l'import ignore silencieusement un soin dont l'id existe déjà — elle ne met jamais à jour un soin existant (ex. un `termine` basculé localement puis un import "Ajouter" du même fichier source ne l'écrase pas).
@@ -650,14 +666,14 @@ Classe CSS `.chev-rot` : fait pivoter une flèche `<svg>` de 180° quand son `<d
 - Détection automatique de la feuille "Santé" dans le flux d'import principal (§7) : le mode Ajouter/Remplacer appliqué aux soins suit toujours celui choisi pour les **transactions** (`chosenMode`), même si le volet Transactions n'est pas importé — pas de choix Ajouter/Remplacer dédié aux soins sur cet écran, contrairement à l'écran d'import Santé dédié (§6.6).
 - Navigation précédent/suivant de la fiche transaction (§6.2) : la liste de navigation est figée à l'ouverture de la fiche et ne protège que le temps où celle-ci reste affichée — fermer la fiche puis rouvrir une transaction repart d'une liste recalculée sur le filtre à jour. Aucune navigation n'est disponible pour les fiches ouvertes depuis un autre onglet (Budget, Récurrent, Évolution, Santé).
 - Ajustements manuels du Budget (§6.3.6) : la correspondance avec une carte remonte d'un groupe précis vers son groupe de groupe (§6.3.6), mais jamais dans l'autre sens — un ajustement posé directement sur un groupe de groupe ne redescend pas automatiquement sur une carte configurée sur l'un de ses groupes enfants précis, pour éviter toute ambiguïté si plusieurs cartes enfants existent.
-- Testé via Playwright (Chromium headless) quand l'environnement le permet, sinon relecture manuelle systématique + `node --check` sur le script extrait ; SheetJS nécessite un accès internet au premier chargement — sans lui, l'appli démarre normalement et seuls l'import/l'export Excel affichent "Module Excel (SheetJS) indisponible…" (`U.XLSX_MISSING_MSG`).
+- Testé via Playwright (Chromium headless) quand l'environnement le permet, sinon relecture manuelle systématique + `node --check` sur le script extrait ; SheetJS nécessite un accès internet au premier chargement (tests Playwright : service workers bloqués dans le contexte, sinon SheetJS passe par le cache du service worker et échappe à l'interception réseau des tests) — sans lui, l'appli démarre normalement et seuls l'import/l'export Excel affichent "Module Excel (SheetJS) indisponible…" (`U.XLSX_MISSING_MSG`).
 
 ---
 
 ## 14. Progressive Web App (PWA)
 Depuis le 2026-09-13, l'application est livrée comme PWA installable en plus de son usage classique au navigateur.
 
-**Fichiers livrés** (à uploader ensemble sur GitHub à chaque livraison — une incohérence entre `index.html` et un fichier manquant casse le mode hors-ligne) : `index.html`, `manifest.json`, `service-worker.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`, `apple-touch-icon.png`.
+**Fichiers livrés** (à uploader ensemble sur GitHub à chaque livraison — une incohérence entre `index.html` et un fichier manquant casse le mode hors-ligne) : `index.html`, `manifest.json`, `service-worker.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`, `apple-touch-icon.png`. Plus le compagnon `google-apps-script.gs` (§10), hors service worker — jamais y écrire la vraie clé secrète avant de le pousser sur GitHub (dépôt public).
 
 **`manifest.json`** : nom, icônes (standard + variantes "maskable" pour Android), `display:"standalone"` (lancement sans barre d'adresse une fois installée), couleurs de thème/fond alignées sur `--bg`.
 
@@ -684,8 +700,8 @@ Passe de nettoyage sans changement fonctionnel visible (hors correctifs listés)
 - `U.hierarchyCheckListHtml` / `U.wireHierarchyCheckList` — liste cochable groupe de groupe → éléments + recherche, auparavant écrite trois fois (filtre Transactions, Santé, Revenus) ;
 - `openBudgetKindSheet` / `BG_KIND_STYLE` — les 4 feuilles de détail Réel/Amorti/Ajout du Budget ; `voyageShareInMonths` — part d'une transaction voyage sur une période ;
 - `U.fmtWholeSigned` / `U.signClass` (Évolution, Récurrent, Revenus), `U.capitalize` / `U.fmtMonthYearCap`, `U.isoToDateObj` / `U.setDateColumnFormat` (exports Excel principal et Santé) ; accesseurs mensuels du Récurrent = ceux de l'Évolution ;
-- `Store._persistJson` (sauvegarde transactions/soins) ; `runSyncOp` / `markSynced` / `adoptRemotePayload` / `gistHeaders` (synchronisation Gist).
+- `Store._persistJson` (sauvegarde transactions/soins) ; `runSyncOp` / `markSynced` / `adoptRemotePayload` / `gistHeaders` (synchronisation Gist — module remplacé depuis par la synchronisation Google Drive, §10).
 
 **Correctifs et améliorations** : case cochée des groupes "à plat" (sans groupe de groupe) restaurée à la réouverture des filtres Groupe (Transactions, Santé) ; SheetJS chargé en `defer` + message clair s'il est indisponible ; service worker : plus de mise en cache des réponses d'erreur du CDN.
 
-**Convention pour la suite** : avant d'ajouter un formateur, une liste cochable hiérarchique, une feuille de détail du Budget ou un appel Gist, réutiliser l'helper existant ci-dessus plutôt que d'en recopier une variante locale.
+**Convention pour la suite** : avant d'ajouter un formateur, une liste cochable hiérarchique, une feuille de détail du Budget ou un appel au relais Drive (`driveCall`, §10), réutiliser l'helper existant ci-dessus plutôt que d'en recopier une variante locale.
