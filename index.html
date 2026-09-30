@@ -453,6 +453,10 @@ details.card[open] summary::after{transform:rotate(45deg);}
 .u-col-shrink{display:flex;flex-direction:column;min-width:0;}
 .u-tab-btn{flex:1;min-width:0;border:none;background:transparent;font-size:13px;font-weight:700;color:var(--text);padding:4px 2px;}
 .u-period-undef{font-style:italic;font-weight:600;color:var(--text-sub);text-align:center;}
+.u-month-zone{display:flex;align-items:center;gap:0;flex:1;min-width:0;min-height:36px;padding:2px 0;border-radius:10px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.u-month-zone:active{background:var(--card);}
+.u-month-zone input[type="month"]{cursor:pointer;}
+.u-month-zone .u-period-undef-btn{width:22px;height:32px;}
 .u-period-undef-btn{flex:0 0 auto;width:18px;height:18px;padding:0;border:none;background:transparent;color:var(--text-sub);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .u-badge-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
 .u-row-gap10{display:flex;gap:10px;}
@@ -476,7 +480,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.26.09.58";
+const APP_VERSION = "v 2026.09.30.19.50";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -4416,14 +4420,17 @@ function computeGroupBudget(superGroupeName, months, opts){
   const monthSet = new Set(months);
   const amortSet = new Set(cfg.amortCategories||[]);
   // "amorti" (lissage catégories + ajustements) / "brut_ajout" (pas de lissage, mais ajustements manuels non-amortis
-  // pris en compte). Les groupes additionnels restent toujours forcés en brut (forceBrut), quel que soit le mode.
+  // pris en compte). Les groupes additionnels restent toujours forcés en brut (forceBrut) pour l'AMORTISSEMENT,
+  // quel que soit le mode — mais leurs ajustements simples (non amortis) sont pris en compte comme pour le
+  // groupe principal, en mode "Amort. + ajouts" comme en mode "Ajouts". Leurs ajustements amortis sont exclus
+  // (pas d'amortissement pour un groupe additionnel), comme en mode "Ajouts" pour le groupe principal.
   // opts.mode (optionnel) permet de forcer le calcul dans l'AUTRE mode que celui actuellement affiché
   // (Store.settings.budget.mode), sans le modifier globalement — utilisé par la comparaison de budget
   // prédéfini (§6.3.5) pour connaître la part d'amortissement "amorti" même quand la vue affichée est "réelle",
   // et inversement.
   const modeUsed = opts.mode || cfg.mode;
   const isAmorti = !opts.forceBrut && modeUsed==="amorti";
-  const applyAdjustments = !opts.forceBrut && (modeUsed==="amorti" || modeUsed==="brut_ajout");
+  const applyAdjustments = (modeUsed==="amorti" || modeUsed==="brut_ajout");
 
   // catégorie -> {income, expense}
   const catTotals = new Map();
@@ -4975,15 +4982,34 @@ function adjustmentGroupHierarchy(){
    compressée : les mois longs (ex. "septembre 2026") ont besoin de place, et ce bloc est déjà imbriqué dans
    une carte avec son propre padding — pas de marge propre ni de forme pilule qui grignoteraient la largeur
    utile. */
+/* Zone de toucher d'un champ mois (période du Budget) : toute la moitié Début / Fin est cliquable et ouvre
+   explicitement le sélecteur natif (input.showPicker), au lieu de dépendre d'un toucher précis sur le petit
+   champ lui-même. Le bouton ✕ (Non définie) garde son propre rôle. Repli focus()+click() si showPicker
+   n'est pas disponible ; les exceptions (sélecteur déjà ouvert, activation utilisateur manquante) sont
+   ignorées. */
+function openMonthPicker(input){
+  if(!input) return;
+  try{ if(typeof input.showPicker==="function"){ input.showPicker(); return; } }catch(e){ return; }
+  try{ input.focus(); input.click(); }catch(e){}
+}
+function wireMonthTapZone(zone){
+  if(!zone) return;
+  const input = zone.querySelector('input[type="month"]');
+  if(!input) return;
+  zone.onclick = (e)=>{
+    if(e.target.closest(".u-period-undef-btn")) return;
+    openMonthPicker(input);
+  };
+}
 function periodPickerHtml(){
   const fromHtml = periodFrom
-    ? `<span style="display:flex;align-items:center;gap:0;flex:1;min-width:0;">
+    ? `<span class="u-month-zone" id="bg-from-zone">
          <input type="month" id="bg-from" value="${periodFrom}" class="u-tab-btn">
          <button type="button" class="u-period-undef-btn" id="bg-from-clear" title="Non définie">✕</button>
        </span>`
     : `<button type="button" class="u-tab-btn u-period-undef" id="bg-from-undef" style="flex:1;text-align:left;">Non définie</button>`;
   const toHtml = periodTo
-    ? `<span style="display:flex;align-items:center;gap:0;flex:1;min-width:0;">
+    ? `<span class="u-month-zone" id="bg-to-zone">
          <input type="month" id="bg-to" value="${periodTo}" class="u-tab-btn">
          <button type="button" class="u-period-undef-btn" id="bg-to-clear" title="Non définie">✕</button>
        </span>`
@@ -5803,8 +5829,15 @@ function renderBudget(){
 
   const mainRes = computeGroupBudget(cfg.mainGroup, months);
   const extraResults = (cfg.extraGroups||[]).filter(g=>g!==cfg.mainGroup).map(g=>({name:g, res:computeGroupBudget(g, extraGroupEffectiveMonths(g, months), {forceBrut:true})}));
-  const grandCatIncome = mainRes.catIncome + extraResults.reduce((s,e)=>s+e.res.catIncome,0);
-  const grandCatExpense = mainRes.catExpense + extraResults.reduce((s,e)=>s+e.res.catExpense,0);
+  // Revenus / Dépenses du grand total : même règle que les cartes de groupe (splitIncomeExpense) — chaque
+  // catégorie est classée ENTIÈRE selon son net (transactions + amortissement + ajouts), et non montant par
+  // montant selon son signe. Sinon un ajout positif sur une catégorie de dépense (ou négatif sur une
+  // catégorie de revenu) basculait dans l'autre ligne du grand total, qui ne correspondait plus à la somme
+  // des sections Revenus/Dépenses affichées dans les cartes en dessous.
+  const netOf = list=>list.reduce((s,c)=>s+c.income+c.expense,0);
+  const grandSplits = [mainRes].concat(extraResults.map(e=>e.res)).map(r=>splitIncomeExpense(r.categories));
+  const grandCatIncome = grandSplits.reduce((s,sp)=>s+netOf(sp.income),0);
+  const grandCatExpense = grandSplits.reduce((s,sp)=>s+netOf(sp.expense),0);
   const grandVoyIncome = mainRes.voyIncome + extraResults.reduce((s,e)=>s+e.res.voyIncome,0);
   const grandVoyExpense = mainRes.voyExpense + extraResults.reduce((s,e)=>s+e.res.voyExpense,0);
   const grandVoyNet = grandVoyIncome + grandVoyExpense;
@@ -6058,6 +6091,8 @@ function renderBudget(){
       renderBudget();
     };
   });
+  wireMonthTapZone(document.getElementById("bg-from-zone"));
+  wireMonthTapZone(document.getElementById("bg-to-zone"));
   const bgFromEl = document.getElementById("bg-from");
   if(bgFromEl) bgFromEl.onchange = (e)=>{
     periodFrom = e.target.value || null;
@@ -6334,7 +6369,7 @@ function openCategoryTxnSheet(superGroupeName, catKey, opts){
   // la somme des montants affichés corresponde bien au total de la carte. En mode "Sans amort, avec ajout",
   // les ajustements amortis (case "Amortir ce montant...") sont exclus (ni entrée immédiate, ni lissage) —
   // seuls les ajustements simples restent pris en compte.
-  const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
+  const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout"); // tous groupes (cf. computeGroupBudget)
   if(applyAdjustments){
     (cfg.adjustments||[]).forEach((adj, adjIdx)=>{
       if(!adjustmentGroupMatches(adj.groupe, superGroupeName)) return;
@@ -6469,7 +6504,7 @@ function openVoyageTxnSheet(superGroupeName, voyKey, opts){
   const items = [];
   if(voyKey === "__ajustement__"){
     const isAmorti = cfg.mode==="amorti" && superGroupeName===cfg.mainGroup;
-    const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && superGroupeName===cfg.mainGroup;
+    const applyAdjustments = (cfg.mode==="amorti" || cfg.mode==="brut_ajout"); // tous groupes (cf. computeGroupBudget)
     const periodMonths = computeAmortPeriodMonths(months, boundsMonths);
     const windowN = amortWindowMonths(months, periodMonths, boundsMonths).length;
     if(applyAdjustments){
@@ -6549,7 +6584,7 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
   const items = [];
 
   function isAmortForName(name){ return cfg.mode==="amorti" && name===cfg.mainGroup; }
-  function adjustForName(name){ return (cfg.mode==="amorti" || cfg.mode==="brut_ajout") && name===cfg.mainGroup; }
+  function adjustForName(name){ return (cfg.mode==="amorti" || cfg.mode==="brut_ajout"); } // tous groupes (cf. computeGroupBudget)
 
   Store.transactions.forEach(t=>{
     if(t.type==="Transfer") return;
@@ -6599,8 +6634,9 @@ function collectGroupTypeItemsDetailed(superGroupeNames, typeFilter, months, bou
     items.push({kind:"reel", date: t.date, txnId: t.id, remarque: t.remarque||cat||"—", sub, displayAmount, yearsplit: tr.mode==="yearsplit", yearsplitCount: tr.mode==="yearsplit"?yearsplitMonthsInPeriod(tr.year, monthSet):null, catKey:cat, matchedName, effMonthKey, rawAmount:t.montant});
   });
 
-  // Ajustements manuels : uniquement pour le groupe principal, en mode "Amort. + ajouts" ou "Sans amort,
-  // avec ajout" (les groupes additionnels restent toujours en brut, cf. computeGroupBudget/forceBrut).
+  // Ajustements manuels : pour tous les groupes (principal et additionnels), en mode "Amort. + ajouts" ou
+  // "Ajouts". Les ajustements amortis ne comptent que pour le groupe principal en mode "Amort. + ajouts"
+  // (les groupes additionnels ne sont jamais amortis, cf. computeGroupBudget/forceBrut).
   names.forEach(name=>{
     if(!adjustForName(name)) return;
     const amortiOk = isAmortForName(name);
