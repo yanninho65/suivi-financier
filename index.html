@@ -480,7 +480,7 @@ details.card[open] summary::after{transform:rotate(45deg);}
 <script>
 /* Numéro de version : date/heure de production de ce fichier, au format "v AAAA.MM.JJ.HH.MM".
    À mettre à jour à chaque livraison du fichier (affiché sous le titre, cf. buildShell). */
-const APP_VERSION = "v 2026.09.30.19.50";
+const APP_VERSION = "v 2026.10.01.13.55";
 /* ============================================================
    SUIVI FINANCIER — logique application
    ============================================================ */
@@ -9967,7 +9967,7 @@ const ICONS = U.ICONS;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const AUTO_DELAY_MS = 30000;        // délai après la dernière modification locale avant envoi automatique du JSON
-const RESUME_MIN_GAP_MS = 60000;    // intervalle minimal entre deux vérifications au retour sur l'app
+const RESUME_MIN_GAP_MS = 300000;   // intervalle minimal entre deux vérifications au retour sur l'app (5 min)
 const EXCEL_MIN_GAP_MS = 3600000;   // au plus un dépôt Excel automatique par heure
 const DRIVE_TIMEOUT_MS = 60000;
 
@@ -9976,6 +9976,11 @@ let lastError = null;
 let conflictPending = false;
 let excelBusy = false, excelError = null;
 let autoTimer = null, lastAutoCheck = 0, started = false;
+// Vérification automatique "silencieuse" : l'indicateur ne tourne pas tant qu'aucun transfert réel
+// (envoi ou téléchargement du JSON complet) n'a commencé — cf. beginTransfer.
+let quietCheck = false;
+// Script Apps Script pas encore redéployé avec l'action getHash : repli sur le téléchargement complet.
+let hashUnsupported = false;
 
 /* ---------- Payload ---------- */
 /* Même payload que la sauvegarde .json (§ exportBackup) — transactions, paramètres, soins Santé et
@@ -10036,6 +10041,27 @@ async function fetchRemote(){
   if(!r.exists) return null;
   try{ return JSON.parse(r.content); }
   catch(e){ throw new Error("Le fichier JSON sur le Drive est illisible"); }
+}
+
+/* Vérification légère : le script renvoie le hash mémorisé lors du dernier putJson (sans transférer le
+   JSON), ou null s'il ne peut pas le garantir (fichier modifié hors de l'app, envoi par une ancienne
+   version, script sans getHash). Retour : {exists:false} | {exists:true, hash} | null (= inconnu). */
+async function fetchRemoteHash(){
+  if(hashUnsupported) return null;
+  try{
+    const r = await driveCall({action:"getHash"});
+    if(!r.exists) return {exists:false};
+    return r.hash ? {exists:true, hash:String(r.hash)} : null;
+  }catch(e){
+    if(/unknown action/i.test((e && e.message) || "")){ hashUnsupported = true; return null; }
+    throw e;
+  }
+}
+/* Un transfert réel commence : l'indicateur passe en "en cours" même pour une opération automatique. */
+function beginTransfer(){
+  if(!quietCheck) return;
+  quietCheck = false;
+  updateIndicator(); renderSyncSheet(true);
 }
 
 /* ---------- Excel sur Drive ---------- */
@@ -10101,14 +10127,15 @@ function importExcelFromDrive(){
    (+ toast "<failLabel> : <message>" hors mode automatique). */
 async function runSyncOp(failLabel, fn, opts){
   opts = opts || {};
-  syncing = true; lastError = null; conflictPending = false; updateIndicator(); renderSyncSheet(true);
+  syncing = true; lastError = null; conflictPending = false; quietCheck = !!opts.auto;
+  updateIndicator(); renderSyncSheet(true);
   try{
     await fn();
   }catch(e){
     lastError = (e && e.message) ? e.message : String(e);
     if(!opts.auto) APP.showToast(failLabel + " : " + lastError);
   }finally{
-    syncing = false;
+    syncing = false; quietCheck = false;
     updateIndicator();
     renderSyncSheet(true);
   }
@@ -10144,7 +10171,9 @@ async function adoptRemotePayload(remotePayload, toastMsg){
   if(toastMsg) APP.showToast(toastMsg);
 }
 async function pushPayload(payload, hash){
-  const r = await driveCall({action:"putJson", content: JSON.stringify(payload)});
+  beginTransfer();
+  // Le hash accompagne le contenu : le script le mémorise pour les vérifications légères (getHash).
+  const r = await driveCall({action:"putJson", content: JSON.stringify(payload), hash});
   markSynced(hash, hash, {lastRemoteAt: r.modified || new Date().toISOString()});
   // Tout premier dépôt : l'Excel suit immédiatement (ensuite, seulement à la sortie de l'app).
   if(!cfg().lastExcelAt) await maybeUploadExcel();
@@ -10167,6 +10196,30 @@ async function smartSync(opts){
     const c = cfg();
     const localPayload = buildSyncPayload();
     const localHash = hashPayload(localPayload);
+    const lastHash = c.lastSyncedHash;
+    const lastRemote = c.lastRemoteHash || lastHash;
+    // 1) Vérification légère (hash seul) : évite de télécharger le JSON complet quand rien n'a changé
+    //    côté Drive. Seuls les cas sûrs sont tranchés ici ; tout le reste passe par le téléchargement.
+    const light = await fetchRemoteHash();
+    if(light){
+      if(!light.exists){
+        await pushPayload(localPayload, localHash);
+        APP.showToast("Sauvegardé sur Google Drive");
+        return;
+      }
+      if(light.hash === localHash || (lastHash && localHash === lastHash && light.hash === lastRemote)){
+        markSynced(localHash, light.hash);
+        if(!opts.auto) APP.showToast("Déjà à jour");
+        return;
+      }
+      if(lastHash && localHash !== lastHash && light.hash === lastRemote && !localIsEmpty()){
+        await pushPayload(localPayload, localHash);
+        if(!opts.auto) APP.showToast("Sauvegardé sur Google Drive");
+        return;
+      }
+    }
+    // 2) Téléchargement complet (distant modifié, état inconnu, appareil vide, conflit…).
+    beginTransfer();
     const remotePayload = await fetchRemote();
     if(!remotePayload){
       await pushPayload(localPayload, localHash);
@@ -10179,11 +10232,16 @@ async function smartSync(opts){
       if(!opts.auto) APP.showToast("Déjà à jour");
       return;
     }
-    const lastHash = c.lastSyncedHash;
-    const lastRemote = c.lastRemoteHash || lastHash;
     const localChanged = localHash !== lastHash;
     const remoteChanged = remoteHash !== lastRemote;
     const remoteEmpty = payloadIsEmpty(remotePayload);
+    // Aucun changement d'un côté comme de l'autre depuis la dernière synchro (hash local et distant
+    // différents seulement à cause de la normalisation locale d'un payload récupéré) : déjà à jour.
+    if(lastHash && !localChanged && !remoteChanged){
+      markSynced(localHash, remoteHash);
+      if(!opts.auto) APP.showToast("Déjà à jour");
+      return;
+    }
     if((remoteChanged && !localChanged) || (!lastHash && localIsEmpty() && !remoteEmpty)){
       await adoptRemotePayload(remotePayload, "Données récupérées depuis Google Drive");
       return;
@@ -10285,7 +10343,7 @@ function confirmPull(){
 /* ---------- État / indicateur ---------- */
 /* "unconfigured" | "syncing" | "error" | "conflict" | "synced" | "unsynced" */
 function computeStatus(){
-  if(syncing) return "syncing";
+  if(syncing && !quietCheck) return "syncing";
   const c = cfg();
   if(!isConfigured()) return "unconfigured";
   if(lastError) return "error";
@@ -10320,7 +10378,7 @@ function updateIndicator(){
   btn.classList.toggle("sync-spin", st==="syncing");
   btn.title = title;
   btn.onclick = ()=>{
-    if(st==="syncing") return;
+    if(st==="syncing" || syncing) return;
     if(st==="unconfigured"){ openSyncSheet(); return; }
     smartSync();
   };

@@ -8,7 +8,7 @@
    l'ancien cache — sans ça, une page déjà ouverte pourrait
    rester bloquée sur une version obsolète indéfiniment.
    ============================================================ */
-const SW_VERSION = "v 2026.09.30.19.50";
+const SW_VERSION = "v 2026.10.01.13.55";
 
 const SHELL_CACHE   = `sf-shell-${SW_VERSION}`;
 const RUNTIME_CACHE = "sf-runtime"; // ressources externes (CDN) — non versionné, survit aux mises à jour
