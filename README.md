@@ -173,7 +173,8 @@ santeItems[]: { id, dateSoin, beneficiaire, devise, montantEur, montantDevise,
 - Listes personnalisables `Store.settings.sante.lists` (`beneficiaires, devises, medecins, prestations, statuts, mutuelles`), ajout à la volée (`PICKER.openPicker({allowNew:true})`). Groupe = hiérarchie des Transactions. Choisir un Statut horodate `statutDate`.
 - Filtres `__SF_SANTE_FILTERS` (sheet page unique, persistés `Store.settings.santeFilters`) ; comptages du filtre Groupe = ceux des transactions.
 - Affichage (`SANTE_GROUPBY_LABEL`) : Mois, Bénéficiaire, Statut, Groupe, Médecin, Terminé ; toujours déplié, pas de pagination ; totaux `computeSanteTotals`.
-- Fiche `renderSanteDetail` (réutilise `modal-detail`) ; `openReimbEditor`, `openPartMoiEditor` (0/50/100 % + saisie).
+- Montant affiché (`SANTE_AMOUNT_LABEL`, `Store.settings.sante.amountMode`, donc inclus dans `santeSettings` : sauvegarde JSON, synchro Drive, import via `importSanteSettings`) : Dépense / Remboursé / Net (`santeNet` = dépense − remboursements, non borné, peut être négatif) ; s'applique aux lignes, totaux de groupe et total principal (`santeAmountOf`) ; la pilule indique « Regroupement · Montant ».
+- Fiche `renderSanteDetail` (réutilise `modal-detail`) : sous le titre, bandeau non modifiable Dépense / Remboursé / Net (`#sd-amounts`) ; `openReimbEditor`, `openPartMoiEditor` (0/50/100 % + saisie).
 - Réglages `__SF_SANTE_SETTINGS` : listes + export (`exportSanteExcel`, feuille "Santé", `buildSanteExportRows` partagé avec l'export principal) / import (`rowToSanteItem`, aussi utilisé pour détecter une feuille "Santé" dans le flux principal ; réconciliation silencieuse §7.1 bis avant calcul d'id).
 - Stockage IndexedDB `sante_items` (repli `sf_sante_items_v1`). Toujours dans le JSON et la synchro Drive (remplacement complet).
 
